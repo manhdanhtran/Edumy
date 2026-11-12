@@ -22,6 +22,14 @@ Hibernate validate settings that turned out necessary (module by module, P03):
   "TEXT")` (docs/ai/03 §3.8, no `@Lob`); `courses.main_instructor_id` is `updatable = false` (verified in
   `AuthoringRepositoryIT`). `@Lock(PESSIMISTIC_WRITE)` on a scalar JPQL query (`select ch.id … order by …`) renders
   `… FOR UPDATE OF <alias>`, which MySQL 8.4 accepts (two-phase reorder, docs/ai/03 §3.4).
+- **commerce** — none. Validate passes on the test DB and the dev DB (v1000) with the defaults. The generated columns
+  `orders.pending_student_id` / `payment_transactions.pending_order_id` are not mapped: validate ignores them, entity
+  INSERTs omit them and MySQL fills them, so uq_orders_one_pending / uq_payment_one_pending fire on entity saves
+  (verified in `CommerceRepositoryIT`). Pitfall: with IDENTITY ids Hibernate runs the INSERT at `persist` time, before
+  pending UPDATEs are flushed, so "cancel the old pending order / close the old pending QR, then save the new one"
+  needs an explicit `flush()` in between, or the unique key fires. `qr_data` / `handled_note` are
+  `@Column(columnDefinition = "TEXT")`. The entity name `Order` is accepted by HQL (`from Order o`); enum literals in
+  JPQL (`OrderStatus.PENDING`) are rendered through the converter (`status='pending'`).
 
 ## Known limitations and decisions after V1–V6
 Recorded after the P01 review (2026-11-12). Migrations V1–V6 are frozen at tag `schema-v1`.
