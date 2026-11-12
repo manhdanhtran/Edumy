@@ -50,7 +50,7 @@ it is implemented, the line in the migration, and a status:
 | pk_categories (§5.5) | `PRIMARY KEY (id)` | 24 | OK |
 | categories.name UQ (§5.5) | `uq_categories_name UNIQUE (name)` (case-insensitive under ai_ci, as intended for display names) | 25 | OK |
 | categories.slug UQ (§5.5) | `uq_categories_slug UNIQUE (slug)` | 26 | OK |
-| ck_categories_slug (§5.5) | `REGEXP_LIKE(slug, '^[a-z0-9]+(-[a-z0-9]+)*$', 'c')` | 27 | OK |
+| ck_categories_slug (§5.5) | `REGEXP_LIKE(slug, '^[a-z0-9]+(-[a-z0-9]+)*\\z', 'c')` (`\z`: ICU `$` would accept a trailing `\n`, PostgreSQL `$` does not) | 27 | OK |
 | pk_courses (§5.6) | `PRIMARY KEY (id)` | 50 | OK |
 | courses.slug UQ (§5.6) | `uq_courses_slug UNIQUE (slug)` | 51 | OK |
 | FK #5 courses.main_instructor_id → users RESTRICT (§6, §8 #5) | `fk_courses_main_instructor_id` (NOT NULL column) | 52 | OK |
@@ -61,7 +61,7 @@ it is implemented, the line in the migration, and a status:
 | ck_courses_note_required (§5.6, §8 #9 BR-08) | `CAST(status AS BINARY) NOT IN ('rejected','hidden') OR review_note IS NOT NULL` | 58 | OK |
 | ck_courses_published_at (§5.6) | `CAST(status AS BINARY) NOT IN ('published','hidden') OR published_at IS NOT NULL` | 60 | OK |
 | ck_courses_submitted_at (§5.6) | `CAST(status AS BINARY) <> 'pending_review' OR submitted_at IS NOT NULL` | 62 | OK |
-| ck_courses_slug (§5.6) | `REGEXP_LIKE(..., 'c')` | 63 | OK |
+| ck_courses_slug (§5.6) | `REGEXP_LIKE(..., 'c')`, pattern ends in `\z` like ck_categories_slug | 63 | OK |
 | ix_courses_main_instructor (§9) | `(main_instructor_id)` | 64 | OK |
 | ix_courses_category_status (§9) | `(category_id, status)`; also index of FK #6 | 66 | OK |
 | ix_courses_reviewed_by (§9) | `(reviewed_by)` | 67 | OK |
@@ -225,7 +225,7 @@ Notes
 | uq_certificates_enrollment (§5.20 UQ, §8 #29 BR-39) | `UNIQUE (enrollment_id)` (name verbatim from §8); also index of FK #34 | 180 | OK |
 | uq_certificates_code (§5.20 UQ, §8 #29 D-47) | `UNIQUE (certificate_code)` (name verbatim from §8) | 181 | OK |
 | FK #34 certificates.enrollment_id → enrollments RESTRICT (§6) | `fk_certificates_enrollment_id` | 182 | OK |
-| ck_certificates_code (§5.20, §8 #29 D-47) `~ '^EDU-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$'` | `REGEXP_LIKE(certificate_code, '...', 'c')` | 184 | OK |
+| ck_certificates_code (§5.20, §8 #29 D-47) `~ '^EDU-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$'` | `REGEXP_LIKE(certificate_code, '^EDU-…{4}\\z', 'c')` (`\z` instead of `$`, see V2 slug) | 184 | OK |
 | updated_at triggers (§5) on course_reviews, course_questions, question_answers | `ON UPDATE CURRENT_TIMESTAMP(6)` (enrollments has only enrolled_at, certificates issued_at; lesson_progresses.last_accessed_at has no ON UPDATE, set by the app) | 78, 110, 145 | OK |
 | §8 #22 duplicate enrollment is a no-op (`ON CONFLICT DO NOTHING`, BR-17) | `INSERT IGNORE` in a native query, or catch the `uq_enrollments_student_course` violation as "already enrolled" (docs/ai/03 §3.2; INSERT IGNORE tested) | — | APP-LEVEL |
 | §8 #23 purchase enrollment: order is paid, belongs to the student, has a line for the course (BR-14) | T2 transaction (only `ck_enrollments_source_order` is in SQL) | — | APP-LEVEL |
@@ -281,7 +281,14 @@ Notes
 - Error 1419 ("You do not have the SUPER privilege and binary logging is enabled"): MySQL 8.4 enables binary logging, and
   the non-root application / Testcontainers user cannot create triggers without `--log-bin-trust-function-creators=1`.
   The option is set in `compose.yaml` and `support/SharedMySql`; production MySQL needs the same server option (or a
-  migration user with SUPER / SET_ANY_DEFINER). Migration semantics unchanged.
+  a migration user with the deprecated SUPER privilege; `SET_ANY_DEFINER` alone does NOT avoid 1419 — verified in the
+  P10 review). Migration semantics unchanged. Triggers get `DEFINER` = the Flyway user: dropping/renaming that account
+  later breaks writes with error 1449.
+- BR-02 is only checked on `course_co_instructors`: `UPDATE courses SET main_instructor_id = <a co-instructor>` is not
+  re-checked (same as the DDD trigger; `main_instructor_id` never changes in v1, DDD §5.6).
+- `ON UPDATE CURRENT_TIMESTAMP(6)` does not fire for FK-cascaded changes (e.g. `course_questions.updated_at` stays put
+  when `lesson_id` is SET NULL by a lesson delete) nor for an UPDATE that changes no value; the DDD triggers would have
+  fired for the cascade. Accepted.
 - Flyway's MySQL parser handles the `BEGIN … END` bodies without `DELIMITER`.
 
 ## V6__reference_data.sql (roles)

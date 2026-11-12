@@ -590,7 +590,7 @@ class LearningSchemaIT {
     @ParameterizedTest
     @ValueSource(strings = {"edu-abcd-efgh-ijkl", "EDU-abcd-EFGH-IJKL", "EDU-ÁBCD-EFGH-IJKL", "ĐEU-ABCD-EFGH-IJKL",
             "EDU-ABC-EFGH-IJKL", "EDU-ABCD-EFGH-IJKL5", "EDU-ABCDE-FGH-IJKL", "EDX-ABCD-EFGH-IJKL",
-            "EDU_ABCD_EFGH_IJKL", " EDU-ABCD-EFGH-IJK", "EDU-ABCD-EFGH-IJK ", ""})
+            "EDU_ABCD_EFGH_IJKL", " EDU-ABCD-EFGH-IJK", "EDU-ABCD-EFGH-IJK ", "", "EDU-ABCD-EFGH-IJKL\n"})
     void insertCertificate_invalidCode_rejected_D47(String code) {
         long enrollment = enrollment();
         assertCheckViolated("ck_certificates_code", () -> insertCertificate(enrollment, code));

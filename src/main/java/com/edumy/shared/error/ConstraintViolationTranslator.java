@@ -46,7 +46,7 @@ public class ConstraintViolationTranslator {
 
     /**
      * Constraint name / BR code → ErrorCode of the production bean. Empty for now: entries are added when the owning
-     * module defines its ErrorCode (P03/P06), see docs/ai/05 §5.2 (e.g. "uq_carts_student" → CART_COURSE_ALREADY_OWNED).
+     * module defines its ErrorCode (P03/P06), see docs/ai/05 §5.2 (e.g. "uq_cart_items_cart_course" → a cart error).
      */
     private static final Map<String, ErrorCode> KNOWN_KEYS = Map.of();
 

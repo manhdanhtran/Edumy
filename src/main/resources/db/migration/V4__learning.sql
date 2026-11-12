@@ -182,5 +182,5 @@ CREATE TABLE certificates (
     CONSTRAINT fk_certificates_enrollment_id FOREIGN KEY (enrollment_id) REFERENCES enrollments (id)
         ON DELETE RESTRICT,
     CONSTRAINT ck_certificates_code CHECK (REGEXP_LIKE(certificate_code,
-        '^EDU-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$', 'c'))
+        '^EDU-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}\\z', 'c'))  -- \z, not $: ICU $ also matches before a final '\n'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

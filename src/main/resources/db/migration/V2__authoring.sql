@@ -3,7 +3,7 @@
 --      (EDU-DDD-001 §5.5–5.9, §6 FK #5–12, §8 rows 5–13, §9).
 -- MySQL port rules: docs/ai/03-data-model-mysql.md §3.1–3.4 (ADR-001).
 --   TIMESTAMPTZ -> DATETIME(6) stored in UTC; updated_at trigger -> ON UPDATE CURRENT_TIMESTAMP(6);
---   enum-like / case-sensitive CHECKs via CAST(... AS BINARY) or REGEXP_LIKE(..., 'c') (collation trap);
+--   enum-like CHECKs via CAST(... AS BINARY); slug regex REGEXP_LIKE(..., 'c') ending in \z (ICU $ accepts 'x\n');
 --   partial index -> composite index (equality columns first); pg_trgm GIN -> ix_courses_status_title (§3.2);
 --   UNIQUE ... DEFERRABLE -> plain UNIQUE + two-phase reorder with a +1 000 000 offset (§3.4), so the
 --   sort_order > 0 CHECKs stay.
@@ -24,7 +24,7 @@ CREATE TABLE categories (
     CONSTRAINT pk_categories PRIMARY KEY (id),
     CONSTRAINT uq_categories_name UNIQUE (name),
     CONSTRAINT uq_categories_slug UNIQUE (slug),
-    CONSTRAINT ck_categories_slug CHECK (REGEXP_LIKE(slug, '^[a-z0-9]+(-[a-z0-9]+)*$', 'c'))
+    CONSTRAINT ck_categories_slug CHECK (REGEXP_LIKE(slug, '^[a-z0-9]+(-[a-z0-9]+)*\\z', 'c'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 -- 5.6 courses — Khóa học (a course that was ever published is never deleted, BR-19 -> V5 trigger)
@@ -60,7 +60,7 @@ CREATE TABLE courses (
     CONSTRAINT ck_courses_published_at CHECK (CAST(status AS BINARY) NOT IN ('published', 'hidden')
         OR published_at IS NOT NULL),
     CONSTRAINT ck_courses_submitted_at CHECK (CAST(status AS BINARY) <> 'pending_review' OR submitted_at IS NOT NULL),
-    CONSTRAINT ck_courses_slug CHECK (REGEXP_LIKE(slug, '^[a-z0-9]+(-[a-z0-9]+)*$', 'c')),
+    CONSTRAINT ck_courses_slug CHECK (REGEXP_LIKE(slug, '^[a-z0-9]+(-[a-z0-9]+)*\\z', 'c')),
     INDEX ix_courses_main_instructor (main_instructor_id),
     -- also serves as the index of fk_courses_category_id
     INDEX ix_courses_category_status (category_id, status),

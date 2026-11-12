@@ -73,7 +73,8 @@ class AuthoringSchemaIT {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"Kinh-doanh", "kinh--doanh", "-kinh", "kinh-", "kinh doanh", "kinh_doanh", "kính-doanh", ""})
+    @ValueSource(strings = {"Kinh-doanh", "kinh--doanh", "-kinh", "kinh-", "kinh doanh", "kinh_doanh", "kính-doanh", "",
+            "kinh-doanh\n"})
     void insertCategory_invalidSlug_rejected(String slug) {
         assertCheckViolated("ck_categories_slug", () -> insertCategory("Danh mục " + SchemaFixtures.next(), slug));
     }
@@ -126,7 +127,7 @@ class AuthoringSchemaIT {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"Java-co-ban", "java--co-ban", "java co ban", "java-cơ-bản", "-java"})
+    @ValueSource(strings = {"Java-co-ban", "java--co-ban", "java co ban", "java-cơ-bản", "-java", "java-co-ban\n"})
     void insertCourse_invalidSlug_rejected(String slug) {
         long instructor = fx.user();
         assertCheckViolated("ck_courses_slug", () -> insertCourse(instructor, slug, 0L));
