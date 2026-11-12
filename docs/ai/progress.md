@@ -17,7 +17,7 @@ Constraint-by-constraint status: [schema-checklist.md](schema-checklist.md).
 | P02-2 db/seed/V1000__dev_seed.sql | done | 62c4041 | 20 users, 14 courses, 14 orders, 15 payments, 19 enrollments, 2 certificates; every row passes all CHECK/UNIQUE/FK/triggers; 497 tests green, suite 2 min 32 s; app started with profile dev, Flyway at v1000 |
 | P02-3 SeedCoverageIT (@MySqlSeedTest) + app starts with profile dev | done | 62c4041 | 25 tests (read-only, edumy_seed); 497 tests green, suite 2 min 32 s; app started with profile dev, Flyway at v1000 |
 | P03-identity entities + repositories | done | fc7cea1 | 586 tests green (+89: 72 entity unit, 17 IdentityRepositoryIT), suite 1 min 48 s; ddl-auto=validate OK on test DB and dev DB (v1000), no Hibernate setting needed (ADR-001) |
-| P03-authoring entities + repositories | todo | | |
+| P03-authoring entities + repositories | done | a11566b | 744 tests green (+158: 146 entity unit, 12 AuthoringRepositoryIT), suite 1 min 50 s; ddl-auto=validate OK on test DB and dev DB (v1000), no Hibernate setting needed (ADR-001); equality helper moved to shared.jpa.JpaEntities |
 | P03-commerce entities + repositories | todo | | |
 | P03-learning entities + repositories | todo | | |
 | P04-plan (HARD STOP: approval) | todo | | |
