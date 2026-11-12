@@ -19,7 +19,7 @@ Constraint-by-constraint status: [schema-checklist.md](schema-checklist.md).
 | P03-identity entities + repositories | done | fc7cea1 | 586 tests green (+89: 72 entity unit, 17 IdentityRepositoryIT), suite 1 min 48 s; ddl-auto=validate OK on test DB and dev DB (v1000), no Hibernate setting needed (ADR-001) |
 | P03-authoring entities + repositories | done | a11566b | 744 tests green (+158: 146 entity unit, 12 AuthoringRepositoryIT), suite 1 min 50 s; ddl-auto=validate OK on test DB and dev DB (v1000), no Hibernate setting needed (ADR-001); equality helper moved to shared.jpa.JpaEntities |
 | P03-commerce entities + repositories | done | df96e32 | 846 tests green (+102: 88 entity unit, 14 CommerceRepositoryIT), suite 1 min 51 s; ddl-auto=validate OK on test DB and dev DB (v1000), no Hibernate setting needed (ADR-001); generated pending_* columns unmapped — flush the cancel/close before inserting the next pending row |
-| P03-learning entities + repositories | todo | | |
+| P03-learning entities + repositories | done | 6c4ea20 | 975 tests green (+129: 116 entity unit, 13 LearningRepositoryIT), suite 3 min 26 s; ddl-auto=validate OK on test DB and dev DB (v1000), no Hibernate setting needed (ADR-001); T2 uses INSERT IGNORE (insertPurchaseIfAbsent) for BR-17 — IGNORE also hides FK/CHECK errors |
 | P04-plan (HARD STOP: approval) | todo | | |
 | P04-a JWT, SecurityConfig, TraceIdFilter | todo | | |
 | P04-b SessionService + /auth/login, refresh, logout | todo | | |
