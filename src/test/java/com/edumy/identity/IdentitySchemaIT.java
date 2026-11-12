@@ -8,22 +8,18 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
-import com.edumy.support.TestcontainersConfiguration;
+import com.edumy.support.MySqlJdbcTest;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
-import org.springframework.boot.jdbc.test.autoconfigure.JdbcTest;
-import org.springframework.context.annotation.Import;
 import org.springframework.core.NestedExceptionUtils;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
 import org.springframework.jdbc.support.KeyHolder;
-import org.springframework.test.context.ActiveProfiles;
 
 /**
  * V1__identity.sql on real MySQL 8.4: every CHECK / UNIQUE / FK of users, roles, user_roles, user_tokens
@@ -31,10 +27,7 @@ import org.springframework.test.context.ActiveProfiles;
  * constraint name, because the error translator maps names to API error codes (docs/ai/03).
  * Each test runs in a rolled-back transaction (@JdbcTest).
  */
-@JdbcTest
-@AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@ActiveProfiles("test")
-@Import(TestcontainersConfiguration.class)
+@MySqlJdbcTest
 class IdentitySchemaIT {
 
     private static final AtomicLong SEQ = new AtomicLong();

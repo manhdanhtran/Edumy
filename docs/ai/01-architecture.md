@@ -40,7 +40,7 @@ edumy-backend/
     │   └── static/sample/                                  # STUB-P1 sample files (certificate PDF)
     └── test/java/com/edumy/
         ├── ModularityTest.java
-        ├── support/        # Testcontainers config, test users, JWT helper
+        ├── support/        # SharedMySql (one container/JVM), @MySql*Test annotations, test users, JWT helper
         └── <module>/       # mirrors main: controller/, service/, repository/, entity/ …
 ```
 

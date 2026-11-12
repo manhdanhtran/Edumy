@@ -12,9 +12,34 @@
 Rules
 - Testcontainers is mandatory for anything touching SQL: H2 cannot run MySQL triggers, generated columns or
   `REGEXP_LIKE` with match types, so H2 tests give false confidence. Do not add H2.
-- Reuse one container per JVM (`@ImportTestcontainers` / static container + reuse) to keep the suite fast.
+- One container per JVM: `support/SharedMySql` (singleton, see "How to write a MySQL IT"). Never declare another `MySQLContainer`.
 - Test names: `methodOrScenario_condition_expected` and mention the rule: `addToCart_ownedCourse_rejected_BR10`.
 - Time-dependent rules (QR 15 min, token 24 h/30 min, order 24 h) use an injected `java.time.Clock` bean; tests use a
   fixed/mutable clock. Never call `Instant.now()` directly in entity/ or service/ code.
 - `*IT` classes run via surefire in `./mvnw test` (decision in V1); if the suite gets too slow they move to failsafe/`verify`.
 - Never delete or `@Disabled` a failing test to finish a task; report it.
+
+## How to write a MySQL IT
+One `mysql:8.4` container is started per `./mvnw test` run (`support/SharedMySql`, removed by Ryuk at JVM exit) and shared
+by every cached Spring context. It holds two databases: `edumy` (Flyway `db/migration`) and `edumy_seed`
+(`db/migration` + `db/seed`). Put one annotation on the test class, nothing else (no `@Import`, no profile, no container):
+
+| Annotation | Context | Database | Use for |
+|---|---|---|---|
+| `@MySqlJdbcTest` | `@JdbcTest`: DataSource, Flyway, `JdbcClient`; each test rolled back | `edumy` | pure schema / SQL tests (`*SchemaIT`: constraints, triggers, generated columns) |
+| `@MySqlSpringBootTest` | whole application | `edumy` | tests that need the app (services, security, controllers on real MySQL) |
+| `@MySqlSeedTest` | `@JdbcTest` + `db/seed` | `edumy_seed` | tests that read the dev seed (e.g. `SeedCoverageIT`) |
+
+Rules
+- **Leave no committed data in the shared database.** Roll back (`@MySqlJdbcTest` does it per test; add `@Transactional`
+  to `@MySqlSpringBootTest` tests that write), or clean up in `@AfterEach`, or use values unique per test (email/slug
+  containing a UUID). Leftover rows break other ITs in the same JVM.
+- **Seed data only through `@MySqlSeedTest`** (database `edumy_seed`). Never use the default database for tests that need
+  the seed: Flyway would record V1000 there and every context without `db/seed` would fail validation
+  ("applied migration not resolved locally"), turning the whole suite red.
+- Choose `@MySqlJdbcTest` for schema/SQL tests, `@MySqlSpringBootTest` only when the app is needed.
+- Tests with the same annotation (and no extra `@MockitoBean`, `@TestPropertySource`, `@DirtiesContext`…) reuse one cached
+  context. Two contexts always exist when both kinds are used (`@SpringBootTest` and `@JdbcTest` cannot share one) plus one
+  for `@MySqlSeedTest`; they differ only in start-up cost, the container is shared. `ModularityTest` needs no context.
+- Surefire runs one fork. If forks are ever parallelised, each fork starts its own container.
+- Proof of the setup: `support/SharedMySqlContainerIT`, `support/SeedDatabaseIT` (same container, separate databases).
