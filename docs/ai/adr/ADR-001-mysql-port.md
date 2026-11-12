@@ -30,6 +30,14 @@ Hibernate validate settings that turned out necessary (module by module, P03):
   needs an explicit `flush()` in between, or the unique key fires. `qr_data` / `handled_note` are
   `@Column(columnDefinition = "TEXT")`. The entity name `Order` is accepted by HQL (`from Order o`); enum literals in
   JPQL (`OrderStatus.PENDING`) are rendered through the converter (`status='pending'`).
+- **learning** — none. Validate passes on the test DB and the dev DB (v1000) with the defaults: `course_reviews.rating`
+  `SMALLINT` ↔ `Short`, `is_completed` / `is_resolved` `BOOLEAN` ↔ `boolean`. BR-17 in T2 uses a native
+  `INSERT IGNORE` (`EnrollmentRepository.insertPurchaseIfAbsent`, returns 0 for a duplicate) instead of catching
+  uq_enrollments_student_course: an exception through the repository proxy would mark the payment transaction
+  rollback-only. Pitfall: `IGNORE` also downgrades FK (1452) and CHECK (3819) errors to warnings, so only valid
+  student / course / order ids may be passed. An `Instant` bound as a native-query parameter is stored as UTC (verified
+  in `LearningRepositoryIT`). The BR-24 trigger fires on an entity INSERT (root cause `SQLException` 1644, message
+  `BR-24: …`). HQL scalar subqueries with `order by … limit 1` (last accessed lesson, D-34) work on MySQL 8.4.
 
 ## Known limitations and decisions after V1–V6
 Recorded after the P01 review (2026-11-12). Migrations V1–V6 are frozen at tag `schema-v1`.
