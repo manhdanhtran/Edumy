@@ -24,5 +24,11 @@ Scope:
 7. Tests: login ok/wrong/locked/blocked-6th-attempt; refresh rotation + reuse detection; change password ends other
    sessions only; lock ends all sessions immediately (request with old access token → 401); access bean unit tests.
 
+8. TraceIdFilter (shared/web): a servlet filter that puts a `traceId` into the MDC (keep a valid incoming `X-Trace-Id`,
+   otherwise generate one) and sets the response header `X-Trace-Id`; always clears the MDC in `finally`. It must run before
+   Spring Security so 401/403 responses carry it too. `GlobalExceptionHandler` then reads `traceId` from the MDC instead of
+   generating its own UUID (remove the fallback generation); add a log pattern with `%X{traceId}`. Test: error response body
+   `traceId` equals the `X-Trace-Id` header.
+
 Output a plan first (classes, endpoints, tests). Wait for approval. Never log tokens or passwords.
 ```

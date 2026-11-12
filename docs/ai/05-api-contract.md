@@ -63,6 +63,17 @@
   `EMAIL_NOT_VERIFIED`, `COURSE_NOT_EDITABLE`, `COURSE_SUBMIT_CHECKLIST_FAILED`, `CART_COURSE_ALREADY_OWNED`,
   `CART_OWN_COURSE`, `ENROLLMENT_REQUIRED`, `REVIEW_HIDDEN_BY_ADMIN`, `QA_REPLY_NOT_ALLOWED`, `ADMIN_LAST_ACTIVE`.
   Messages (Vietnamese) live in `messages.properties` / `messages_vi.properties`, keyed by code.
+- Other framework 4xx (405, 415, 406…) keep their original status and share the code `MALFORMED_REQUEST` (decision).
+
+### Validation messages (decision — implement in P05/P06, not in P00)
+Bean Validation texts are separate from the error-code texts above (they come from Hibernate Validator, not Spring's `MessageSource`):
+- File: `src/main/resources/ValidationMessages.properties` — **no `_vi` suffix** (it is the default bundle, so it applies
+  whatever the request locale is), saved as UTF-8.
+- Override the default keys `jakarta.validation.constraints.*.message` (`NotBlank`, `NotNull`, `Size`, `Min`, `Max`,
+  `Email`, `Pattern`…) with Vietnamese text, so DTOs need no per-field message in the common case.
+- Put an explicit `message` on an annotation **only** when the text is specific (e.g. `@Size(max = 100, message = "Họ tên tối đa 100 ký tự")`,
+  price rule BR-07). Prefer a key in `ValidationMessages.properties` (`message = "{course.price.invalid}"`) over inline text.
+- These texts become the `message` of each entry in the ProblemDetail `errors` array (`VALIDATION_FAILED`).
 
 ## 5.3 Caching (Spring Cache + Caffeine)
 | Cache | Key | TTL | Evicted by |
