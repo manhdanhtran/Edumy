@@ -1,0 +1,8 @@
+---
+description: Edumy core rules (always on)
+alwaysApply: true
+---
+Follow AGENTS.md at the repo root. Read the matching docs/ai/*.md before coding.
+Sources of truth: ADRs > EDU-DDD-001 v1.0 > EDU-SRS-001 v3.0. The Chen ERD PDF is outdated — never use it.
+Folder structure inside modules is fixed by docs/ai/01-architecture.md (ADR-007): api, controller, dto/request, dto/response, service, mapper, entity, repository (+ optional security, listener, integration, scheduler, config). Look up §1.6 before creating any class.
+If sources conflict or a rule is missing: stop and ask. Finish every task with: files changed, UC/BR covered, tests run + result, open questions.
