@@ -35,6 +35,8 @@ forced everywhere:
 CONSTRAINT ck_users_email_normalized CHECK (CAST(email AS BINARY) = CAST(LOWER(TRIM(email)) AS BINARY))
 ```
 and regex checks with the `'c'` match type. The application still normalizes email before saving.
+Regex CHECKs end with `\z`, not `$`: ICU `$` also matches before a final line terminator, so a value ending in a newline would pass.
+`users.email` is declared `COLLATE utf8mb4_bin` so UNIQUE/lookups are accent- and case-exact (ADR-001, decisions after V1–V6).
 
 **Enum-like CHECK:** the same trap lets `status = 'Active'` (or `'actívé'`) pass `status IN ('active','locked')`,
 which PostgreSQL would reject. Every CHECK that lists allowed values is written with a binary comparison, in every
@@ -57,6 +59,7 @@ Known cases:
 | Object | Source | Note |
 |---|---|---|
 | `ck_roles_code` CHECK (`student`,`instructor`,`admin`) | DDD §7 | §5.2 lists no CHECK for `roles.code` (V1) |
+| `certificates.certificate_code VARCHAR(19)` | DDD §5.20 | The format `EDU-XXXX-XXXX-XXXX` has 18 characters; minor DDD error, **kept as 19** (ADR-001) |
 
 Also missing from the DDD file: §10 (queries), §11 (transactions T1–T7), Appendix A (DDL) and Appendix B (test
 cases), although §2.4/§6/§8 refer to them. Ask before relying on any of them.

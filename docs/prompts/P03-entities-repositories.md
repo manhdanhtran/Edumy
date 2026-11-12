@@ -8,6 +8,7 @@ Read docs/ai/03-data-model-mysql.md (§3.6, §3.8) and docs/ai/01 §1.3, §1.5, 
 - Folders: entities + enums in com.edumy.{{MODULE}}.entity, repositories in com.edumy.{{MODULE}}.repository,
   class names exactly as listed in docs/ai/01 §1.5. Entities map exactly the columns in db/migration (source of truth for names);
   do not map generated columns.
+- authoring: map `courses.main_instructor_id` with `@Column(updatable = false)` (the BR-02 trigger does not guard UPDATE of this column; ADR-001).
 - Status/type columns → enums implementing CodeEnum with the lowercase DB code + autoApply converters.
 - Relations inside this module: @ManyToOne(fetch = LAZY) owning side only; add @OneToMany only if a use case in
   docs/ai/05-api-contract.md needs it. References to other modules: Long ids.
