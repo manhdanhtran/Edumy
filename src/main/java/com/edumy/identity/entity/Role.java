@@ -2,6 +2,7 @@ package com.edumy.identity.entity;
 
 import java.time.Instant;
 
+import com.edumy.shared.jpa.JpaEntities;
 import com.edumy.shared.security.RoleCode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -42,7 +43,7 @@ public class Role {
         if (this == o) {
             return true;
         }
-        if (o == null || User.effectiveClass(this) != User.effectiveClass(o)) {
+        if (o == null || JpaEntities.effectiveClass(this) != JpaEntities.effectiveClass(o)) {
             return false;
         }
         Long id = getId();
@@ -51,7 +52,7 @@ public class Role {
 
     @Override
     public final int hashCode() {
-        return User.effectiveClass(this).hashCode();
+        return JpaEntities.effectiveClass(this).hashCode();
     }
 
     @Override

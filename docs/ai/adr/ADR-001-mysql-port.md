@@ -17,6 +17,11 @@ Hibernate validate settings that turned out necessary (module by module, P03):
   `@JdbcTypeCode(SqlTypes.CHAR)` + `length`. Entity `Instant`s are stored as the UTC wall time (verified in
   `IdentityRepositoryIT`). Pitfall: a *native* query that selects a raw `DATETIME` column as a scalar returns a
   `LocalDateTime` shifted to the JVM zone; select `DATE_FORMAT(...)` or map through an entity/`Instant` instead.
+- **authoring** — none. Validate passes on the test DB and the dev DB (v1000) with the defaults. `TEXT` columns
+  (`courses.description`, `courses.review_note`, `lessons.article_content`) are mapped `@Column(columnDefinition =
+  "TEXT")` (docs/ai/03 §3.8, no `@Lob`); `courses.main_instructor_id` is `updatable = false` (verified in
+  `AuthoringRepositoryIT`). `@Lock(PESSIMISTIC_WRITE)` on a scalar JPQL query (`select ch.id … order by …`) renders
+  `… FOR UPDATE OF <alias>`, which MySQL 8.4 accepts (two-phase reorder, docs/ai/03 §3.4).
 
 ## Known limitations and decisions after V1–V6
 Recorded after the P01 review (2026-11-12). Migrations V1–V6 are frozen at tag `schema-v1`.

@@ -8,6 +8,7 @@ import java.util.Objects;
 import com.edumy.shared.error.BusinessException;
 import com.edumy.shared.error.ErrorCode;
 import com.edumy.shared.error.FieldViolation;
+import com.edumy.shared.jpa.JpaEntities;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -17,7 +18,6 @@ import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.proxy.HibernateProxy;
 
 /**
  * {@code users} (EDU-DDD-001 §5.1). State machine: active ⇄ locked (docs/ai/02 §2.2); email verification is the
@@ -141,7 +141,7 @@ public class User {
         if (this == o) {
             return true;
         }
-        if (o == null || effectiveClass(this) != effectiveClass(o)) {
+        if (o == null || JpaEntities.effectiveClass(this) != JpaEntities.effectiveClass(o)) {
             return false;
         }
         Long id = getId();
@@ -150,17 +150,11 @@ public class User {
 
     @Override
     public final int hashCode() {
-        return effectiveClass(this).hashCode();
+        return JpaEntities.effectiveClass(this).hashCode();
     }
 
     @Override
     public String toString() {
         return "User[id=" + getId() + ", status=" + status + "]";
-    }
-
-    static Class<?> effectiveClass(Object o) {
-        return o instanceof HibernateProxy proxy
-                ? proxy.getHibernateLazyInitializer().getPersistentClass()
-                : o.getClass();
     }
 }
