@@ -251,3 +251,60 @@ Notes
   student/course first or prefer catching the `uq_enrollments_student_course` violation.
 - A metadata test lists every index of the six tables: MySQL created no implicit FK index, so each FK reuses the index
   named in the migration comments.
+
+## V5__triggers.sql (4 DDD business triggers → 7 MySQL triggers)
+
+| DDD constraint/index (source §) | MySQL implementation | line | status |
+|---|---|---|---|
+| trg_cci_not_main_instructor BEFORE INSERT (§5.7, §8 #6 BR-02) | `trg_cci_not_main_instructor_bi`: `NEW.instructor_id = (SELECT main_instructor_id FROM courses WHERE id = NEW.course_id)` → `SIGNAL '45000' 'BR-02: …'` | 23 | OK |
+| trg_cci_not_main_instructor BEFORE UPDATE (§5.7, §8 #6 BR-02) | `trg_cci_not_main_instructor_bu`, same body (instructor_id or course_id changed) | 32 | OK |
+| trg_courses_prevent_delete_published (§5.6, §8 #10 BR-19) | `trg_courses_prevent_delete_published_bd`: `OLD.published_at IS NOT NULL` → `'BR-19: …'` (any status: published_at = "ever published") | 42 | OK |
+| trg_lesson_progresses_lesson_course BEFORE INSERT (§5.16, §8 #24 BR-24) | `trg_lesson_progresses_lesson_course_bi`: course of lesson (lessons JOIN chapters) `<>` course of enrollment → `'BR-24: …'` | 51 | OK |
+| trg_lesson_progresses_lesson_course BEFORE UPDATE (§5.16, §8 #24 BR-24) | `trg_lesson_progresses_lesson_course_bu`, same body | 61 | OK |
+| trg_course_questions_lesson_course BEFORE INSERT (§5.18, §8 #27 BR-37) | `trg_course_questions_lesson_course_bi`, only when `NEW.lesson_id IS NOT NULL` → `'BR-37: …'` | 72 | OK |
+| trg_course_questions_lesson_course BEFORE UPDATE (§5.18, §8 #27 BR-37) | `trg_course_questions_lesson_course_bu`, same body | 83 | OK |
+| 13 updated_at triggers (DDD header "17 trigger" = 13 updated_at + 4 business; §5 "Mọi bảng có trigger cập nhật updated_at") | `ON UPDATE CURRENT_TIMESTAMP(6)` on the 13 DDD `updated_at` columns (V1: 2, V2: 5, V3: 3, V4: 3); no trigger objects | V1–V4 | OK |
+
+Notes
+- Every MESSAGE_TEXT starts with the BR code + `:` (error 1644, SQLState 45000); tested with `assertSignals` in
+  `com.edumy.schema.TriggerSchemaIT` (violation, valid case, and for `_bu` an UPDATE introducing / not introducing the
+  violation).
+- Missing parent row: the lookup subquery is NULL, so the comparison is NULL and the trigger does not signal; the FK
+  reports the error instead (tested: unknown course → `fk_course_co_instructors_course_id`, unknown lesson / enrollment →
+  `fk_lesson_progresses_*`, unknown lesson → `fk_course_questions_lesson_id`).
+- MySQL does not fire triggers for rows changed by FK cascades (docs/ai/03 §3.5). Cascades only delete children
+  (course_co_instructors, chapters, lessons, lesson_progresses) or set `course_questions.lesson_id` to NULL, which can
+  never break BR-02/24/37 (tested: deleting a draft course, a chapter or a lesson cascades without any SIGNAL).
+- BR-24 / BR-37 are checked on the child row only: `UPDATE lessons SET chapter_id = <chapter of another course>` or
+  changing `enrollments.course_id` is not re-checked — same as the DDD's PL/pgSQL triggers, which are only on these
+  tables. Application guard: enrollments are immutable; lessons only move within their course.
+- Error 1419 ("You do not have the SUPER privilege and binary logging is enabled"): MySQL 8.4 enables binary logging, and
+  the non-root application / Testcontainers user cannot create triggers without `--log-bin-trust-function-creators=1`.
+  The option is set in `compose.yaml` and `support/SharedMySql`; production MySQL needs the same server option (or a
+  migration user with SUPER / SET_ANY_DEFINER). Migration semantics unchanged.
+- Flyway's MySQL parser handles the `BEGIN … END` bodies without `DELIMITER`.
+
+## V6__reference_data.sql (roles)
+
+| DDD constraint/index (source §) | MySQL implementation | line | status |
+|---|---|---|---|
+| roles loaded as initial data (§5.2 "nạp bằng dữ liệu khởi tạo") | `INSERT INTO roles (code, name)` in db/migration (every environment); ids from AUTO_INCREMENT (explicit ids are a db/seed rule, docs/ai/03 §3.7) | 9 | OK |
+| roles.code values student · instructor · admin (§7) | `('student','Học viên')`, `('instructor','Giảng viên')`, `('admin','Quản trị viên')` — names = §7 meanings; codes allowed by `ck_roles_code` (V1, DERIVED) | 10–12 | OK |
+
+Notes
+- File is UTF-8; `FlywayMigrationIT` asserts the three Vietnamese names and that `'Học viên'` is stored as 8 characters /
+  11 bytes (no double encoding).
+- Code looks roles up by `code` (`uq_roles_code`), never by id. `IdentitySchemaIT.roleId(code)` finds the V6 rows; its
+  duplicate-code test still fails on `uq_roles_code` as before.
+
+## Totals across V1–V6
+
+- Tables: 21 = 20 DDD tables + `refresh_tokens` (ADR-002).
+- FKs: DDD §6 lists 34 FKs on its 20 tables: 27 RESTRICT (§8 #30), 6 CASCADE (#4, 8, 11, 12, 14, 25), 1 SET NULL (#29)
+  — all present with these delete rules. `refresh_tokens` adds `fk_refresh_tokens_user_id` CASCADE (ADR-002, not in the
+  DDD), so the schema holds 35 FKs (27 RESTRICT, 7 CASCADE, 1 SET NULL). Asserted by `FlywayMigrationIT`.
+- Triggers: DDD "17 trigger" = 13 `updated_at` triggers (→ `ON UPDATE CURRENT_TIMESTAMP(6)`, no trigger object) + 4
+  business triggers (→ 7 MySQL triggers, one per event). `information_schema.TRIGGERS` holds exactly 7.
+- Generated columns: 2 STORED (`orders.pending_student_id` / `uq_orders_one_pending`,
+  `payment_transactions.pending_order_id` / `uq_payment_one_pending`).
+- Reference data: 3 roles. Flyway history: versions 1–6, all successful.

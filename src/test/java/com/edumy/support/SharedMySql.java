@@ -8,7 +8,8 @@ import org.testcontainers.utility.DockerImageName;
 /**
  * The ONE MySQL 8.4 container of a test JVM (docs/ai/07). Started the first time this class is touched and left running
  * until the JVM exits (Ryuk removes it); never stopped by a Spring context, so every cached context shares it.
- * Same server settings as compose.yaml: UTC session time zone, utf8mb4 / utf8mb4_0900_ai_ci (docs/ai/03 §3.1).
+ * Same server settings as compose.yaml: UTC session time zone, utf8mb4 / utf8mb4_0900_ai_ci (docs/ai/03 §3.1),
+ * log-bin-trust-function-creators (non-SUPER user may create the V5 triggers).
  *
  * <p>Two databases live in it: {@code edumy} (migrations only) and {@link #SEED_DATABASE} (migrations + dev seed).
  * Use the annotations {@link MySqlSpringBootTest}, {@link MySqlJdbcTest}, {@link MySqlSeedTest}, not this class.
@@ -38,10 +39,13 @@ public final class SharedMySql {
                 .withDatabaseName("edumy")
                 .withUrlParam("connectionTimeZone", "UTC")
                 .withUrlParam("forceConnectionTimeZoneToSession", "true")
+                // log-bin-trust-function-creators: binary logging is on by default in MySQL 8.4, and without this a
+                // non-SUPER user (the Testcontainers user) cannot CREATE TRIGGER (error 1419, V5__triggers.sql).
                 .withCommand(
                         "--default-time-zone=+00:00",
                         "--character-set-server=utf8mb4",
-                        "--collation-server=utf8mb4_0900_ai_ci");
+                        "--collation-server=utf8mb4_0900_ai_ci",
+                        "--log-bin-trust-function-creators=1");
         container.start();
         createSeedDatabase(container);
         return container;
