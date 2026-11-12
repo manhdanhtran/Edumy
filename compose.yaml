@@ -1,10 +1,33 @@
+# Local development services. Copy .env.example to .env first (docker compose reads it automatically).
+# Spring Boot's Docker Compose support also starts this file on `./mvnw spring-boot:run`.
 services:
   mysql:
-    image: 'mysql:latest'
+    image: 'mysql:8.4'
     environment:
-      - 'MYSQL_DATABASE=mydatabase'
-      - 'MYSQL_PASSWORD=secret'
-      - 'MYSQL_ROOT_PASSWORD=verysecret'
-      - 'MYSQL_USER=myuser'
+      MYSQL_DATABASE: edumy
+      MYSQL_USER: edumy
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD in .env}
+    command:
+      - --default-time-zone=+00:00
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
     ports:
-      - '3306'
+      - '3306:3306'
+    labels:
+      # Spring Boot replaces the datasource URL with the compose service connection; keep UTC params (docs/ai/03 §3.1).
+      org.springframework.boot.jdbc.parameters: 'connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true'
+    volumes:
+      - mysql-data:/var/lib/mysql
+
+  mailpit:
+    image: 'axllent/mailpit'
+    ports:
+      - '1025:1025'   # SMTP
+      - '8025:8025'   # Web UI
+    labels:
+      # No Spring Boot service connection exists for Mailpit; application-dev.yml points spring.mail at it.
+      org.springframework.boot.ignore: 'true'
+
+volumes:
+  mysql-data:

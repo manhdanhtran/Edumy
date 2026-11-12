@@ -1,0 +1,9 @@
+# Datasource comes from Testcontainers @ServiceConnection (test/support/TestcontainersConfiguration).
+spring:
+  flyway:
+    locations: classpath:db/migration   # no dev seed in tests
+
+edumy:
+  security:
+    jwt:
+      secret: bSLDLXBtujvgr0zpYoZNZGbn9pMzRaa4W358RrPR83M=   # TEST ONLY

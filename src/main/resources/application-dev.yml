@@ -1,0 +1,27 @@
+spring:
+  flyway:
+    locations: classpath:db/migration,classpath:db/seed   # dev seed V1000+ (docs/ai/06)
+  mail:
+    host: localhost
+    port: 1025   # Mailpit from compose.yaml, UI http://localhost:8025
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,modulith
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+
+edumy:
+  security:
+    jwt:
+      secret: ghGCINn4MQ2kYBkk2E087RkPFGI989/2RI5DNzMDxt4=   # DEV ONLY — never reuse outside local development
+  cors:
+    allowed-origins:
+      - http://localhost:5173
+      - http://localhost:3000
