@@ -27,8 +27,11 @@ import org.springframework.stereotype.Component;
  *   <li>3819 CHECK: key = name in {@code Check constraint 'ck_…' is violated.}</li>
  *   <li>1644 or SQLState 45000 trigger SIGNAL: key = BR code at the start of the message ({@code BR-02: …})</li>
  * </ul>
- * A known key maps to its {@code ErrorCode}; an unknown or unparseable key maps to {@code DATA_CONFLICT} and the full
- * cause is logged at WARN. Anything that is not one of these violations yields {@link Optional#empty()}.
+ * A known key maps to its {@code ErrorCode}. Otherwise the default of the violation kind applies (docs/ai/05 §5.2):
+ * UNIQUE and FK 1451 → {@code DATA_CONFLICT} (409, WARN); FK 1452 (missing parent) → {@code RESOURCE_NOT_FOUND} (404,
+ * WARN); CHECK and trigger → {@code INTERNAL_ERROR} (500, ERROR: the application should have prevented it). The
+ * constraint name is only logged, never put in the response. Anything that is not one of these violations yields
+ * {@link Optional#empty()}.
  */
 @Component
 public class ConstraintViolationTranslator {
@@ -45,10 +48,27 @@ public class ConstraintViolationTranslator {
     }
 
     /**
-     * Constraint name / BR code → ErrorCode of the production bean. Empty for now: entries are added when the owning
-     * module defines its ErrorCode (P03/P06), see docs/ai/05 §5.2 (e.g. "uq_cart_items_cart_course" → a cart error).
+     * Constraint name / BR code → ErrorCode of the production bean (docs/ai/05 §5.2).
+     *
+     * <p>When one row breaks two overlapping CHECKs, MySQL reports only one of them (the DDD expression of the second
+     * only holds for valid values: an unknown {@code lessons.content_type} breaks {@code ck_lessons_type} and
+     * {@code ck_lessons_content_match}, etc.), so BOTH names of each pair are mapped, to the same code. They stay
+     * {@code INTERNAL_ERROR}: such a value means the application skipped validation. Listing them makes a future change
+     * of one name impossible without the other (see ConstraintViolationTranslatorTest).
      */
-    private static final Map<String, ErrorCode> KNOWN_KEYS = Map.of();
+    private static final Map<String, ErrorCode> KNOWN_KEYS = Map.ofEntries(
+            Map.entry("BR-02", ErrorCode.COURSE_CO_INSTRUCTOR_IS_MAIN),
+            Map.entry("BR-19", ErrorCode.COURSE_DELETE_FORBIDDEN),
+            Map.entry("BR-24", ErrorCode.LESSON_COURSE_MISMATCH),
+            Map.entry("BR-37", ErrorCode.LESSON_COURSE_MISMATCH),
+            Map.entry("uq_cart_items_cart_course", ErrorCode.CART_ITEM_DUPLICATE),
+            // overlapping CHECK pairs (see above)
+            Map.entry("ck_lessons_type", ErrorCode.INTERNAL_ERROR),
+            Map.entry("ck_lessons_content_match", ErrorCode.INTERNAL_ERROR),
+            Map.entry("ck_orders_status", ErrorCode.INTERNAL_ERROR),
+            Map.entry("ck_orders_state", ErrorCode.INTERNAL_ERROR),
+            Map.entry("ck_enrollments_source", ErrorCode.INTERNAL_ERROR),
+            Map.entry("ck_enrollments_source_order", ErrorCode.INTERNAL_ERROR));
 
     private static final int UNIQUE = 1062;
     private static final int FK_PARENT_ROW_REFERENCED = 1451;
@@ -86,11 +106,32 @@ public class ConstraintViolationTranslator {
         }
         String key = parseKey(kind, root.getMessage());
         ErrorCode known = key == null ? null : knownKeys.get(key);
-        if (known == null) {
-            log.warn("Unmapped {} violation: vendorCode={}, key={}, message={}",
+        ErrorCode code = known != null ? known : defaultCode(vendor, kind);
+        logOutcome(kind, vendor, key, known != null, code, root, ex);
+        return Optional.of(new TranslatedViolation(kind, vendor, key, code));
+    }
+
+    /** Default per kind when the key is not mapped (docs/ai/05 §5.2). */
+    private static ErrorCode defaultCode(int vendor, Kind kind) {
+        return switch (kind) {
+            case UNIQUE -> ErrorCode.DATA_CONFLICT;
+            case FOREIGN_KEY -> vendor == FK_PARENT_ROW_MISSING ? ErrorCode.RESOURCE_NOT_FOUND : ErrorCode.DATA_CONFLICT;
+            case CHECK, TRIGGER -> ErrorCode.INTERNAL_ERROR;
+        };
+    }
+
+    /**
+     * Unmapped UNIQUE / FK → WARN; anything ending in INTERNAL_ERROR (unmapped CHECK or trigger, or a key mapped to it)
+     * → ERROR, because the application should have prevented it. The full cause is the last argument.
+     */
+    private static void logOutcome(Kind kind, int vendor, String key, boolean mapped, ErrorCode code,
+            SQLException root, Throwable ex) {
+        if (code == ErrorCode.INTERNAL_ERROR) {
+            log.error("Database {} violation the application should have prevented: vendorCode={}, key={}, message={}",
                     kind, vendor, key, root.getMessage(), ex);
+        } else if (!mapped) {
+            log.warn("Unmapped {} violation: vendorCode={}, key={}, message={}", kind, vendor, key, root.getMessage(), ex);
         }
-        return Optional.of(new TranslatedViolation(kind, vendor, key, known != null ? known : ErrorCode.DATA_CONFLICT));
     }
 
     private static Kind kindOf(int vendor, String sqlState) {

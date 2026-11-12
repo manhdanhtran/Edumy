@@ -47,16 +47,20 @@
 | `ENROLLMENT_REQUIRED` | 403 | |
 | `QA_REPLY_NOT_ALLOWED` | 403 | BR-38 |
 | `RESOURCE_NOT_FOUND` | 404 | "does not exist" **and** "not yours": identical body (NFR-01); only `traceId`/`instance` differ |
-| `DATA_CONFLICT` | 409 | untranslated unique/FK violation |
+| `DATA_CONFLICT` | 409 | unmapped UNIQUE violation (1062) or FK 1451 (parent still referenced); see the translator rules below |
 | `COURSE_NOT_EDITABLE` | 409 | BR-33 |
 | `CART_COURSE_ALREADY_OWNED` | 409 | BR-10 |
+| `CART_ITEM_DUPLICATE` | 409 | BR-11; `uq_cart_items_cart_course` |
+| `COURSE_DELETE_FORBIDDEN` | 409 | BR-19; trigger: the course was published once |
 | `REVIEW_HIDDEN_BY_ADMIN` | 409 | BR-35 |
 | `ADMIN_LAST_ACTIVE` | 409 | BR-36 |
 | `COURSE_SUBMIT_CHECKLIST_FAILED` | 422 | BR-07; `errors` lists every failed checklist item (`field` = item, `message` = Vietnamese reason) |
 | `CART_OWN_COURSE` | 422 | BR-32 |
+| `COURSE_CO_INSTRUCTOR_IS_MAIN` | 422 | BR-02; trigger: the invited instructor is the course's main instructor |
+| `LESSON_COURSE_MISMATCH` | 422 | BR-24 / BR-37; triggers: the lesson does not belong to the enrollment's course |
 | `AUTH_LOGIN_TEMPORARILY_BLOCKED` | 429 | |
 | `RATE_LIMITED` | 429 | |
-| `INTERNAL_ERROR` | 500 | generic Vietnamese detail, never the exception message |
+| `INTERNAL_ERROR` | 500 | generic Vietnamese detail, never the exception message; also unmapped CHECK / trigger violations |
 - `ConstraintViolationTranslator`: walks the cause chain down to the root `java.sql.SQLException` and decides by
   **vendor error code**, never by the Spring/Hibernate exception type (Spring JDBC 7.0 does not map CHECK error 3819 to
   `DataIntegrityViolationException`; JPA and `JdbcClient` wrap errors differently). It must work for both paths and
@@ -69,10 +73,35 @@
   | 3819 | CHECK (`Check constraint 'ck_…' is violated.`) | constraint name (`ck_users_status`) |
   | 1644 / SQLState `45000` | trigger `SIGNAL` | message starts with the BR code (`BR-02:` …) |
 
-  Known name/BR code → its `ErrorCode`; unknown → 409 `DATA_CONFLICT` (log full cause at WARN).
+  **Mapped keys** (production map in `ConstraintViolationTranslator`):
+
+  | Key | ErrorCode | HTTP |
+  |---|---|---|
+  | `BR-02` | `COURSE_CO_INSTRUCTOR_IS_MAIN` | 422 |
+  | `BR-19` | `COURSE_DELETE_FORBIDDEN` | 409 |
+  | `BR-24`, `BR-37` | `LESSON_COURSE_MISMATCH` | 422 |
+  | `uq_cart_items_cart_course` | `CART_ITEM_DUPLICATE` | 409 |
+  | `ck_lessons_type` + `ck_lessons_content_match`; `ck_orders_status` + `ck_orders_state`; `ck_enrollments_source` + `ck_enrollments_source_order` | `INTERNAL_ERROR` | 500 |
+
+  An unknown value in these columns breaks two overlapping CHECKs and MySQL reports only one of them, so **both names of
+  a pair are listed** and always give the same result.
+
+  **Defaults when the key is not mapped** (replaces the old rule "unknown → `DATA_CONFLICT`"):
+
+  | Violation | ErrorCode | HTTP | Log |
+  |---|---|---|---|
+  | 1062 UNIQUE | `DATA_CONFLICT` | 409 | WARN, full cause |
+  | 1451 FK, parent still referenced | `DATA_CONFLICT` | 409 | WARN |
+  | 1452 FK, missing parent | `RESOURCE_NOT_FOUND` | 404, body identical to every other 404 (NFR-01) | WARN |
+  | 3819 CHECK | `INTERNAL_ERROR` | 500 | ERROR, full cause |
+  | 1644 / SQLState `45000` trigger | `INTERNAL_ERROR` | 500 | ERROR, full cause |
+
+  A CHECK or trigger violation reaching the database means the application skipped a validation, so it is a server
+  error. The constraint name, BR code and MySQL message are only logged, **never** put in the response.
 - ErrorCode naming: `UPPER_SNAKE`, module-meaningful, e.g. `AUTH_INVALID_CREDENTIALS`, `AUTH_LOGIN_TEMPORARILY_BLOCKED`,
   `EMAIL_NOT_VERIFIED`, `COURSE_NOT_EDITABLE`, `COURSE_SUBMIT_CHECKLIST_FAILED`, `CART_COURSE_ALREADY_OWNED`,
-  `CART_OWN_COURSE`, `ENROLLMENT_REQUIRED`, `REVIEW_HIDDEN_BY_ADMIN`, `QA_REPLY_NOT_ALLOWED`, `ADMIN_LAST_ACTIVE`.
+  `CART_OWN_COURSE`, `CART_ITEM_DUPLICATE`, `COURSE_CO_INSTRUCTOR_IS_MAIN`, `COURSE_DELETE_FORBIDDEN`,
+  `LESSON_COURSE_MISMATCH`, `ENROLLMENT_REQUIRED`, `REVIEW_HIDDEN_BY_ADMIN`, `QA_REPLY_NOT_ALLOWED`, `ADMIN_LAST_ACTIVE`.
   Messages (Vietnamese) live in `messages.properties` / `messages_vi.properties`, keyed by code.
 - Other framework 4xx (405, 415, 406…) keep their original status and share the code `MALFORMED_REQUEST` (decision).
 

@@ -29,10 +29,14 @@ public enum ErrorCode {
     // authoring
     COURSE_NOT_EDITABLE(HttpStatus.CONFLICT),
     COURSE_SUBMIT_CHECKLIST_FAILED(HttpStatus.UNPROCESSABLE_CONTENT),
+    COURSE_CO_INSTRUCTOR_IS_MAIN(HttpStatus.UNPROCESSABLE_CONTENT),   // BR-02 (trigger)
+    COURSE_DELETE_FORBIDDEN(HttpStatus.CONFLICT),                     // BR-19 (trigger)
+    LESSON_COURSE_MISMATCH(HttpStatus.UNPROCESSABLE_CONTENT),         // BR-24, BR-37 (triggers)
 
     // commerce
     CART_COURSE_ALREADY_OWNED(HttpStatus.CONFLICT),
     CART_OWN_COURSE(HttpStatus.UNPROCESSABLE_CONTENT),
+    CART_ITEM_DUPLICATE(HttpStatus.CONFLICT),                         // uq_cart_items_cart_course (BR-11)
 
     // learning
     ENROLLMENT_REQUIRED(HttpStatus.FORBIDDEN),

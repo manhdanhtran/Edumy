@@ -3,6 +3,7 @@ package com.edumy.shared.error;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Map;
 
 import com.edumy.shared.error.ConstraintViolationTranslator.Kind;
@@ -15,7 +16,7 @@ import org.springframework.jdbc.UncategorizedSQLException;
 /** No database: synthetic SQLExceptions with the exact MySQL 8.4 message formats. */
 class ConstraintViolationTranslatorTest {
 
-    // Test-only mappings, to prove "known key -> its ErrorCode"; the production map is empty for now.
+    // Test-only mappings, to prove "known key -> its ErrorCode" independently of the production map.
     private final ConstraintViolationTranslator translator = new ConstraintViolationTranslator(Map.of(
             "uq_carts_student", ErrorCode.CART_COURSE_ALREADY_OWNED,
             "BR-19", ErrorCode.COURSE_NOT_EDITABLE,
@@ -61,7 +62,9 @@ class ConstraintViolationTranslatorTest {
             assertThat(v.kind()).isEqualTo(Kind.FOREIGN_KEY);
             assertThat(v.vendorCode()).isEqualTo(sql.getErrorCode());
             assertThat(v.key()).isEqualTo("fk_user_roles_user_id");
-            assertThat(v.code()).isEqualTo(ErrorCode.DATA_CONFLICT);
+            // default rule: 1451 (parent still referenced) -> 409, 1452 (missing parent) -> 404
+            assertThat(v.code()).isEqualTo(sql.getErrorCode() == 1452
+                    ? ErrorCode.RESOURCE_NOT_FOUND : ErrorCode.DATA_CONFLICT);
         }
     }
 
@@ -74,11 +77,11 @@ class ConstraintViolationTranslatorTest {
     }
 
     @Test
-    void check3819_unknownKey_dataConflict() {
+    void check3819_unknownKey_internalError() {
         SQLException sql = new SQLException("Check constraint 'ck_users_status' is violated.", "HY000", 3819);
         var v = translator.translate(wrap(sql, 2)).orElseThrow();
         assertThat(v.key()).isEqualTo("ck_users_status");
-        assertThat(v.code()).isEqualTo(ErrorCode.DATA_CONFLICT);
+        assertThat(v.code()).isEqualTo(ErrorCode.INTERNAL_ERROR);
     }
 
     @Test
@@ -89,11 +92,45 @@ class ConstraintViolationTranslatorTest {
     }
 
     @Test
-    void trigger1644_unknownBrCode_dataConflict() {
-        SQLException sql = new SQLException("BR-02: co-instructor must differ from main instructor", "45000", 1644);
+    void trigger1644_unknownBrCode_internalError() {
+        SQLException sql = new SQLException("BR-99: some future rule", "45000", 1644);
         var v = production.translate(sql).orElseThrow();
-        assertThat(v.key()).isEqualTo("BR-02");
-        assertThat(v.code()).isEqualTo(ErrorCode.DATA_CONFLICT);
+        assertThat(v.key()).isEqualTo("BR-99");
+        assertThat(v.code()).isEqualTo(ErrorCode.INTERNAL_ERROR);
+    }
+
+    /** The production map of docs/ai/05 §5.2: every entry, including BOTH names of each overlapping CHECK pair. */
+    @Test
+    void productionMap_everyEntry() {
+        Map<String, ErrorCode> expected = Map.ofEntries(
+                Map.entry("BR-02", ErrorCode.COURSE_CO_INSTRUCTOR_IS_MAIN),
+                Map.entry("BR-19", ErrorCode.COURSE_DELETE_FORBIDDEN),
+                Map.entry("BR-24", ErrorCode.LESSON_COURSE_MISMATCH),
+                Map.entry("BR-37", ErrorCode.LESSON_COURSE_MISMATCH));
+        expected.forEach((br, code) -> {
+            var v = production.translate(new SQLException(br + ": rule text", "45000", 1644)).orElseThrow();
+            assertThat(v).as(br).isEqualTo(new TranslatedViolation(Kind.TRIGGER, 1644, br, code));
+        });
+
+        var cart = production.translate(new SQLException(
+                "Duplicate entry '1-2' for key 'cart_items.uq_cart_items_cart_course'", "23000", 1062)).orElseThrow();
+        assertThat(cart).isEqualTo(new TranslatedViolation(Kind.UNIQUE, 1062, "uq_cart_items_cart_course",
+                ErrorCode.CART_ITEM_DUPLICATE));
+    }
+
+    /** MySQL reports only one of two overlapping CHECKs, so both names must give the same result. */
+    @Test
+    void productionMap_bothNamesOfOverlappingCheckPairs_mapTheSame() {
+        List<List<String>> pairs = List.of(
+                List.of("ck_lessons_type", "ck_lessons_content_match"),   // unknown lessons.content_type
+                List.of("ck_orders_status", "ck_orders_state"),           // unknown orders.status
+                List.of("ck_enrollments_source", "ck_enrollments_source_order")); // unknown enrollments.enroll_source
+        for (List<String> pair : pairs) {
+            var results = pair.stream().map(name -> production.translate(new SQLException(
+                    "Check constraint '" + name + "' is violated.", "HY000", 3819)).orElseThrow()).toList();
+            assertThat(results.get(0).code()).as(pair.toString()).isEqualTo(results.get(1).code())
+                    .isEqualTo(ErrorCode.INTERNAL_ERROR);
+        }
     }
 
     @Test
@@ -106,17 +143,19 @@ class ConstraintViolationTranslatorTest {
     }
 
     @Test
-    void unparseableMessage_keyIsNullAndDataConflict() {
-        for (SQLException sql : new SQLException[] {
-                new SQLException("Duplicate entry", "23000", 1062),
-                new SQLException("fk failed", "23000", 1451),
-                new SQLException("something else", "HY000", 3819),
-                new SQLException("no br code here", "45000", 1644),
-                new SQLException((String) null, "45000", 1644)}) {
+    void unparseableMessage_keyIsNullAndKindDefaultApplies() {
+        Map<SQLException, ErrorCode> cases = new java.util.LinkedHashMap<>();
+        cases.put(new SQLException("Duplicate entry", "23000", 1062), ErrorCode.DATA_CONFLICT);
+        cases.put(new SQLException("fk failed", "23000", 1451), ErrorCode.DATA_CONFLICT);
+        cases.put(new SQLException("fk failed", "23000", 1452), ErrorCode.RESOURCE_NOT_FOUND);
+        cases.put(new SQLException("something else", "HY000", 3819), ErrorCode.INTERNAL_ERROR);
+        cases.put(new SQLException("no br code here", "45000", 1644), ErrorCode.INTERNAL_ERROR);
+        cases.put(new SQLException((String) null, "45000", 1644), ErrorCode.INTERNAL_ERROR);
+        cases.forEach((sql, code) -> {
             var v = translator.translate(sql).orElseThrow();
             assertThat(v.key()).as(String.valueOf(sql.getMessage())).isNull();
-            assertThat(v.code()).isEqualTo(ErrorCode.DATA_CONFLICT);
-        }
+            assertThat(v.code()).as(String.valueOf(sql.getMessage())).isEqualTo(code);
+        });
     }
 
     @Test

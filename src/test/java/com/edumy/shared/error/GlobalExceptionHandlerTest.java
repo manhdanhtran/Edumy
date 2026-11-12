@@ -10,7 +10,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.sql.SQLException;
 import java.util.List;
-import java.util.Map;
 
 import jakarta.persistence.PersistenceException;
 import jakarta.validation.Valid;
@@ -39,9 +38,7 @@ class GlobalExceptionHandlerTest {
         messages.setDefaultEncoding("UTF-8");
         messages.setFallbackToSystemLocale(false);
         mvc = MockMvcBuilders.standaloneSetup(new ProbeController())
-                .setControllerAdvice(new GlobalExceptionHandler(messages, new ConstraintViolationTranslator(
-                        // test-only mapping to prove "known key -> its ErrorCode"; production map is empty for now
-                        Map.of("uq_carts_student", ErrorCode.CART_COURSE_ALREADY_OWNED))))
+                .setControllerAdvice(new GlobalExceptionHandler(messages, new ConstraintViolationTranslator()))
                 .build();
     }
 
@@ -104,27 +101,64 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void checkViolationAsUncategorizedSql_returnsDataConflictNot500() throws Exception {
+    void unmappedCheckViolation_returns500WithoutLeakingTheConstraintName() throws Exception {
+        String body = body("/probe/check");
         mvc.perform(get("/probe/check"))
-                .andExpect(status().isConflict())
+                .andExpect(status().isInternalServerError())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.code").value("DATA_CONFLICT"))
+                .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
+                .andExpect(jsonPath("$.detail").value("Đã có lỗi xảy ra, vui lòng thử lại sau."))
                 .andExpect(jsonPath("$.traceId").value(matchesPattern("[0-9a-f]{32}")));
+        org.assertj.core.api.Assertions.assertThat(body).doesNotContain("ck_users_status").doesNotContain("Check constraint");
     }
 
     @Test
-    void triggerSignalInPersistenceException_returnsDataConflict() throws Exception {
+    void mappedTrigger_returnsItsErrorCodeAndStatus_BR02() throws Exception {
         mvc.perform(get("/probe/trigger"))
+                .andExpect(status().isUnprocessableContent())
+                .andExpect(jsonPath("$.code").value("COURSE_CO_INSTRUCTOR_IS_MAIN"))
+                .andExpect(jsonPath("$.type").value("https://edumy.local/problems/course-co-instructor-is-main"));
+    }
+
+    @Test
+    void unmappedTrigger_returns500WithoutLeakingTheMessage() throws Exception {
+        String body = body("/probe/trigger-unmapped");
+        mvc.perform(get("/probe/trigger-unmapped"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
+        org.assertj.core.api.Assertions.assertThat(body).doesNotContain("BR-99").doesNotContain("secret rule");
+    }
+
+    @Test
+    void mappedUnique_returnsItsErrorCodeAndStatus() throws Exception {
+        mvc.perform(get("/probe/known-unique"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CART_ITEM_DUPLICATE"))
+                .andExpect(jsonPath("$.type").value("https://edumy.local/problems/cart-item-duplicate"));
+    }
+
+    @Test
+    void unmappedUnique_returnsDataConflict() throws Exception {
+        mvc.perform(get("/probe/unmapped-unique"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DATA_CONFLICT"));
     }
 
     @Test
-    void knownConstraintKey_returnsItsErrorCodeAndStatus() throws Exception {
-        mvc.perform(get("/probe/known-unique"))
+    void fkMissingParent1452_returns404WithTheSameBodyAsAnyOther404_NFR01() throws Exception {
+        mvc.perform(get("/probe/fk-missing-parent"))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+        org.assertj.core.api.Assertions.assertThat(strip(body("/probe/fk-missing-parent")))
+                .isEqualTo(strip(body("/probe/missing")))
+                .doesNotContain("fk_");
+    }
+
+    @Test
+    void fkParentStillReferenced1451_returnsDataConflict() throws Exception {
+        mvc.perform(get("/probe/fk-referenced"))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("CART_COURSE_ALREADY_OWNED"))
-                .andExpect(jsonPath("$.type").value("https://edumy.local/problems/cart-course-already-owned"));
+                .andExpect(jsonPath("$.code").value("DATA_CONFLICT"));
     }
 
     @Test
@@ -187,10 +221,39 @@ class GlobalExceptionHandlerTest {
                     new SQLException("BR-02: co-instructor must differ from main instructor", "45000", 1644));
         }
 
+        @GetMapping("/probe/trigger-unmapped")
+        void triggerUnmapped() {
+            throw new PersistenceException("could not execute statement",
+                    new SQLException("BR-99: secret rule text", "45000", 1644));
+        }
+
+        @GetMapping("/probe/unmapped-unique")
+        void unmappedUnique() {
+            throw new UncategorizedSQLException("StatementCallback", "INSERT INTO roles ...",
+                    new SQLException("Duplicate entry 'student' for key 'roles.uq_roles_code'", "23000", 1062));
+        }
+
+        @GetMapping("/probe/fk-missing-parent")
+        void fkMissingParent() {
+            throw new PersistenceException("could not execute statement", new SQLException(
+                    "Cannot add or update a child row: a foreign key constraint fails (`edumy`.`user_roles`, "
+                            + "CONSTRAINT `fk_user_roles_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`))",
+                    "23000", 1452));
+        }
+
+        @GetMapping("/probe/fk-referenced")
+        void fkReferenced() {
+            throw new UncategorizedSQLException("StatementCallback", "DELETE FROM users ...", new SQLException(
+                    "Cannot delete or update a parent row: a foreign key constraint fails (`edumy`.`user_roles`, "
+                            + "CONSTRAINT `fk_user_roles_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`))",
+                    "23000", 1451));
+        }
+
         @GetMapping("/probe/known-unique")
         void knownUnique() {
-            throw new UncategorizedSQLException("StatementCallback", "INSERT INTO carts ...",
-                    new SQLException("Duplicate entry '7' for key 'carts.uq_carts_student'", "23000", 1062));
+            throw new UncategorizedSQLException("StatementCallback", "INSERT INTO cart_items ...",
+                    new SQLException("Duplicate entry '7-9' for key 'cart_items.uq_cart_items_cart_course'",
+                            "23000", 1062));
         }
 
         @GetMapping("/probe/timeout")
