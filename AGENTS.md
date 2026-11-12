@@ -70,6 +70,7 @@ com.edumy.<module>/
   time → `Instant` (UTC), status columns → Java enum + `CodeEnumConverter` storing the lowercase DB code.
 - `spring.jpa.open-in-view=false`, `ddl-auto=validate`. Schema changes = **new** Flyway file `V{n}__desc.sql`.
   Never edit an applied migration. Never "fix" a validate error by changing the DB to fit Hibernate — fix the mapping.
+- Migrations V1–V6 are frozen at tag schema-v1; any schema change = new V7+ file + ADR.
 - Authorization: role check + data-relationship check on the server for every protected endpoint
   (`docs/ai/04-security.md`). Resources of another user → **404**, not 403 (anti-enumeration, NFR-01).
 - Errors: RFC 9457 `ProblemDetail` with `code` + Vietnamese `title/detail` (`docs/ai/05-api-contract.md`).
