@@ -56,6 +56,27 @@ class IdentitySchemaIT {
         assertViolates("uq_users_email", () -> insertUser("dup@edumy.vn"));
     }
 
+    /** users.email is utf8mb4_bin: accents are significant (PostgreSQL behaviour), unlike the ai_ci default. */
+    @Test
+    void insertUser_emailsDifferingOnlyByAccent_areDistinct_BR01() {
+        long accented = insertUser("é@x.com");
+        long plain = insertUser("e@x.com");
+
+        assertThat(accented).isNotEqualTo(plain);
+        assertThat(jdbc.sql("SELECT id FROM users WHERE email = ?").param("é@x.com").query(Long.class).list())
+                .containsExactly(accented);
+        assertThat(jdbc.sql("SELECT id FROM users WHERE email = ?").param("e@x.com").query(Long.class).list())
+                .containsExactly(plain);
+    }
+
+    @Test
+    void emailColumn_usesBinaryCollation() {
+        assertThat(jdbc.sql("""
+                SELECT COLLATION_NAME FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'email'""")
+                .query(String.class).single()).isEqualTo("utf8mb4_bin");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"Upper@edumy.vn", " lead@edumy.vn", "trail@edumy.vn "})
     void insertUser_notNormalizedEmail_rejected_BR01(String email) {
@@ -332,7 +353,8 @@ class IdentitySchemaIT {
         assertThat(indexColumns("user_tokens", "ix_user_tokens_active"))
                 .containsExactly("user_id", "token_type", "used_at");
         assertThat(indexColumns("refresh_tokens", "ix_refresh_tokens_user")).containsExactly("user_id", "revoked_at");
-        assertThat(indexColumns("refresh_tokens", "ix_refresh_tokens_family")).containsExactly("family_id");
+        assertThat(indexColumns("refresh_tokens", "ix_refresh_tokens_family"))
+                .containsExactly("family_id", "revoked_at");
     }
 
     // ------------------------------------------------------------------------------------------------------ helpers

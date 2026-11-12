@@ -11,7 +11,9 @@
 -- 5.1 users — Tài khoản
 CREATE TABLE users (
     id                BIGINT       NOT NULL AUTO_INCREMENT,
-    email             VARCHAR(255) NOT NULL,
+    -- utf8mb4_bin: uq_users_email and login lookups compare exact characters (é@x.com <> e@x.com), like PostgreSQL;
+    -- ck_users_email_normalized keeps the application-normalized form (lower-case, trimmed). Other columns stay ai_ci.
+    email             VARCHAR(255) COLLATE utf8mb4_bin NOT NULL,
     password_hash     VARCHAR(255) NOT NULL,
     full_name         VARCHAR(100) NOT NULL,
     is_email_verified BOOLEAN      NOT NULL DEFAULT FALSE,
@@ -100,5 +102,6 @@ CREATE TABLE refresh_tokens (
     CONSTRAINT ck_refresh_tokens_revoked_pair CHECK ((revoked_at IS NULL) = (revoke_reason IS NULL)),
     -- also serves as the index of fk_refresh_tokens_user_id
     INDEX ix_refresh_tokens_user (user_id, revoked_at),
-    INDEX ix_refresh_tokens_family (family_id)
+    -- session validity check: WHERE family_id = ? AND revoked_at IS NULL (docs/ai/04 §4.1)
+    INDEX ix_refresh_tokens_family (family_id, revoked_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

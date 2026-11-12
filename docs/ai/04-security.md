@@ -31,7 +31,7 @@ CREATE TABLE refresh_tokens (
     ('logout','rotated','reuse_detected','password_changed','password_reset','account_locked','expired_cleanup')),
   CONSTRAINT ck_refresh_tokens_revoked_pair CHECK ((revoked_at IS NULL) = (revoke_reason IS NULL)),
   INDEX ix_refresh_tokens_user (user_id, revoked_at),
-  INDEX ix_refresh_tokens_family (family_id)
+  INDEX ix_refresh_tokens_family (family_id, revoked_at)   -- "family still has a non-revoked token"
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 Note: `fk_refresh_tokens_user_id` uses CASCADE, so no CHECK may reference `user_id` (MySQL error 3823).
