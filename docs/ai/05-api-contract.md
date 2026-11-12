@@ -29,9 +29,34 @@
   "errors": [ { "field": "title", "message": "Không được để trống" } ]
 }
 ```
-- `shared.error.GlobalExceptionHandler extends ResponseEntityExceptionHandler`; `BusinessException(ErrorCode, args)`.
+- `shared.error.GlobalExceptionHandler extends ResponseEntityExceptionHandler`; `BusinessException(ErrorCode, args)`;
+  `BusinessException.withErrors(code, List<FieldViolation>)` fills `errors`. `errors` is omitted when empty.
 - Status mapping: 400 malformed · 401 unauthenticated · 403 authenticated but role missing · 404 not found **or not yours** ·
   409 state conflict / unique violation · 422 business-rule violation on valid input · 429 rate limit.
+- Status principle (decides the status of every new code): **403** = the caller has no permission ·
+  **409** = the current state of the data does not allow it · **422** = the input is valid but breaks a business rule.
+
+| ErrorCode | HTTP | Note |
+|---|---|---|
+| `VALIDATION_FAILED` | 400 | Bean Validation; `errors` = field errors |
+| `MALFORMED_REQUEST` | 400 | unreadable JSON, wrong type; other framework 4xx keep their status (405, 415…) with this code |
+| `UNAUTHENTICATED` | 401 | |
+| `AUTH_INVALID_CREDENTIALS` | 401 | |
+| `ACCESS_DENIED` | 403 | |
+| `EMAIL_NOT_VERIFIED` | 403 | D-02 |
+| `ENROLLMENT_REQUIRED` | 403 | |
+| `QA_REPLY_NOT_ALLOWED` | 403 | BR-38 |
+| `RESOURCE_NOT_FOUND` | 404 | "does not exist" **and** "not yours": identical body (NFR-01); only `traceId`/`instance` differ |
+| `DATA_CONFLICT` | 409 | untranslated unique/FK violation |
+| `COURSE_NOT_EDITABLE` | 409 | BR-33 |
+| `CART_COURSE_ALREADY_OWNED` | 409 | BR-10 |
+| `REVIEW_HIDDEN_BY_ADMIN` | 409 | BR-35 |
+| `ADMIN_LAST_ACTIVE` | 409 | BR-36 |
+| `COURSE_SUBMIT_CHECKLIST_FAILED` | 422 | BR-07; `errors` lists every failed checklist item (`field` = item, `message` = Vietnamese reason) |
+| `CART_OWN_COURSE` | 422 | BR-32 |
+| `AUTH_LOGIN_TEMPORARILY_BLOCKED` | 429 | |
+| `RATE_LIMITED` | 429 | |
+| `INTERNAL_ERROR` | 500 | generic Vietnamese detail, never the exception message |
 - `ConstraintViolationTranslator`: `DataIntegrityViolationException` → find the constraint/trigger name in the message
   (`uq_cart_items_cart_course`, `BR-02:` …) → known `ErrorCode`; unknown → 409 `DATA_CONFLICT` (log full cause at WARN).
 - ErrorCode naming: `UPPER_SNAKE`, module-meaningful, e.g. `AUTH_INVALID_CREDENTIALS`, `AUTH_LOGIN_TEMPORARILY_BLOCKED`,
