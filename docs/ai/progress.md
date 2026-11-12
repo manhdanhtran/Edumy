@@ -14,8 +14,8 @@ Constraint-by-constraint status: [schema-checklist.md](schema-checklist.md).
 | P01-7 Self-review (P10) of all P01 migrations | done | 64589eb | 0 BLOCKER; MAJOR regex `$` → `\z` fixed; MINORs listed in final report; 450 tests green |
 | P02-0 ConstraintViolationTranslator by vendor code | skipped | 2240baa, 48cd9cb | already done in P01 (maps 1062/1451/1452/3819/1644); verified, not redone. Baseline before P02: 472 tests green, 3 min 16 s |
 | P02-1 BCrypt cost-12 hash of Edumy@123 | done | — | `docker run --rm httpd:2.4 htpasswd -nbBC 12 "" 'Edumy@123'` → `:$2y$12$245qetfs3AM6usLDQjGfoune4jnHuQEfHmoEEpkL/TEh9.D8tLAPq` → strip `:`/newline, `$2y`→`$2a` |
-| P02-2 db/seed/V1000__dev_seed.sql | todo | | |
-| P02-3 SeedCoverageIT (@MySqlSeedTest) + app starts with profile dev | todo | | |
+| P02-2 db/seed/V1000__dev_seed.sql | done | 62c4041 | 20 users, 14 courses, 14 orders, 15 payments, 19 enrollments, 2 certificates; every row passes all CHECK/UNIQUE/FK/triggers; 497 tests green, suite 2 min 32 s; app started with profile dev, Flyway at v1000 |
+| P02-3 SeedCoverageIT (@MySqlSeedTest) + app starts with profile dev | done | 62c4041 | 25 tests (read-only, edumy_seed); 497 tests green, suite 2 min 32 s; app started with profile dev, Flyway at v1000 |
 | P03-identity entities + repositories | todo | | |
 | P03-authoring entities + repositories | todo | | |
 | P03-commerce entities + repositories | todo | | |
@@ -28,3 +28,27 @@ Constraint-by-constraint status: [schema-checklist.md](schema-checklist.md).
 | P04-e RoleQueryApi + access beans | todo | | |
 | P04-f LoginAttemptLimiter + CertificateVerifyRateLimiter | todo | | |
 | P10 self-review of P02–P04 | todo | | |
+
+## P02 seed coverage
+State-machine value → seed row ids in `db/seed/V1000__dev_seed.sql` (asserted by `SeedCoverageIT`).
+
+| table.column | value → ids |
+|---|---|
+| users.status | active → 1–19 · locked → 20 |
+| users.is_email_verified | true → 1–17, 20 · false → 18, 19 |
+| user_roles.is_active | false → 9 (instructor role of user 5, D-04) · admin (D-01) → user 1 only |
+| categories.is_active | false → 8 (used by draft course 14) |
+| courses.status | draft → 11, 14 · pending_review → 12 · rejected → 13 · published → 1–9 (free 2, 6) · hidden → 10 |
+| course_co_instructors.invitation_status | pending → 2 · accepted → 1 · declined → 3 · removed → 4 |
+| orders.status | pending → 4, 10 · paid → 1, 2, 7, 8, 11, 12, 13, 14 · cancelled → 3, 5, 6, 9 |
+| orders.cancel_reason | user → 3 · replaced → 6 · expired → 5, 9, 11 (11 later paid, BR-30) |
+| order_items price snapshot ≠ current price | 1 (course 1 at 699 000, now 799 000) |
+| payment_transactions.status | pending → 6 · success → 1, 3, 8, 9, 12, 13, 14, 15 · failed → 2 · expired → 4, 5, 7 · needs_review → 10, 11 |
+| payment_transactions.handled_action | refund_outside → 10 (needs_review handled) · activated → 12 (success) · unhandled needs_review → 11 |
+| enrollments.enroll_source | purchase → 1–10 · free → 11–19 |
+| lesson_progresses | 100 % → enrollments 11, 3 · partial → enrollments 1, 4, 6, 8, 12, 13 |
+| course_reviews.visibility_status | visible → 1, 2, 3, 6, 7 · withdrawn → 4 · hidden → 5 |
+| course_questions.visibility_status | visible → 1, 2, 3, 6 (resolved 1) · deleted → 5 · hidden → 4 |
+| question_answers.visibility_status | visible → 1, 2, 3, 4, 6 (instructor 1, 3, 6; student 2, 4) · deleted → 5 · hidden → 7 |
+| carts with a now-hidden course | cart 2 / cart_item 3 (course 10) |
+| certificates | 1 (enrollment 11), 2 (enrollment 3) |
