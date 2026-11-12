@@ -4,10 +4,9 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 @SpringBootApplication
-public class EdumyBackendApplication {
+public class EdumyApplication {
 
-	public static void main(String[] args) {
-		SpringApplication.run(EdumyBackendApplication.class, args);
-	}
-
+    public static void main(String[] args) {
+        SpringApplication.run(EdumyApplication.class, args);
+    }
 }
