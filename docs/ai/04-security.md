@@ -24,10 +24,10 @@ CREATE TABLE refresh_tokens (
   user_agent     VARCHAR(255) NULL,
   ip_address     VARCHAR(45)  NULL,
   CONSTRAINT pk_refresh_tokens PRIMARY KEY (id),
-  CONSTRAINT uq_refresh_tokens_hash UNIQUE (token_hash),
+  CONSTRAINT uq_refresh_tokens_token_hash UNIQUE (token_hash),
   CONSTRAINT fk_refresh_tokens_user_id FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE,
   CONSTRAINT ck_refresh_tokens_hash_hex CHECK (REGEXP_LIKE(token_hash, '^[0-9a-f]{64}$', 'c')),
-  CONSTRAINT ck_refresh_tokens_reason CHECK (revoke_reason IS NULL OR revoke_reason IN
+  CONSTRAINT ck_refresh_tokens_reason CHECK (revoke_reason IS NULL OR CAST(revoke_reason AS BINARY) IN
     ('logout','rotated','reuse_detected','password_changed','password_reset','account_locked','expired_cleanup')),
   CONSTRAINT ck_refresh_tokens_revoked_pair CHECK ((revoked_at IS NULL) = (revoke_reason IS NULL)),
   INDEX ix_refresh_tokens_user (user_id, revoked_at),
@@ -35,6 +35,7 @@ CREATE TABLE refresh_tokens (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 ```
 Note: `fk_refresh_tokens_user_id` uses CASCADE, so no CHECK may reference `user_id` (MySQL error 3823).
+Enum-like CHECK uses `CAST(… AS BINARY) IN (…)` and the UNIQUE follows `uq_<table>_<column>` (docs/ai/03 §3.1).
 
 ### Session flows ("kết thúc phiên" requirements)
 | Requirement | Action |

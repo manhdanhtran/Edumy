@@ -19,7 +19,7 @@ ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
 | `updated_at` + trigger | `DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6)` | `Instant` (read-only in entity or `@UpdateTimestamp`) |
 | `BOOLEAN` | `BOOLEAN` (= `TINYINT(1)`) | `boolean` / `Boolean` |
 | `VARCHAR(n)`, `TEXT`, `CHAR(64)` | same | `String` |
-| `VARCHAR(20) + CHECK IN (…)` | same | Java enum + `CodeEnumConverter` |
+| `VARCHAR(20) + CHECK IN (…)` | same type; enum-like CHECK as `CAST(col AS BINARY) IN (…)` (collation trap below) | Java enum + `CodeEnumConverter` |
 | regex `~ '…'` | `REGEXP_LIKE(col, '…', 'c')` (`'c'` = case-sensitive) | — |
 | `btrim(x)` | `TRIM(x)` | — |
 
@@ -36,11 +36,36 @@ CONSTRAINT ck_users_email_normalized CHECK (CAST(email AS BINARY) = CAST(LOWER(T
 ```
 and regex checks with the `'c'` match type. The application still normalizes email before saving.
 
+**Enum-like CHECK:** the same trap lets `status = 'Active'` (or `'actívé'`) pass `status IN ('active','locked')`,
+which PostgreSQL would reject. Every CHECK that lists allowed values is written with a binary comparison, in every
+table (including ADR tables such as `refresh_tokens`):
+```sql
+CONSTRAINT ck_users_status CHECK (CAST(status AS BINARY) IN ('active','locked'))
+```
+
+**Naming when the DDD gives none:** a column marked only `UQ` in DDD §5 gets `uq_<table>_<column>` with the full
+column name (`uq_users_email`, `uq_roles_code`, `uq_user_tokens_token_hash`, `uq_refresh_tokens_token_hash`).
+Do not abbreviate. Constraint names the DDD does spell out are kept verbatim, even when they abbreviate
+(`uq_carts_student`, `uq_cci_course_instructor`). MySQL ignores the name of a PRIMARY KEY (always `PRIMARY`); still
+write `CONSTRAINT pk_<table> PRIMARY KEY (id)` for readability; nothing may depend on the PK name.
+
+### DDD inconsistencies
+EDU-DDD-001 sometimes states a rule in prose (e.g. §7 "giá trị hợp lệ được thực thi bằng CHECK") but omits it from
+the table's constraint list in §5. **The stated rule wins over the incomplete list:** implement it, name it by the
+convention, and mark it `DERIVED (DDD §n)` in the migration comment and in the session checklist.
+Known cases:
+| Object | Source | Note |
+|---|---|---|
+| `ck_roles_code` CHECK (`student`,`instructor`,`admin`) | DDD §7 | §5.2 lists no CHECK for `roles.code` (V1) |
+
+Also missing from the DDD file: §10 (queries), §11 (transactions T1–T7), Appendix A (DDL) and Appendix B (test
+cases), although §2.4/§6/§8 refer to them. Ask before relying on any of them.
+
 ## 3.2 PostgreSQL-only features and their MySQL replacement
 | DDD feature | Objects | MySQL implementation |
 |---|---|---|
 | Partial UNIQUE index | `uq_orders_one_pending` (student_id WHERE status='pending'), `uq_payment_one_pending` (order_id WHERE status='pending') | STORED generated column + UNIQUE (NULLs never collide). See 3.3 |
-| Partial (non-unique) index | `ix_courses_published`, `ix_courses_pending`, `ix_orders_pending_created`, `ix_payment_review_queue`, `ix_payment_pending_expiry`, `ix_user_tokens_active`, `ix_question_answers_instructor_visible` | Normal composite index with the filter column first, e.g. `ix_courses_published (status, published_at)`, `ix_payment_review_queue (status, handled_at, created_at)` |
+| Partial (non-unique) index | `ix_courses_published`, `ix_courses_pending`, `ix_orders_pending_created`, `ix_payment_review_queue`, `ix_payment_pending_expiry`, `ix_user_tokens_active`, `ix_question_answers_instructor_visible` | Normal composite index whose column order matches the real query (equality columns first, range/sort columns last; an FK column leading it also serves as the FK index), e.g. `ix_user_tokens_active (user_id, token_type, used_at)`, `ix_courses_published (status, published_at)`, `ix_payment_review_queue (status, handled_at, created_at)` |
 | `UNIQUE … DEFERRABLE INITIALLY DEFERRED` | `uq_chapters_course_order`, `uq_lessons_chapter_order` | Plain UNIQUE + two-phase reorder in one transaction (3.4) |
 | PL/pgSQL triggers | `trg_cci_not_main_instructor`, `trg_courses_prevent_delete_published`, `trg_lesson_progresses_lesson_course`, `trg_course_questions_lesson_course` | MySQL triggers, one per event (`_bi` before insert, `_bu` before update, `_bd` before delete), raising `SIGNAL SQLSTATE '45000'` with `MESSAGE_TEXT` starting with the BR code (3.5) |
 | `pg_trgm` + GIN on `title_normalized` | `ix_courses_title_trgm` | `title_normalized LIKE CONCAT('%', ?, '%')` (≈300 courses in year 1 → a scan is a few ms). Optional later: `FULLTEXT … WITH PARSER ngram`. Keep a plain index `ix_courses_status_title (status, title_normalized)` |
@@ -116,10 +141,10 @@ Reviewed: no DDD CHECK touches such a column. If you add one, expect this error.
 | # | Table | Owner | MySQL notes |
 |---|---|---|---|
 | 1 | users | identity | email binary CHECK (3.1); status CHECK active/locked |
-| 2 | roles | identity | seed: student, instructor, admin |
+| 2 | roles | identity | seed: student, instructor, admin; `ck_roles_code` binary IN — DERIVED (DDD §7) |
 | 3 | user_roles | identity | UQ (user_id, role_id); revoke = `is_active=false` |
 | 4 | user_tokens | identity | `token_hash CHAR(64)` UQ, `REGEXP_LIKE(token_hash,'^[0-9a-f]{64}$','c')`; `ix_user_tokens_active (user_id, token_type, used_at)` |
-| 4b | refresh_tokens | identity | **new, ADR-002** |
+| 4b | refresh_tokens | identity | **new, ADR-002**; `uq_refresh_tokens_token_hash` |
 | 5 | categories | authoring | slug regex CHECK |
 | 6 | courses | authoring | CHECKs on price/note/published_at/submitted_at/slug; `title_normalized`; trigger `_bd` |
 | 7 | course_co_instructors | authoring | `ck_cci_not_self`; triggers `_bi/_bu` |
