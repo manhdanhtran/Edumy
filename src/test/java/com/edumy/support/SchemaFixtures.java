@@ -64,6 +64,30 @@ public final class SchemaFixtures {
                 .params(chapterId, sortOrder));
     }
 
+    public long cart(long studentId) {
+        return insert(jdbc.sql("INSERT INTO carts (student_id) VALUES (?)").param(studentId));
+    }
+
+    /**
+     * An order of {@code studentId} worth 499 000 VND in {@code status} ('pending', 'paid' or 'cancelled'), with the
+     * timestamps and cancel_reason that ck_orders_state requires.
+     */
+    public long order(long studentId, String status) {
+        boolean paid = "paid".equals(status);
+        boolean cancelled = "cancelled".equals(status);
+        return insert(jdbc.sql("""
+                INSERT INTO orders (student_id, order_code, total_amount, status, cancel_reason, paid_at, cancelled_at)
+                VALUES (?, ?, 499000, ?, ?, ?, ?)""")
+                .params(studentId, "ORD-" + next(), status, cancelled ? "user" : null,
+                        paid ? "2026-01-01 00:00:00" : null, cancelled ? "2026-01-01 00:00:00" : null));
+    }
+
+    /** A line of {@code orderId} for {@code courseId} at 499 000 VND. */
+    public long orderItem(long orderId, long courseId) {
+        return insert(jdbc.sql("INSERT INTO order_items (order_id, course_id, unit_price) VALUES (?, ?, 499000)")
+                .params(orderId, courseId));
+    }
+
     /** Runs an INSERT and returns the generated id. */
     public long insert(JdbcClient.StatementSpec spec) {
         KeyHolder keys = new GeneratedKeyHolder();

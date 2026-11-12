@@ -98,3 +98,69 @@ Notes
 - An unknown `lessons.content_type` breaks both `ck_lessons_type` and `ck_lessons_content_match` (the DDD expression of
   the latter only holds for `video`/`article`); MySQL reports `ck_lessons_content_match`. The error translator must map
   both names to the same error. `ck_lessons_type` is proven enforced by a metadata test.
+
+## V3__commerce.sql (carts, cart_items, orders, order_items, payment_transactions)
+
+| DDD constraint/index (source §) | MySQL implementation | line | status |
+|---|---|---|---|
+| pk_carts (§5.10) | `PRIMARY KEY (id)` | 21 | OK |
+| uq_carts_student (§5.10 UQ, §8 #14 BR-22) | `UNIQUE (student_id)` (name verbatim from §8); also index of FK #13 | 23 | OK |
+| FK #13 carts.student_id → users RESTRICT (§6) | `fk_carts_student_id` | 24 | OK |
+| pk_cart_items (§5.11) | `PRIMARY KEY (id)` | 34 | OK |
+| uq_cart_items_cart_course (§5.11, §8 #14 BR-11) | `UNIQUE (cart_id, course_id)`; also index of FK #14 | 36 | OK |
+| FK #14 cart_items.cart_id → carts CASCADE (§6) | `fk_cart_items_cart_id` (no CHECK on cart_id, error 3823) | 38 | OK |
+| FK #15 cart_items.course_id → courses RESTRICT (§6) | `fk_cart_items_course_id` | 39 | OK |
+| ix_cart_items_course (§5.11, §9) | `(course_id)`; also index of FK #15 | 41 | OK |
+| pk_orders (§5.12) | `PRIMARY KEY (id)` | 59 | OK |
+| orders.order_code UQ (§5.12) | `uq_orders_order_code UNIQUE (order_code)` (case-insensitive under ai_ci, see Notes) | 60 | OK |
+| uq_orders_one_pending (§5.12, §8 #16 BR-29, §9) `(student_id) WHERE status='pending'` | STORED generated `pending_student_id` + `UNIQUE (pending_student_id)` (docs/ai/03 §3.3, ADR-001) | 58, 62 | OK (ADR) |
+| FK #16 orders.student_id → users RESTRICT (§6) | `fk_orders_student_id` | 63 | OK |
+| ck_orders_total (§5.12, §8 #18 BR-27 "CHECK > 0") | `total_amount > 0` | 64 | OK |
+| ck_orders_status (§5.12) | `CAST(status AS BINARY) IN ('pending','paid','cancelled')` | 65 | OK |
+| ck_orders_cancel_reason (§5.12) | `cancel_reason IS NULL OR CAST(cancel_reason AS BINARY) IN ('user','replaced','expired')` | 66 | OK |
+| ck_orders_state (§5.12, §7, §8 #17 D-25) | same expression, binary status comparisons | 69 | OK |
+| ix_orders_student_created (§5.12, §9) | `(student_id, created_at DESC)`; also index of FK #16 | 75 | OK |
+| ix_orders_pending_created (§5.12, §9) `(created_at) WHERE status='pending'` | composite `(status, created_at)` | 77 | PARTIAL |
+| pk_order_items (§5.13) | `PRIMARY KEY (id)` | 86 | OK |
+| uq_order_items_order_course (§5.13) | `UNIQUE (order_id, course_id)`; also index of FK #17 | 88 | OK |
+| FK #17 order_items.order_id → orders RESTRICT (§6) | `fk_order_items_order_id` | 89 | OK |
+| FK #18 order_items.course_id → courses RESTRICT (§6) | `fk_order_items_course_id` | 90 | OK |
+| ck_order_items_price (§5.13) | `unit_price > 0` | 91 | OK |
+| ix_order_items_course (§5.13, §9) | `(course_id)`; also index of FK #18 | 93 | OK |
+| pk_payment_transactions (§5.14) | `PRIMARY KEY (id)` | 114 | OK |
+| uq_payment_ref (§5.14 UQ, §8 #20 NFR-04) | `UNIQUE (transaction_ref)` (name verbatim from §8; case-insensitive under ai_ci, see Notes) | 116 | OK |
+| uq_payment_one_pending (§5.14, §8 #19 BR-16, §9) `(order_id) WHERE status='pending'` | STORED generated `pending_order_id` + `UNIQUE (pending_order_id)` (docs/ai/03 §3.3, ADR-001) | 113, 118 | OK (ADR) |
+| FK #19 payment_transactions.order_id → orders RESTRICT (§6) | `fk_payment_transactions_order_id` | 119 | OK |
+| FK #20 payment_transactions.handled_by → users RESTRICT (§6) | `fk_payment_transactions_handled_by` | 120 | OK |
+| ck_payment_amount (§5.14) | `amount > 0` | 121 | OK |
+| ck_payment_status (§5.14) | `CAST(status AS BINARY) IN (...)` | 122 | OK |
+| ck_payment_action (§5.14) | `handled_action IS NULL OR CAST(handled_action AS BINARY) IN ('activated','refund_outside')` | 124 | OK |
+| ck_payment_handling_complete (§5.14, §7, §8 #21 D-29) | same expression (all four handled_* null or all four set) | 127 | OK |
+| ck_payment_handling_status (§5.14) | `handled_at IS NULL OR CAST(status AS BINARY) IN ('needs_review','success')` | 131 | OK |
+| ck_payment_confirmed (§5.14, §7) | `CAST(status AS BINARY) <> 'success' OR confirmed_at IS NOT NULL` | 133 | OK |
+| ck_payment_qr_expiry (§5.14) | `qr_expires_at > created_at` | 134 | OK |
+| ix_payment_order_created (§5.14, §9) | `(order_id, created_at DESC)`; also index of FK #19 | 136 | OK |
+| ix_payment_review_queue (§5.14, §9) `(created_at) WHERE status='needs_review' AND handled_at IS NULL` | composite `(status, handled_at, created_at)` (order from docs/ai/03 §3.2) | 138 | PARTIAL |
+| ix_payment_pending_expiry (§5.14, §9) `(qr_expires_at) WHERE status='pending'` | composite `(status, qr_expires_at)` | 140 | PARTIAL |
+| ix_payment_handled_by (§5.14, §9) | `(handled_by)`; index of FK #20 | 141 | OK |
+| updated_at triggers (§5) on carts, orders, payment_transactions | `ON UPDATE CURRENT_TIMESTAMP(6)` (cart_items has only added_at, order_items no timestamp) | 20, 56, 111 | OK |
+| §8 #15 no course already owned / own course in the cart (BR-10, BR-32) | query Q4 + enrollments check before inserting cart_items | — | APP-LEVEL |
+| §8 #18 order has ≥ 1 line; total_amount = sum of unit_price (BR-27) | T1 transaction (only `ck_orders_total` > 0 is in SQL) | — | APP-LEVEL |
+| §6 #17 note: order_items.order_id cardinality 1 — 1..N | not expressible by an FK; enforced in T1 (DDD §6 note) | — | APP-LEVEL |
+| §8 #20 idempotent payment result — row lock part (NFR-04) | `SELECT … FOR UPDATE` in T2 (the UNIQUE part is `uq_payment_ref` above) | — | APP-LEVEL |
+| §8 #31 handled_by has the admin role (BR-26) | role check at the time of reconciliation | — | APP-LEVEL |
+
+Notes
+- An unknown `orders.status` breaks both `ck_orders_status` and `ck_orders_state` (the DDD expression of the latter only
+  holds for `pending`/`paid`/`cancelled`); MySQL reports only one of them, so the test accepts either name
+  (`assertCheckViolatedAnyOf`). The error translator must map both names to the same error. `ck_orders_status` is proven
+  enforced and binary by a metadata test. No other V3 CHECK overlaps: every other violation test fills the companion
+  columns so that only the target CHECK fails.
+- The generated columns keep the verbatim expression of docs/ai/03 §3.3 (`status = 'pending'`, collation comparison);
+  `ck_orders_status` / `ck_payment_status` already reject every non-exact status, so only `pending` can produce a key.
+  Tests: two pending rows collide; pending beside paid/cancelled (success/failed/expired/needs_review) and rows of
+  different students/orders do not; leaving `pending` frees the slot; a row moved back to `pending` collides.
+  Metadata test: `EXTRA = 'STORED GENERATED'`; column-list test proves no other column was added.
+- `uq_orders_order_code` and `uq_payment_ref` compare under `utf8mb4_0900_ai_ci`, so codes/refs differing only in case
+  or accents collide (stricter than PostgreSQL). Both values are generated by the application, so nothing valid is lost;
+  tested as a collation-trap case.
