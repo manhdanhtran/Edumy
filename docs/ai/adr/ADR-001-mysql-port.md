@@ -11,7 +11,12 @@ LIKE search, `DATETIME(6)` in UTC, binary/`'c'` comparisons in CHECKs.
 
 Consequences: two extra generated columns (`orders.pending_student_id`, `payment_transactions.pending_order_id`).
 Search is a scan (fine for year-1 volume). XAMPP/MariaDB is not supported (different generated-column/CHECK behaviour).
-Hibernate validate settings that turned out necessary: _record here after first run_.
+Hibernate validate settings that turned out necessary (module by module, P03):
+- **identity** — none. `ddl-auto=validate` passes with the defaults of Hibernate 7.4 + Connector/J (test DB and dev DB
+  at v1000): `Instant` ↔ `DATETIME(6)`, `boolean` ↔ `TINYINT(1)`, `String` ↔ `CHAR(64)`/`CHAR(36)` mapped with
+  `@JdbcTypeCode(SqlTypes.CHAR)` + `length`. Entity `Instant`s are stored as the UTC wall time (verified in
+  `IdentityRepositoryIT`). Pitfall: a *native* query that selects a raw `DATETIME` column as a scalar returns a
+  `LocalDateTime` shifted to the JVM zone; select `DATE_FORMAT(...)` or map through an entity/`Instant` instead.
 
 ## Known limitations and decisions after V1–V6
 Recorded after the P01 review (2026-11-12). Migrations V1–V6 are frozen at tag `schema-v1`.
