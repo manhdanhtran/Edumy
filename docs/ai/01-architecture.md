@@ -79,7 +79,7 @@ com.edumy.<module>/
 | `repository/` | `interface XxxRepository extends JpaRepository`, projections, `@Query`; catalog's `JdbcClient` read repositories | business rules, writes to other modules' tables |
 | `security/` | `@Component("courseAccess") class CourseAccess` …; identity also: `SecurityConfig`, `JwtIssuer`, `SessionStatusCache`, `LoginAttemptLimiter` | business writes |
 | `listener/` | `@ApplicationModuleListener` / `@TransactionalEventListener` methods reacting to other modules' events; delegate to `service/` | logic beyond calling a service |
-| `integration/` | port interface (e.g. `PaymentGateway`, `MailSender`) **and** its implementations (`FakeQrPaymentGateway`) | business rules; services depend on the interface only |
+| `integration/` | port interface (e.g. `PaymentGateway`, `MailGateway`) **and** its implementations (`FakeQrPaymentGateway`) | business rules; services depend on the interface only |
 | `scheduler/` | `@Scheduled` classes guarded by `edumy.scheduler.enabled`; delegate to `service/` | logic beyond calling a service |
 | `config/` | module `@Configuration`, `@ConfigurationProperties` records | beans of other modules |
 
@@ -227,7 +227,7 @@ notification/
 ├── package-info.java                 # allowedDependencies = {"shared", "identity :: api", "authoring :: api", "commerce :: api", "learning :: api"}
 ├── listener/     IdentityMailListener, AuthoringMailListener, CommerceMailListener, LearningMailListener
 ├── service/      MailComposer (picks template, fills Vietnamese text)
-└── integration/  MailSender (interface), SmtpMailSender (Spring Mail → Mailpit in dev)
+└── integration/  MailGateway (interface), SmtpMailGateway (Spring Mail → Mailpit in dev)
 ```
 
 ## 1.6 "Where does this class go?"
