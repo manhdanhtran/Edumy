@@ -88,6 +88,35 @@ public final class SchemaFixtures {
                 .params(orderId, courseId));
     }
 
+    /** A free enrollment (no order) of {@code studentId} in {@code courseId}. */
+    public long freeEnrollment(long studentId, long courseId) {
+        return insert(jdbc.sql("""
+                INSERT INTO enrollments (student_id, course_id, enroll_source) VALUES (?, ?, 'free')""")
+                .params(studentId, courseId));
+    }
+
+    /** A purchase enrollment of {@code studentId} in {@code courseId} through {@code orderId}. */
+    public long purchaseEnrollment(long studentId, long courseId, long orderId) {
+        return insert(jdbc.sql("""
+                INSERT INTO enrollments (student_id, course_id, order_id, enroll_source)
+                VALUES (?, ?, ?, 'purchase')""")
+                .params(studentId, courseId, orderId));
+    }
+
+    /** A not-yet-completed progress row of {@code enrollmentId} on {@code lessonId}. */
+    public long lessonProgress(long enrollmentId, long lessonId) {
+        return insert(jdbc.sql("INSERT INTO lesson_progresses (enrollment_id, lesson_id) VALUES (?, ?)")
+                .params(enrollmentId, lessonId));
+    }
+
+    /** A visible question of {@code enrollmentId}, attached to {@code lessonId} or to no lesson ({@code null}). */
+    public long question(long enrollmentId, Long lessonId) {
+        return insert(jdbc.sql("""
+                INSERT INTO course_questions (enrollment_id, lesson_id, title, content)
+                VALUES (?, ?, 'Câu hỏi', 'Nội dung câu hỏi')""")
+                .params(enrollmentId, lessonId));
+    }
+
     /** Runs an INSERT and returns the generated id. */
     public long insert(JdbcClient.StatementSpec spec) {
         KeyHolder keys = new GeneratedKeyHolder();
