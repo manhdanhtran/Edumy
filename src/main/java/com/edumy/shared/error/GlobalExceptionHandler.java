@@ -6,11 +6,13 @@ import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
+import jakarta.persistence.PersistenceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.context.MessageSource;
 import org.springframework.context.MessageSourceResolvable;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatusCode;
@@ -40,9 +42,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     private final MessageSource messages;
+    private final ConstraintViolationTranslator translator;
 
-    public GlobalExceptionHandler(MessageSource messages) {
+    public GlobalExceptionHandler(MessageSource messages, ConstraintViolationTranslator translator) {
         this.messages = messages;
+        this.translator = translator;
     }
 
     @ExceptionHandler(BusinessException.class)
@@ -50,12 +54,25 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return build(ex.getCode(), ex.getCode().status(), ex.getArgs(), ex.getErrors(), request, traceId());
     }
 
-    @ExceptionHandler(DataIntegrityViolationException.class)
-    ResponseEntity<Object> handleDataIntegrity(DataIntegrityViolationException ex, WebRequest request) {
-        // P03: ConstraintViolationTranslator maps known constraint/trigger names to specific codes first.
-        String traceId = traceId();
-        log.warn("Untranslated data integrity violation, traceId={}", traceId, ex);
-        return build(ErrorCode.DATA_CONFLICT, ErrorCode.DATA_CONFLICT.status(), NO_ARGS, List.of(), request, traceId);
+    /**
+     * JPA/Hibernate failures (PersistenceException) and Spring JDBC failures (DataAccessException) both end here: the
+     * translator decides by MySQL vendor code on the root SQLException (a constraint violation may surface as either
+     * family, or as an UncategorizedSQLException that is not a DataIntegrityViolationException, e.g. CHECK 3819).
+     */
+    @ExceptionHandler({DataAccessException.class, PersistenceException.class})
+    ResponseEntity<Object> handlePersistence(Exception ex, WebRequest request) throws Exception {
+        var translated = translator.translate(ex);
+        if (translated.isPresent()) {
+            ErrorCode code = translated.get().code();
+            return build(code, code.status(), NO_ARGS, List.of(), request, traceId());
+        }
+        if (ex instanceof DataIntegrityViolationException) {
+            String traceId = traceId();
+            log.warn("Untranslated data integrity violation, traceId={}", traceId, ex);
+            return build(ErrorCode.DATA_CONFLICT, ErrorCode.DATA_CONFLICT.status(), NO_ARGS, List.of(), request,
+                    traceId);
+        }
+        return handleUnexpected(ex, request);
     }
 
     @ExceptionHandler(Exception.class)

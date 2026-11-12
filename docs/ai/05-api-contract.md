@@ -64,7 +64,7 @@
 
   | Vendor code | Meaning | Lookup key in the message |
   |---|---|---|
-  | 1062 | UNIQUE | constraint name (`uq_cart_items_cart_course`) |
+  | 1062 | UNIQUE | constraint name (`uq_cart_items_cart_course`); MySQL 8.4 writes `for key 'cart_items.uq_…'`, take the part after the last `.` |
   | 1451 / 1452 | FK (RESTRICT delete / missing parent) | constraint name (`fk_user_roles_role_id`) |
   | 3819 | CHECK (`Check constraint 'ck_…' is violated.`) | constraint name (`ck_users_status`) |
   | 1644 / SQLState `45000` | trigger `SIGNAL` | message starts with the BR code (`BR-02:` …) |
