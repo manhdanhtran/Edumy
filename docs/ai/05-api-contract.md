@@ -57,8 +57,19 @@
 | `AUTH_LOGIN_TEMPORARILY_BLOCKED` | 429 | |
 | `RATE_LIMITED` | 429 | |
 | `INTERNAL_ERROR` | 500 | generic Vietnamese detail, never the exception message |
-- `ConstraintViolationTranslator`: `DataIntegrityViolationException` → find the constraint/trigger name in the message
-  (`uq_cart_items_cart_course`, `BR-02:` …) → known `ErrorCode`; unknown → 409 `DATA_CONFLICT` (log full cause at WARN).
+- `ConstraintViolationTranslator`: walks the cause chain down to the root `java.sql.SQLException` and decides by
+  **vendor error code**, never by the Spring/Hibernate exception type (Spring JDBC 7.0 does not map CHECK error 3819 to
+  `DataIntegrityViolationException`; JPA and `JdbcClient` wrap errors differently). It must work for both paths and
+  must not override Spring's `sql-error-codes.xml`.
+
+  | Vendor code | Meaning | Lookup key in the message |
+  |---|---|---|
+  | 1062 | UNIQUE | constraint name (`uq_cart_items_cart_course`) |
+  | 1451 / 1452 | FK (RESTRICT delete / missing parent) | constraint name (`fk_user_roles_role_id`) |
+  | 3819 | CHECK (`Check constraint 'ck_…' is violated.`) | constraint name (`ck_users_status`) |
+  | 1644 / SQLState `45000` | trigger `SIGNAL` | message starts with the BR code (`BR-02:` …) |
+
+  Known name/BR code → its `ErrorCode`; unknown → 409 `DATA_CONFLICT` (log full cause at WARN).
 - ErrorCode naming: `UPPER_SNAKE`, module-meaningful, e.g. `AUTH_INVALID_CREDENTIALS`, `AUTH_LOGIN_TEMPORARILY_BLOCKED`,
   `EMAIL_NOT_VERIFIED`, `COURSE_NOT_EDITABLE`, `COURSE_SUBMIT_CHECKLIST_FAILED`, `CART_COURSE_ALREADY_OWNED`,
   `CART_OWN_COURSE`, `ENROLLMENT_REQUIRED`, `REVIEW_HIDDEN_BY_ADMIN`, `QA_REPLY_NOT_ALLOWED`, `ADMIN_LAST_ACTIVE`.

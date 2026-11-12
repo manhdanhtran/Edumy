@@ -16,4 +16,5 @@ Rules
 - Test names: `methodOrScenario_condition_expected` and mention the rule: `addToCart_ownedCourse_rejected_BR10`.
 - Time-dependent rules (QR 15 min, token 24 h/30 min, order 24 h) use an injected `java.time.Clock` bean; tests use a
   fixed/mutable clock. Never call `Instant.now()` directly in entity/ or service/ code.
+- `*IT` classes run via surefire in `./mvnw test` (decision in V1); if the suite gets too slow they move to failsafe/`verify`.
 - Never delete or `@Disabled` a failing test to finish a task; report it.

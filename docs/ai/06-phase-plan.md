@@ -16,6 +16,10 @@ Goal: the SPA can call every endpoint in `05-api-contract.md` and get contract-c
 | 9 | Caching | P08 |
 | 10 | Tests: modularity, constraints, IDOR, slices | P09 |
 
+Inserted step: **after P01 session 5 (V5 triggers)** implement `ConstraintViolationTranslator` by vendor error code
+(1062, 1451/1452, 3819, 1644/SQLState 45000; see `05-api-contract.md` §5.2) and test it through both JPA and
+`JdbcClient`. It needs the V5 triggers to exercise 1644.
+
 ### Stub contract (STUB-P1)
 A stub endpoint:
 - has the final URL, method, request DTO with full Bean Validation, final response DTO;
