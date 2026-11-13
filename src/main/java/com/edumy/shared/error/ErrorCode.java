@@ -23,6 +23,7 @@ public enum ErrorCode {
     // identity
     AUTH_INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED),
     AUTH_LOGIN_TEMPORARILY_BLOCKED(HttpStatus.TOO_MANY_REQUESTS),
+    AUTH_ACCOUNT_LOCKED(HttpStatus.FORBIDDEN),                       // Q1: correct password, status locked
     EMAIL_NOT_VERIFIED(HttpStatus.FORBIDDEN),
     ADMIN_LAST_ACTIVE(HttpStatus.CONFLICT),
 

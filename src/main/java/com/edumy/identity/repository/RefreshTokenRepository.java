@@ -1,6 +1,7 @@
 package com.edumy.identity.repository;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import com.edumy.identity.entity.RefreshToken;
@@ -28,6 +29,13 @@ public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long
 
     /** Session validity of an access token: its {@code sid} family still has a non-revoked token. */
     boolean existsByFamilyIdAndRevokedAtIsNull(String familyId);
+
+    /**
+     * Sessions (family ids) of the user that still have a non-revoked token: read before a bulk revoke of the user's
+     * sessions, whose UPDATE cannot return them, so each one can be evicted from the session-status cache.
+     */
+    @Query("select distinct r.familyId from RefreshToken r where r.user.id = :userId and r.revokedAt is null")
+    List<String> findActiveFamilyIdsByUserId(@Param("userId") Long userId);
 
     /** Logout (UC-G10) and reuse detection: revoke the whole family. */
     @Modifying(flushAutomatically = true, clearAutomatically = true)

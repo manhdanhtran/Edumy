@@ -171,8 +171,10 @@ class JwtSecurityIT {
                     .andExpect(status().isNotFound())
                     .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
         }
-        mvc.perform(post("/api/v1/auth/login"))
-                .andExpect(status().isNotFound());
+        mvc.perform(post("/api/v1/auth/login")) // reaches AuthController: no body → 4xx MALFORMED_REQUEST
+                .andExpect(status().is(not(401)))
+                .andExpect(status().is(not(403)))
+                .andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
         mvc.perform(post("/api/v1/auth/email-verification/confirm"))
                 .andExpect(status().isNotFound());
         mvc.perform(get("/actuator/health"))

@@ -25,6 +25,8 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidator;
 import org.springframework.security.oauth2.core.OAuth2TokenValidatorResult;
@@ -37,6 +39,7 @@ import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
@@ -47,6 +50,8 @@ import org.springframework.security.web.access.AccessDeniedHandler;
  * <p>Route rules (§4.3, Q2): public {@code /api/v1/auth/**} except {@code POST /auth/logout} and
  * {@code POST /auth/email-verification/resend}; public catalog, webhooks (HMAC-checked in P07), actuator
  * health/info, API docs and {@code /error}; {@code /api/v1/admin/**} needs ADMIN; everything else needs login.
+ * <p>The public auth endpoints ignore any {@code Authorization} header ({@link AuthEndpointBearerTokenResolver}), and
+ * {@code POST /auth/refresh} / {@code POST /auth/logout} reject a foreign {@code Origin} ({@link AuthOriginFilter}).
  * <p>401/403 raised by the filter chain are rendered by {@code GlobalExceptionHandler} through
  * {@link ProblemResponder} ({@code UNAUTHENTICATED} / {@code ACCESS_DENIED}), so they have the same ProblemDetail shape
  * and {@code traceId} as every other error.
@@ -56,10 +61,12 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 public class SecurityConfig {
 
     static final int MIN_SECRET_BYTES = 32;
+    static final int BCRYPT_STRENGTH = 12;
     private static final String ROLE_PREFIX = "ROLE_";
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http, ProblemResponder problems) throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, ProblemResponder problems, EdumyProperties properties)
+            throws Exception {
         AuthenticationEntryPoint unauthenticated = (request, response, ex) -> {
             response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
             problems.respond(request, response, ErrorCode.UNAUTHENTICATED);
@@ -85,7 +92,11 @@ public class SecurityConfig {
                         .requestMatchers("/error").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
+                // §4.5: Origin check of the cookie endpoints, before any token is read
+                .addFilterBefore(new AuthOriginFilter(properties.cors().allowedOrigins(), problems),
+                        BearerTokenAuthenticationFilter.class)
                 .oauth2ResourceServer(oauth2 -> oauth2
+                        .bearerTokenResolver(new AuthEndpointBearerTokenResolver())
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
                         .authenticationEntryPoint(unauthenticated)
                         .accessDeniedHandler(denied))
@@ -93,6 +104,12 @@ public class SecurityConfig {
                         .authenticationEntryPoint(unauthenticated)
                         .accessDeniedHandler(denied));
         return http.build();
+    }
+
+    /** NFR-02 / docs/ai/04 §4.2: BCrypt cost 12 for every stored password and for the unknown-email dummy check. */
+    @Bean
+    PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder(BCRYPT_STRENGTH);
     }
 
     @Bean

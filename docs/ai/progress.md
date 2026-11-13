@@ -21,8 +21,8 @@ Constraint-by-constraint status: [schema-checklist.md](schema-checklist.md).
 | P03-commerce entities + repositories | done | df96e32 | 846 tests green (+102: 88 entity unit, 14 CommerceRepositoryIT), suite 1 min 51 s; ddl-auto=validate OK on test DB and dev DB (v1000), no Hibernate setting needed (ADR-001); generated pending_* columns unmapped — flush the cancel/close before inserting the next pending row |
 | P03-learning entities + repositories | done | 6c4ea20 | 975 tests green (+129: 116 entity unit, 13 LearningRepositoryIT), suite 3 min 26 s; ddl-auto=validate OK on test DB and dev DB (v1000), no Hibernate setting needed (ADR-001); T2 uses INSERT IGNORE (insertPurchaseIfAbsent) for BR-17 — IGNORE also hides FK/CHECK errors |
 | P04-plan (HARD STOP: approval) | approved | — | approved 2026-11-13 with Q1–Q7 = A/approved + 7 SRS constraints (NFR-02/03/08, UC-G05 E3, UC-G08/G12) |
-| P04-a JWT, SecurityConfig, TraceIdFilter | done | (this commit) | 1015 tests green (+40), suite 2 min 59 s, one boot context; 401/403 from the filter chain rendered by GlobalExceptionHandler via ProblemResponder; session/user status through Cache API, evicted after commit |
-| P04-b SessionService + /auth/login, refresh, logout | todo | | |
+| P04-a JWT, SecurityConfig, TraceIdFilter | done | 084c7a3 | 1015 tests green (+40), suite 2 min 59 s, one boot context; 401/403 from the filter chain rendered by GlobalExceptionHandler via ProblemResponder; session/user status through Cache API, evicted after commit |
+| P04-b SessionService + /auth/login, refresh, logout | done | (this commit) | 1040 tests green (+25), suite 3 min 35 s, one boot context; BCrypt(12) + same-cost dummy hash; reuse_detected revoke committed before the 401 (TransactionTemplate); Authorization ignored on public /auth/**; Origin check on refresh/logout; AUTH_ACCOUNT_LOCKED (Q1) |
 | P04-c account tokens, register, verify, reset, /me | todo | | |
 | P04-d notification module (mail) | todo | | |
 | P04-e RoleQueryApi + access beans | todo | | |

@@ -43,6 +43,7 @@
 | `UNAUTHENTICATED` | 401 | |
 | `AUTH_INVALID_CREDENTIALS` | 401 | |
 | `ACCESS_DENIED` | 403 | |
+| `AUTH_ACCOUNT_LOCKED` | 403 | Q1: correct password on a locked account (a wrong password stays `AUTH_INVALID_CREDENTIALS`) |
 | `EMAIL_NOT_VERIFIED` | 403 | D-02 |
 | `ENROLLMENT_REQUIRED` | 403 | |
 | `QA_REPLY_NOT_ALLOWED` | 403 | BR-38 |
