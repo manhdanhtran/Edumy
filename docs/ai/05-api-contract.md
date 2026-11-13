@@ -172,6 +172,14 @@ Identity response codes (P04-c):
 | POST `/admin/users/{id}/lock` · POST `/admin/users/{id}/unlock` | A02, A03 | R |
 | PUT `/admin/users/{id}/roles/instructor` · DELETE `/admin/users/{id}/roles/instructor` | A04, A05 | R |
 
+Admin user list (P05):
+- `GET /admin/users?q=&status=&role=&page=&size=` → **200** `PagedModel<AdminUserResponse {id,email,fullName,emailVerified,status,roles,createdAt}>`;
+  `status` = `active`/`locked`, `roles` = lower-case codes **active** in the database (revoked ones not listed).
+  `q` (trimmed) = substring of the email (case-insensitive) or of the full name (case- and accent-insensitive, ai_ci);
+  `role` keeps users holding that role actively. Blank parameter = no filter; an unknown `status`/`role` → 400
+  `VALIDATION_FAILED` (`errors[].field` = `status`/`role`). Order fixed: newest account first (`createdAt` desc, `id`
+  desc); `sort` is ignored. `size` default 20, values above 100 are clamped to 100 (every paged endpoint, §5.1).
+
 ### Front-end routes used in emails (contract for the SPA team, Q5)
 The identity mails link to two SPA routes. Base = `edumy.frontend.base-url` (env `EDUMY_FRONTEND_BASE_URL`, default
 `http://localhost:5173`; a trailing `/` is ignored). `token` is the one-time code, URL-encoded (base64url, 43 chars).

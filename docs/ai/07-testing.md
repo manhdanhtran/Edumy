@@ -47,17 +47,40 @@ by every cached Spring context. It holds two databases: `edumy` (Flyway `db/migr
 | `@MySqlJdbcTest` | `@JdbcTest`: DataSource, Flyway, `JdbcClient`; each test rolled back | `edumy` | pure schema / SQL tests (`*SchemaIT`: constraints, triggers, generated columns) |
 | `@MySqlSpringBootTest` | whole application | `edumy` | tests that need the app (services, security, controllers on real MySQL) |
 | `@MySqlSeedTest` | `@JdbcTest` + `db/seed` | `edumy_seed` | tests that read the dev seed (e.g. `SeedCoverageIT`) |
+| `@MySqlSeedSpringBootTest` | whole application + MockMvc, `db/seed` | `edumy_seed` | GET endpoints on the dev seed (one test per GET endpoint, e.g. `AdminUserControllerIT`) — **read-only** |
 
 Rules
 - **Leave no committed data in the shared database.** Roll back (`@MySqlJdbcTest` does it per test; add `@Transactional`
   to `@MySqlSpringBootTest` tests that write), or clean up in `@AfterEach`, or use values unique per test (email/slug
   containing a UUID). Leftover rows break other ITs in the same JVM.
-- **Seed data only through `@MySqlSeedTest`** (database `edumy_seed`). Never use the default database for tests that need
+- **Seed data only through `@MySqlSeedTest` / `@MySqlSeedSpringBootTest`** (database `edumy_seed`). Never use the default database for tests that need
   the seed: Flyway would record V1000 there and every context without `db/seed` would fail validation
   ("applied migration not resolved locally"), turning the whole suite red.
 - Choose `@MySqlJdbcTest` for schema/SQL tests, `@MySqlSpringBootTest` only when the app is needed.
 - Tests with the same annotation (and no extra `@MockitoBean`, `@TestPropertySource`, `@DirtiesContext`…) reuse one cached
   context. Two contexts always exist when both kinds are used (`@SpringBootTest` and `@JdbcTest` cannot share one) plus one
-  for `@MySqlSeedTest`; they differ only in start-up cost, the container is shared. `ModularityTest` needs no context.
+  each for `@MySqlSeedTest` and `@MySqlSeedSpringBootTest`; they differ only in start-up cost, the container is shared.
+  `ModularityTest` needs no context.
 - Surefire runs one fork. If forks are ever parallelised, each fork starts its own container.
-- Proof of the setup: `support/SharedMySqlContainerIT`, `support/SeedDatabaseIT` (same container, separate databases).
+- Proof of the setup: `support/SharedMySqlContainerIT`, `support/SeedDatabaseIT` (same container, separate databases),
+  `support/MySqlSeedSpringBootTestIT`, `support/SqlStatementCounterIT`.
+
+### GET endpoints on the dev seed (`@MySqlSeedSpringBootTest`)
+- **Read-only, never write**: the seed database is shared by every seed test of the JVM and nothing rolls it back. No
+  data-changing request, no `/auth/login` (it inserts a `refresh_tokens` row); `TestUsers` / `JwtTestTokens` are
+  deliberately not registered in this context. Write tests stay in `@MySqlSpringBootTest`.
+- Tokens: `support/SeedUserTokens` (`@Autowired`). `bearer(userId)` = `Authorization` header value for a seed user, JWT
+  `roles` = its active seed roles; `bearer(userId, RoleCode...)` sets the claim explicitly (stale/forged claims). No
+  write: it marks the user's fixed `sid` active in the `identity.session-status` cache instead of inserting a
+  `refresh_tokens` row; signature, expiry, issuer and the user-status check stay real (user 20 is locked → 401). Call it
+  per request. Seed ids as constants: `ADMIN` 1, `INSTRUCTOR` 2 (`INSTRUCTOR_2` 3, `INSTRUCTOR_3` 4),
+  `REVOKED_INSTRUCTOR` 5, `STUDENT` 6 (students 6–17), `UNVERIFIED` 18 (and 19), `LOCKED` 20.
+
+### Counting SQL statements (no N+1): `support/SqlStatementCounter`
+Registered in `@MySqlSpringBootTest` and `@MySqlSeedSpringBootTest` (inject with `@Autowired`). It wraps the application
+`DataSource` (BeanPostProcessor + JDK proxies, no extra dependency) and counts every `execute*` on a JDBC statement —
+JPA and `JdbcClient` alike — **on the calling thread** since `reset()` (MockMvc runs requests on the test thread, so
+async work of other tests never interferes); `count()`, `statements()` (SQL texts, for assertion messages). The security
+filter and access beans read 30–60 s Caffeine caches that cost a statement when cold, so: send the request once to warm
+up, then `reset()`, then measure. Every list endpoint gets a test asserting the same (small, exact) count for two page
+sizes, both pages full (Spring Data skips the count query when the first page is not full).

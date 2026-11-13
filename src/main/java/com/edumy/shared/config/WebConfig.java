@@ -3,8 +3,10 @@ package com.edumy.shared.config;
 import java.util.List;
 
 import com.edumy.shared.security.CurrentUserIdArgumentResolver;
+import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.web.config.EnableSpringDataWebSupport;
+import org.springframework.data.web.config.PageableHandlerMethodArgumentResolverCustomizer;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
@@ -19,6 +21,8 @@ import static org.springframework.data.web.config.EnableSpringDataWebSupport.Pag
 @Configuration(proxyBeanMethods = false)
 @EnableSpringDataWebSupport(pageSerializationMode = VIA_DTO)
 class WebConfig implements WebMvcConfigurer {
+
+    static final int MAX_PAGE_SIZE = 100;
 
     private final EdumyProperties properties;
 
@@ -38,6 +42,16 @@ class WebConfig implements WebMvcConfigurer {
                 .allowCredentials(true) // refresh cookie edumy_rt
                 .exposedHeaders(HttpHeaders.RETRY_AFTER) // 429 of the abuse limiters (docs/ai/04 §4.4)
                 .maxAge(3600);
+    }
+
+    /**
+     * docs/ai/05 §5.1: {@code size} default 20 (Spring Data default), max {@value #MAX_PAGE_SIZE} (larger values are
+     * clamped). A customizer, because {@code @EnableSpringDataWebSupport} above makes Boot's
+     * {@code spring.data.web.pageable.*} properties ineffective.
+     */
+    @Bean
+    PageableHandlerMethodArgumentResolverCustomizer pageableLimits() {
+        return resolver -> resolver.setMaxPageSize(MAX_PAGE_SIZE);
     }
 
     @Override
