@@ -1,6 +1,8 @@
 package com.edumy.authoring.repository;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Collection;
 import java.util.Optional;
 
 import com.edumy.authoring.entity.Course;
@@ -100,6 +102,31 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
             select count(c) from Course c where c.status = com.edumy.authoring.entity.CourseStatus.PENDING_REVIEW
             """)
     Page<PendingCourseView> findPendingQueue(Pageable pageable);
+
+    /** {@code authoring::api.CourseQueryApi.findSummaries}: public columns of several courses in one statement. */
+    @Query("""
+            select c.id as id, c.title as title, c.slug as slug, c.thumbnailUrl as thumbnailUrl, c.price as price,
+                   c.status as status, c.mainInstructorId as mainInstructorId
+            from Course c where c.id in :ids
+            """)
+    List<ApiSummaryView> findApiSummariesByIdIn(@Param("ids") Collection<Long> ids);
+
+    /** Row of {@link #findApiSummariesByIdIn}. */
+    interface ApiSummaryView {
+        Long getId();
+
+        String getTitle();
+
+        String getSlug();
+
+        String getThumbnailUrl();
+
+        long getPrice();
+
+        CourseStatus getStatus();
+
+        Long getMainInstructorId();
+    }
 
     /** Row of the instructor's course list (UC-I02). */
     interface InstructorCourseView {

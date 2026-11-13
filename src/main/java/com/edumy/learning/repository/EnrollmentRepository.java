@@ -1,6 +1,8 @@
 package com.edumy.learning.repository;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Collection;
 import java.util.Optional;
 
 import com.edumy.learning.entity.Enrollment;
@@ -28,6 +30,11 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
 
     /** {@code EnrollmentApi.owns} (BR-10, cart / order checks) and {@code @enrollmentAccess.isEnrolled}. */
     boolean existsByStudentIdAndCourseId(Long studentId, Long courseId);
+
+    /** {@code EnrollmentApi.findOwnedCourseIds}: which of these courses the student owns, one statement. */
+    @Query("select e.courseId from Enrollment e where e.studentId = :studentId and e.courseId in :courseIds")
+    List<Long> findCourseIdsByStudentIdAndCourseIdIn(@Param("studentId") Long studentId,
+                                                     @Param("courseIds") Collection<Long> courseIds);
 
     /**
      * BR-17 / T2: purchase enrollment of {@code studentId} in {@code courseId} through {@code orderId}, unless the

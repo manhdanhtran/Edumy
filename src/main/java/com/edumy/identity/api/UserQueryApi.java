@@ -19,4 +19,7 @@ public interface UserQueryApi {
      * An empty collection costs no query. The map is immutable.
      */
     Map<Long, UserSummary> findSummaries(Collection<Long> ids);
+
+    /** Id of the account with this email (case-insensitive, trimmed); empty for an unknown or blank email. */
+    Optional<Long> findIdByEmail(String email);
 }

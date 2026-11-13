@@ -10,6 +10,7 @@ import java.util.stream.Collectors;
 
 import com.edumy.identity.api.UserQueryApi;
 import com.edumy.identity.api.UserSummary;
+import com.edumy.identity.entity.User;
 import com.edumy.identity.mapper.UserMapper;
 import com.edumy.identity.repository.UserRepository;
 import org.springframework.stereotype.Service;
@@ -42,5 +43,13 @@ class UserQueryApiImpl implements UserQueryApi {
         return users.findSummariesByIdIn(distinct).stream()
                 .map(mapper::toUserSummary)
                 .collect(Collectors.toUnmodifiableMap(UserSummary::id, Function.identity()));
+    }
+
+    @Override
+    public Optional<Long> findIdByEmail(String email) {
+        if (email == null || email.isBlank()) {
+            return Optional.empty();
+        }
+        return users.findIdByEmail(User.normalizeEmail(email));
     }
 }

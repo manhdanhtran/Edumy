@@ -298,6 +298,34 @@ Authoring reads (P05):
 | GET `/admin/orders` · GET `/admin/payments?status=` | A13, A14 | R |
 | POST `/admin/payments/{id}/resolve` (`activated` \| `refund_outside`, note required) | A18 | **S** |
 
+Commerce reads (P05):
+- `GET /cart` → **200** `CartResponse {items[{courseId,title,slug,thumbnailUrl,price,isFree,instructor{id,fullName},addedAt,
+  purchasable,unavailableReason}],itemCount,purchasableCount,totalAmount}`: items in added order at the **current**
+  price; `purchasable=false` lines (not in `totalAmount`) carry `unavailableReason` = `course_unavailable` (hidden / not
+  published, BR-31) · `already_owned` (BR-10) · `own_course` (main instructor, BR-32) · `now_free` (BR-09), checked in
+  that order. No cart → empty cart, nothing is created. The "suggest public courses" hint of an empty cart is the
+  catalog list (UC-G02), not part of this response. 4 statements (1 when empty).
+- `GET /orders?page=&size=` → **200** `PagedModel<OrderSummaryResponse {orderCode,totalAmount,status,cancelReason,
+  itemCount,createdAt,paidAt,cancelledAt}>`, newest first (`sort` ignored), 2 statements per full page.
+- `GET /orders/{orderCode}` → **200** `OrderDetailResponse {orderCode,totalAmount,status,cancelReason,createdAt,paidAt,
+  cancelledAt,items[{courseId,title,slug,thumbnailUrl,unitPrice}],payments[{transactionRef,amount,status,qrExpiresAt,
+  confirmedAt,createdAt}]}`: `unitPrice` = frozen order_items price (BR-12); attempts newest first, no QR payload;
+  3 statements. Unknown code or another student's → 404 `RESOURCE_NOT_FOUND` (identical, NFR-01; admins get 404 too).
+- `GET /orders/{orderCode}/payments/current` → **200** `PaymentStatusResponse {orderCode,orderStatus,transactionRef,
+  status,amount,qrData,qrExpiresAt,confirmedAt,createdAt}`: the pending attempt, else the latest one; `qrData` only while
+  `status=pending` (otherwise `null`). Order without any attempt (e.g. cancelled before a QR was made) → 404
+  `RESOURCE_NOT_FOUND`, same as unknown / not own.
+- `GET /admin/orders?orderCode=&email=&status=&createdFrom=&createdTo=&page=&size=` → **200**
+  `PagedModel<AdminOrderResponse {id,orderCode,student{id,fullName,email},totalAmount,status,cancelReason,itemCount,
+  createdAt,paidAt,cancelledAt}>`, newest first; `orderCode` / `email` exact (case-insensitive; unknown email = empty
+  page), `createdFrom` inclusive / `createdTo` exclusive (ISO-8601 instants), `status` in `pending|paid|cancelled`;
+  bad status / date → 400 `VALIDATION_FAILED`. 3 statements per full page (+1 with `email`).
+- `GET /admin/payments?status=&awaitingReview=&page=&size=` → **200** `PagedModel<AdminPaymentResponse {id,orderId,
+  orderCode,student{id,fullName,email},transactionRef,amount,qrExpiresAt,status,confirmedAt,handledBy{id,fullName},
+  handledAction,handledNote,handledAt,createdAt}>` (no QR payload), newest first; `status` in `pending|success|failed|
+  expired|needs_review` (else 400 `VALIDATION_FAILED`); `awaitingReview=true` = needs_review and not handled, oldest
+  first (UC-A18 queue), overrides `status`. 3 statements per full page.
+
 ### learning
 | Method & path | UC | P1 |
 |---|---|---|

@@ -58,6 +58,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
     Page<AdminUserView> searchForAdmin(@Param("q") String q, @Param("status") UserStatus status,
                                        @Param("role") RoleCode role, Pageable pageable);
 
+    /** {@code identity::api.UserQueryApi.findIdByEmail}: normalized email to id, no entity load. */
+    @Query("select u.id from User u where u.email = :email")
+    Optional<Long> findIdByEmail(@Param("email") String email);
+
     /** {@code identity::api.UserQueryApi}: public columns of several users in one statement (no N+1). */
     @Query("select u.id as id, u.fullName as fullName, u.email as email, u.status as status from User u where u.id in :ids")
     List<UserSummaryView> findSummariesByIdIn(@Param("ids") Collection<Long> ids);
