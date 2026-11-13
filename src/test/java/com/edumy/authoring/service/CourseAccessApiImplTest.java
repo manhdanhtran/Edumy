@@ -2,6 +2,7 @@ package com.edumy.authoring.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -63,7 +64,7 @@ class CourseAccessApiImplTest {
     @Test
     void lessonQuery_courseOfLesson() {
         lenient().when(lessons.findCourseIdById(5L)).thenReturn(Optional.of(COURSE));
-        LessonQueryApiImpl api = new LessonQueryApiImpl(lessons);
+        LessonQueryApiImpl api = new LessonQueryApiImpl(lessons, mock(com.edumy.authoring.repository.ChapterRepository.class));
 
         assertThat(api.findCourseId(5L)).contains(COURSE);
         assertThat(api.findCourseId(6L)).isEmpty();

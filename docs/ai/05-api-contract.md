@@ -343,3 +343,13 @@ Commerce reads (P05):
 | POST `/admin/questions/{id}/hide` · `/restore` · `/admin/answers/{id}/hide` · `/restore` | A19 | R |
 | GET `/me/certificates` | S20 | R |
 | GET `/me/certificates/{code}/pdf` | S20 | **S** (static sample PDF) |
+
+**P05-learning (GET reads, implemented)** — all scoped by the caller / access beans, 404 identical for unknown and not-yours:
+- `GET /me/enrollments?page&size` → **200** `PagedModel<EnrollmentResponse {id, course{id,title,slug,thumbnailUrl,published}, enrollSource, enrolledAt, completedLessons, totalLessons, progressPercent, lastAccessedLessonId, lastAccessedAt, certificateCode}>`, newest enrollment first, hidden courses included (BR-31); 5 statements per non-empty page.
+- `GET /learn/courses/{courseId}` (`@enrollmentAccess.canViewContent`, any course status) → **200** `LearningOutlineResponse {courseId, title, enrolled, progress{completedLessons,totalLessons,percent}|null, chapters[{id,title,lessons[{id,title,contentType,durationSeconds,preview,completed|null}]}]}`; instructor / admin: `enrolled=false`, no progress (D-32). 6 statements.
+- `GET /learn/lessons/{lessonId}` (`canViewLesson`) → **200** `LessonContentResponse {id,courseId,chapterId,title,contentType,durationSeconds,videoUrl,articleContent,completed|null}`; records no visit (POST in P06).
+- `GET /courses/{courseId}/questions?lessonId=&mine=&unanswered=&q=` (`canViewContent`) → **200** `PagedModel<QuestionSummaryResponse {id,courseId,courseTitle(null),lessonId,title,resolved,status,asker{id,fullName},answerCount,instructorReplied,createdAt}>`, newest first; visible + the caller's own hidden (+ all hidden for admin); 4 statements.
+- `GET /questions/{id}` (`@qaAccess.canView`) → **200** `QuestionThreadResponse {…, content, updatedAt, answers[{id,author{id,fullName},authorType,content,status,createdAt,updatedAt}]}`; answers oldest first, deleted never, hidden only for their author and admin.
+- `GET /instructor/questions?courseId=&status=unanswered` (`@courseAccess.isActiveInstructor`: no role → 403) → **200** `PagedModel<QuestionSummaryResponse>` (with `courseTitle`) of visible questions of the courses the caller instructs, newest first; `courseId` not instructed → 404; `status` other than `unanswered` → 400 `VALIDATION_FAILED`; 5 statements.
+- `GET /instructor/courses/{courseId}/students` (`@courseAccess.isInstructor`) → **200** `PagedModel<StudentProgressResponse {enrollmentId, student{id,fullName}, enrollSource, enrolledAt, completedLessons, totalLessons, progressPercent, lastAccessedAt}>`, newest enrollment first, no email; 5 statements.
+- `GET /me/certificates` → **200** `PagedModel<CertificateResponse {id,certificateCode,enrollmentId,courseId,courseTitle,studentName,instructorName,issuedAt}>`, newest first; 2 statements.

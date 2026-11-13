@@ -29,7 +29,11 @@ public interface CourseQuestionRepository extends JpaRepository<CourseQuestion, 
                    q.createdAt as createdAt,
                    (select count(a) from QuestionAnswer a
                     where a.question = q and a.visibilityStatus = com.edumy.learning.entity.ContentStatus.VISIBLE)
-                       as answerCount
+                       as answerCount,
+                   case when exists (select 1 from QuestionAnswer ra where ra.question = q
+                       and ra.authorType = com.edumy.learning.entity.AuthorType.INSTRUCTOR
+                       and ra.visibilityStatus = com.edumy.learning.entity.ContentStatus.VISIBLE)
+                       then true else false end as instructorReplied
             from CourseQuestion q join q.enrollment e
             where e.courseId = :courseId
               and (:lessonId is null or q.lessonId = :lessonId)
@@ -57,7 +61,11 @@ public interface CourseQuestionRepository extends JpaRepository<CourseQuestion, 
                    q.createdAt as createdAt,
                    (select count(a) from QuestionAnswer a
                     where a.question = q and a.visibilityStatus = com.edumy.learning.entity.ContentStatus.VISIBLE)
-                       as answerCount
+                       as answerCount,
+                   case when exists (select 1 from QuestionAnswer ra where ra.question = q
+                       and ra.authorType = com.edumy.learning.entity.AuthorType.INSTRUCTOR
+                       and ra.visibilityStatus = com.edumy.learning.entity.ContentStatus.VISIBLE)
+                       then true else false end as instructorReplied
             from CourseQuestion q join q.enrollment e
             where e.studentId = :studentId
               and q.visibilityStatus <> com.edumy.learning.entity.ContentStatus.DELETED
@@ -82,7 +90,11 @@ public interface CourseQuestionRepository extends JpaRepository<CourseQuestion, 
                    q.createdAt as createdAt,
                    (select count(a) from QuestionAnswer a
                     where a.question = q and a.visibilityStatus = com.edumy.learning.entity.ContentStatus.VISIBLE)
-                       as answerCount
+                       as answerCount,
+                   case when exists (select 1 from QuestionAnswer ra where ra.question = q
+                       and ra.authorType = com.edumy.learning.entity.AuthorType.INSTRUCTOR
+                       and ra.visibilityStatus = com.edumy.learning.entity.ContentStatus.VISIBLE)
+                       then true else false end as instructorReplied
             from CourseQuestion q join q.enrollment e
             where e.courseId in :courseIds
               and q.visibilityStatus = com.edumy.learning.entity.ContentStatus.VISIBLE
@@ -105,6 +117,63 @@ public interface CourseQuestionRepository extends JpaRepository<CourseQuestion, 
             """)
     Page<QuestionSummaryView> findForInstructor(@Param("courseIds") Collection<Long> courseIds,
                                                 @Param("unansweredOnly") boolean unansweredOnly, Pageable pageable);
+
+    /**
+     * UC-S18 {@code GET /courses/{courseId}/questions}: visible questions of a course, newest first, plus hidden ones
+     * for an admin ({@code allHidden}) and the caller's own hidden ones (BR-41, docs/ai/04 §4.3). Optional filters:
+     * {@code lessonId}, {@code askerId} ("mine"), {@code unansweredOnly} (no visible instructor answer),
+     * {@code pattern} (LIKE pattern with escape {@code !} on title or content; {@code %} = no keyword).
+     */
+    @Query(value = """
+            select q.id as id, e.courseId as courseId, e.studentId as askerId, q.lessonId as lessonId,
+                   q.title as title, q.resolved as resolved, q.visibilityStatus as visibilityStatus,
+                   q.createdAt as createdAt,
+                   (select count(a) from QuestionAnswer a
+                    where a.question = q and a.visibilityStatus = com.edumy.learning.entity.ContentStatus.VISIBLE)
+                       as answerCount,
+                   case when exists (select 1 from QuestionAnswer ra where ra.question = q
+                       and ra.authorType = com.edumy.learning.entity.AuthorType.INSTRUCTOR
+                       and ra.visibilityStatus = com.edumy.learning.entity.ContentStatus.VISIBLE)
+                       then true else false end as instructorReplied
+            from CourseQuestion q join q.enrollment e
+            where e.courseId = :courseId
+              and (:lessonId is null or q.lessonId = :lessonId)
+              and (:askerId is null or e.studentId = :askerId)
+              and (q.visibilityStatus = com.edumy.learning.entity.ContentStatus.VISIBLE
+                   or (q.visibilityStatus = com.edumy.learning.entity.ContentStatus.HIDDEN
+                       and (:allHidden = true or e.studentId = :viewerId)))
+              and (:unansweredOnly = false
+                   or not exists (select 1 from QuestionAnswer ia
+                                  where ia.question = q
+                                    and ia.authorType = com.edumy.learning.entity.AuthorType.INSTRUCTOR
+                                    and ia.visibilityStatus = com.edumy.learning.entity.ContentStatus.VISIBLE))
+              and (q.title like :pattern escape '!' or q.content like :pattern escape '!')
+            order by q.createdAt desc, q.id desc
+            """,
+            countQuery = """
+            select count(q) from CourseQuestion q join q.enrollment e
+            where e.courseId = :courseId
+              and (:lessonId is null or q.lessonId = :lessonId)
+              and (:askerId is null or e.studentId = :askerId)
+              and (q.visibilityStatus = com.edumy.learning.entity.ContentStatus.VISIBLE
+                   or (q.visibilityStatus = com.edumy.learning.entity.ContentStatus.HIDDEN
+                       and (:allHidden = true or e.studentId = :viewerId)))
+              and (:unansweredOnly = false
+                   or not exists (select 1 from QuestionAnswer ia
+                                  where ia.question = q
+                                    and ia.authorType = com.edumy.learning.entity.AuthorType.INSTRUCTOR
+                                    and ia.visibilityStatus = com.edumy.learning.entity.ContentStatus.VISIBLE))
+              and (q.title like :pattern escape '!' or q.content like :pattern escape '!')
+            """)
+    Page<QuestionSummaryView> search(@Param("courseId") Long courseId, @Param("lessonId") Long lessonId,
+                                     @Param("askerId") Long askerId, @Param("viewerId") Long viewerId,
+                                     @Param("allHidden") boolean allHidden,
+                                     @Param("unansweredOnly") boolean unansweredOnly,
+                                     @Param("pattern") String pattern, Pageable pageable);
+
+    /** UC-S18 thread: the question with its enrollment (asker, course). */
+    @Query("select q from CourseQuestion q join fetch q.enrollment where q.id = :id")
+    Optional<CourseQuestion> findWithEnrollmentById(@Param("id") Long id);
 
     /** UC-S19 {@code PATCH|DELETE /questions/{id}}, resolve: the question only if the student asked it (NFR-01). */
     Optional<CourseQuestion> findByIdAndEnrollmentStudentId(Long id, Long studentId);
@@ -152,5 +221,8 @@ public interface CourseQuestionRepository extends JpaRepository<CourseQuestion, 
         Instant getCreatedAt();
 
         long getAnswerCount();
+
+        /** D-39: a visible answer by an instructor exists. */
+        boolean isInstructorReplied();
     }
 }

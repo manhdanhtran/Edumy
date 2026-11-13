@@ -15,4 +15,10 @@ public interface CourseAccessApi {
      * declined and removed do not count), and holds an active instructor role (BR-26).
      */
     boolean isCourseInstructor(Long userId, Long courseId);
+
+    /**
+     * Ids of every course {@code userId} instructs (main or accepted co-instructor), one query; empty without an active
+     * instructor role (BR-26). The set is immutable.
+     */
+    java.util.Set<Long> findInstructedCourseIds(Long userId);
 }

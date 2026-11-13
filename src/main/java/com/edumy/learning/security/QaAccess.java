@@ -40,6 +40,20 @@ public class QaAccess {
     }
 
     /**
+     * UC-S18 thread read: the question exists, is not deleted, a hidden one is the caller's own or the caller is an
+     * admin, and a visible one belongs to a course whose content the caller may view (BR-37, D-32). Otherwise 404.
+     */
+    public boolean canView(Long questionId) {
+        Long userId = EnrollmentAccess.callerId();
+        QuestionAccessView question = seenQuestion(questionId, userId);
+        if (question.getVisibilityStatus() == ContentStatus.VISIBLE
+                && !enrollmentAccess.canView(userId, question.getCourseId())) {
+            throw BusinessException.notFound();
+        }
+        return true;
+    }
+
+    /**
      * BR-38 / D-38: only the asker and the course instructors reply. A caller who can see the question but is
      * neither gets {@code QA_REPLY_NOT_ALLOWED} (403); a caller who cannot see it gets 404.
      */

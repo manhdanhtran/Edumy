@@ -73,7 +73,7 @@ Two layers, both server-side:
 | `@courseAccess` (authoring) | `isMain(#courseId)`, `isInstructor(#courseId)`, `canEditContent(#courseId)` (instructor + status ≠ pending_review); `isActiveInstructor()` (active instructor role only, for endpoints without a course id: UC-I02 list, UC-I14 invitations; never 404) | UC-I01…I20 |
 | `@chapterAccess` / `@lessonAccess` (authoring) | same three methods by chapter / lesson id: role first, then resolve the parent course (unknown → 404) and delegate | chapter/lesson endpoints |
 | `@enrollmentAccess` (learning) | `isEnrolled(#courseId)`, `canViewContent(#courseId)` (enrolled OR course instructor OR admin, D-32), `canViewLesson(#lessonId)`, `isEnrolledForLesson(#lessonId)` | UC-S09…S20 |
-| `@qaAccess` (learning) | `canReply(#questionId)` (asker or course instructor, BR-38), `isQuestionAuthor(#questionId)`, `isAnswerAuthor(#answerId)` | Q&A |
+| `@qaAccess` (learning) | `canView(#questionId)` (thread read: not deleted, hidden only asker/admin, visible = `canViewContent`; else 404), `canReply(#questionId)` (asker or course instructor, BR-38), `isQuestionAuthor(#questionId)`, `isAnswerAuthor(#answerId)` | Q&A |
 
 Outcomes (Q7, P04-e): **`false` → 403 `ACCESS_DENIED`** only when the caller lacks the needed role in the database
 (`@courseAccess`/`@chapterAccess`/`@lessonAccess`: no active instructor role — checked before any lookup, so ids cannot be

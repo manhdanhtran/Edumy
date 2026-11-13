@@ -37,6 +37,26 @@ public interface LessonRepository extends JpaRepository<Lesson, Long> {
     @Query("select coalesce(max(l.sortOrder), 0) from Lesson l where l.chapter.id = :chapterId")
     int findMaxSortOrderByChapterId(@Param("chapterId") Long chapterId);
 
+    /** Learning (UC-S08 / UC-I19): number of lessons of each course in {@code courseIds}, one statement. */
+    @Query("""
+            select ch.course.id as courseId, count(l.id) as lessonCount
+            from Lesson l join l.chapter ch
+            where ch.course.id in :courseIds
+            group by ch.course.id
+            """)
+    List<LessonCountView> countByCourseIdIn(@Param("courseIds") java.util.Collection<Long> courseIds);
+
+    /** Learning (UC-S09): a lesson with its chapter. */
+    @Query("select l from Lesson l join fetch l.chapter ch where l.id = :id")
+    Optional<Lesson> findWithChapterById(@Param("id") Long id);
+
+    /** Row of {@link #countByCourseIdIn}. */
+    interface LessonCountView {
+        Long getCourseId();
+
+        long getLessonCount();
+    }
+
     /** D-14: a published course keeps at least one lesson. */
     @Query("select count(l) from Lesson l where l.chapter.course.id = :courseId")
     long countByCourseId(@Param("courseId") Long courseId);

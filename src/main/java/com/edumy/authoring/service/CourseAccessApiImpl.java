@@ -5,6 +5,7 @@ import com.edumy.authoring.repository.CourseRepository;
 import com.edumy.identity.api.RoleQueryApi;
 import com.edumy.shared.security.RoleCode;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /** {@link CourseAccessApi}: the (cached) role check first, then one query on the course relation. */
 @Service
@@ -30,5 +31,14 @@ class CourseAccessApiImpl implements CourseAccessApi {
         return userId != null && courseId != null
                 && roles.hasActiveRole(userId, RoleCode.INSTRUCTOR) // BR-26, D-07
                 && courses.isCourseInstructor(courseId, userId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public java.util.Set<Long> findInstructedCourseIds(Long userId) {
+        if (userId == null || !roles.hasActiveRole(userId, RoleCode.INSTRUCTOR)) { // BR-26, D-07
+            return java.util.Set.of();
+        }
+        return java.util.Set.copyOf(courses.findInstructedCourseIds(userId));
     }
 }

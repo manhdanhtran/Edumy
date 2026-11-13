@@ -297,8 +297,8 @@ Consequences:
 | identity | `UserQueryApi` | `Optional<UserSummary> findSummary(Long id)` → id, fullName, email, status (lower-case code); `Optional<Long> findIdByEmail(String)` (P05-commerce); `Map<Long, UserSummary> findSummaries(Collection<Long> ids)` — one query for a whole list (no N+1), unknown ids absent (P05-authoring) |
 | identity | `RoleQueryApi` | `Set<RoleCode> activeRoles(Long userId)`, `boolean hasActiveRole(Long userId, RoleCode role)` — cached 60 s (`identity.active-roles`, key = user id), evicted after commit by `service/RoleCacheEvictor` on every grant/revoke |
 | authoring | `CourseQueryApi` | `boolean exists(Long courseId)` (P04-e, admin content access D-32); `Map<Long, CourseSummary> findSummaries(Collection<Long>)` (P05-commerce: title, slug, thumbnail, price, `published`, mainInstructorId; any status, one query); later `Optional<SellableCourse> findSellable(Long courseId)` (published only, BR-31) |
-| authoring | `CourseAccessApi` | `isMainInstructor`, `isCourseInstructor` (main or accepted co **and** active instructor role) |
-| authoring | `LessonQueryApi` | `Optional<Long> findCourseId(lessonId)`; later: lesson ids / count per course |
+| authoring | `CourseAccessApi` | `isMainInstructor`, `isCourseInstructor` (main or accepted co **and** active instructor role); `Set<Long> findInstructedCourseIds(userId)` (P05-learning, one query, empty without an active instructor role) |
+| authoring | `LessonQueryApi` | `Optional<Long> findCourseId(lessonId)`; `Map<Long,Integer> countLessons(Collection<Long>)` (one query); `List<ChapterOutline> findOutline(courseId)` (2 queries); `Optional<LessonContent> findContent(lessonId)` (P05-learning) |
 | learning | `EnrollmentApi` | `boolean owns(studentId, courseId)`; `Set<Long> findOwnedCourseIds(studentId, Collection<Long>)` (P05-commerce, one query); `void grantForPaidOrder(GrantEnrollmentCommand)` — `@Transactional(propagation = MANDATORY)` (ADR-004) |
 
 ## 1.10 Events

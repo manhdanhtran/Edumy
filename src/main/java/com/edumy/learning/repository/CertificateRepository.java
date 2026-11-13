@@ -58,4 +58,16 @@ public interface CertificateRepository extends JpaRepository<Certificate, Long> 
 
         Instant getIssuedAt();
     }
+
+    /** UC-S08: certificate code of each of these enrollments (one row per enrollment that has one), one statement. */
+    @Query("select c.enrollment.id as enrollmentId, c.certificateCode as certificateCode from Certificate c "
+            + "where c.enrollment.id in :enrollmentIds")
+    java.util.List<EnrollmentCertificateView> findByEnrollmentIdIn(
+            @Param("enrollmentIds") java.util.Collection<Long> enrollmentIds);
+
+    interface EnrollmentCertificateView {
+        Long getEnrollmentId();
+
+        String getCertificateCode();
+    }
 }

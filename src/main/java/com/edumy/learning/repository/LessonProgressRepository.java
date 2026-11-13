@@ -5,6 +5,8 @@ import java.util.Optional;
 
 import com.edumy.learning.entity.LessonProgress;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 /**
  * {@code lesson_progresses}. Callers pass an enrollment id they obtained scoped by the current student
@@ -23,4 +25,8 @@ public interface LessonProgressRepository extends JpaRepository<LessonProgress, 
 
     /** UC-S09 visit / UC-S10 completion: the row of one lesson (uq_lesson_progresses_enrollment_lesson). */
     Optional<LessonProgress> findByEnrollmentIdAndLessonId(Long enrollmentId, Long lessonId);
+
+    /** UC-S11: ids of the lessons the enrollment has completed (the outline marks them). */
+    @Query("select p.lessonId from LessonProgress p where p.enrollment.id = :enrollmentId and p.completed = true")
+    List<Long> findCompletedLessonIds(@Param("enrollmentId") Long enrollmentId);
 }
