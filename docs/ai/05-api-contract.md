@@ -203,6 +203,44 @@ The "password changed" notice (UC-G08 step 6, UC-G12) has no link. Mail sender =
 | GET `/catalog/courses/{slug}/lessons/{lessonId}/preview` | G11 | R |
 | GET `/catalog/certificates/{code}` (rate-limited) | G14 | R |
 
+Catalog responses (P05):
+- All public. No token = anonymous. A valid bearer token is read (viewer context); an invalid/expired token or a locked
+  account's token → 401 `UNAUTHENTICATED` as on every other path (unchanged resource-server behaviour; the SPA
+  refreshes, or retries without the header).
+- `GET /catalog/categories` → **200** `[CategoryResponse {id,name,slug}]`: active categories only, by name (not paged).
+- `GET /catalog/courses?q=&categoryId=&price=&sort=&page=&size=` → **200** `CourseSearchResponse` =
+  `{ "content": [CourseCardResponse], "page": {size,number,totalElements,totalPages}, "suggestions": [CourseCardResponse] }`
+  — the PagedModel shape plus `suggestions`. Card = `{id,slug,title,thumbnailUrl,price,isFree,categoryId,categoryName,
+  instructorName,averageRating,ratingCount,publishedAt}`; `averageRating` = mean of the **visible** reviews rounded to
+  one decimal (`null` when none), `ratingCount` = number of visible reviews. Published courses only (D-08). `q`
+  (trimmed) = part of the title, matched on `title_normalized` after `VietnameseNormalizer` (case/accent/đ-insensitive;
+  `%`, `_` matched literally). `price` = `free` (price 0) / `paid`; `categoryId` = a category id (no match → empty).
+  `sort` = `newest` (default: `publishedAt` desc) · `rating` (average desc, courses without rating last, then count desc)
+  · `price_asc` · `price_desc`; every order ends with `publishedAt` desc, `id` desc. `size` default 20, max 100. Blank
+  parameter = no filter / default; an unknown `price`/`sort` (case-sensitive), `categoryId` ≤ 0 or not a number → 400
+  `VALIDATION_FAILED` (`errors[].field`). **UC-G02 "no result → newest courses"**: when `q` is given and nothing matches
+  at all (`totalElements = 0`), `content` is empty and `suggestions` = the 5 newest published courses; otherwise
+  `suggestions` is `[]` (also for an empty filter-only list or a page past the end).
+- `GET /catalog/courses/{slug}` → **200** `CourseDetailResponse {id,slug,title,description,thumbnailUrl,price,isFree,
+  status,categoryId,categoryName,mainInstructor{id,fullName},coInstructors[{id,fullName}],averageRating,ratingCount,
+  totalLessons,totalDurationSeconds,publishedAt,updatedAt,chapters[{id,title,lessons[{id,title,contentType,
+  durationSeconds,isPreview}]}],viewer}`. Outline never carries lesson content. `coInstructors` = accepted invitations
+  of users still holding an active instructor role ("giảng viên của khóa", SRS §1.4). `viewer` = `null` when
+  anonymous, else `{owned (has an enrollment), inCart (in the caller's cart), isInstructor (main or accepted co + active
+  instructor role)}` (D-12). Visibility (UC-G04 precondition, D-08, BR-31): `published` → everyone; `hidden` → only an
+  enrolled student, a course instructor or the admin (`status: "hidden"`, the SPA offers no purchase); everyone else,
+  unknown slug and draft / pending_review / rejected courses → 404 `RESOURCE_NOT_FOUND` (identical body).
+- `GET /catalog/courses/{slug}/reviews?page=&size=` → **200** `PagedModel<ReviewItemResponse {id,rating,comment,
+  reviewerName,createdAt,updatedAt}>`: visible reviews only, newest first (`sort` ignored); same visibility as the page.
+- `GET /catalog/courses/{slug}/lessons/{lessonId}/preview` → **200** `LessonPreviewResponse {id,courseSlug,courseTitle,
+  chapterTitle,title,contentType,videoUrl,articleContent,durationSeconds}` only for a preview lesson of that
+  **published** course; anything else → 404 (identical body).
+- `GET /catalog/certificates/{code}` → **200** `CertificateVerificationResponse {certificateCode,studentName,courseTitle,
+  instructorName,issuedAt}` (snapshot, BR-40); unknown code → 404; over 30 req/min per IP → 429 `RATE_LIMITED`.
+- SQL cost (ADR-003, JdbcClient): list = 1 statement (cards + total via `COUNT(*) OVER ()`; +1 suggestions on an empty
+  search, +1 count for an empty page past the end) · page = 3 (+1 viewer context) · reviews = 2 (+1 viewer for a hidden
+  course) · categories = 1.
+
 ### authoring
 | Method & path | UC | P1 |
 |---|---|---|
