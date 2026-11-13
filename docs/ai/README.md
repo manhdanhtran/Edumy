@@ -16,3 +16,15 @@ Cài vào repo: chép `AGENTS.md`, `CLAUDE.md`, `.cursor/`, `.github/`, `docs/` 
 - Claude Code đọc `CLAUDE.md`, file này import `@AGENTS.md` (lần đầu Claude Code hỏi xác nhận import — chọn đồng ý).
 - Scoped rules: `.cursor/rules/*.mdc` (Cursor) và `.github/instructions/*.instructions.md` (Copilot) là **hai bản giống nhau**; sửa một thì sửa cả hai (prompt P13).
   Rule theo thư mục: `10` SQL · `20` entity/ + repository/ · `25` service/ · `30` controller/ + dto/ · `35` api/ · `40` test.
+
+## Cấu hình email và route front-end (hợp đồng với nhóm SPA)
+| Biến môi trường | Thuộc tính | Mặc định | Ý nghĩa |
+|---|---|---|---|
+| `EDUMY_FRONTEND_BASE_URL` | `edumy.frontend.base-url` | `http://localhost:5173` | gốc SPA dùng để tạo liên kết trong email |
+| `EDUMY_MAIL_FROM` | `edumy.mail.from` | `no-reply@edumy.local` | địa chỉ `From:` của mọi email |
+
+Gửi thư cần `spring.mail.host` (profile dev: Mailpit `localhost:1025`, xem thư tại `http://localhost:8025`); không có
+host (profile test) thì thư bị bỏ qua kèm một dòng WARN. Hai route SPA mà email trỏ tới (chi tiết:
+`05-api-contract.md` "Front-end routes used in emails"):
+- `{base}/verify-email?token=…` → SPA gọi `POST /api/v1/auth/email-verification/confirm` `{token}`.
+- `{base}/reset-password?token=…` → SPA hiện form mật khẩu mới rồi gọi `POST /api/v1/auth/password/reset` `{token,newPassword}`.

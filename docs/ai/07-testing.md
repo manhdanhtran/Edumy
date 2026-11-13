@@ -21,6 +21,9 @@ Rules
 - Published events in `@MySqlSpringBootTest`: put `@RecordApplicationEvents` on the class and inject
   `ApplicationEvents` (Spring test support, same cached context); events published in the request thread of MockMvc
   are recorded.
+- Mails in `@MySqlSpringBootTest`: the `MailGateway` is `support/CapturingMailGateway` (`@Primary`, cleared after every
+  test). Mails are sent async after commit, so wait with `awaitMail(to, template)` / `awaitFailuresConsumed(to)`
+  (Awaitility, 10 s) and filter by the UUID-unique recipient; `failNextSendsTo(to, n)` simulates SMTP failures.
 - `*IT` classes run via surefire in `./mvnw test` (decision in V1); if the suite gets too slow they move to failsafe/`verify`.
 - Never delete or `@Disabled` a failing test to finish a task; report it.
 

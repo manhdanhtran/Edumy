@@ -172,6 +172,19 @@ Identity response codes (P04-c):
 | POST `/admin/users/{id}/lock` · POST `/admin/users/{id}/unlock` | A02, A03 | R |
 | PUT `/admin/users/{id}/roles/instructor` · DELETE `/admin/users/{id}/roles/instructor` | A04, A05 | R |
 
+### Front-end routes used in emails (contract for the SPA team, Q5)
+The identity mails link to two SPA routes. Base = `edumy.frontend.base-url` (env `EDUMY_FRONTEND_BASE_URL`, default
+`http://localhost:5173`; a trailing `/` is ignored). `token` is the one-time code, URL-encoded (base64url, 43 chars).
+
+| Route (in the mail) | Mail | What the SPA does |
+|---|---|---|
+| `{base}/verify-email?token={code}` | "Xác thực địa chỉ email" (UC-G05 register, UC-G06 resend), valid 24 h | calls `POST /api/v1/auth/email-verification/confirm` `{"token": "<code>"}` — public, works without a session (link may be opened on another device); 204 → "email verified", 422 `ACCOUNT_TOKEN_INVALID` → "link no longer valid", offer resend after login |
+| `{base}/reset-password?token={code}` | "Đặt lại mật khẩu" (UC-G08), valid 30 min | shows the new-password form (entered twice, NFR-02 policy), then calls `POST /api/v1/auth/password/reset` `{"token": "<code>", "newPassword": "..."}`; 204 → go to login (no auto-login), 422 `ACCOUNT_TOKEN_INVALID` → offer "forgot password" again |
+
+The "password changed" notice (UC-G08 step 6, UC-G12) has no link. Mail sender = `edumy.mail.from`
+(env `EDUMY_MAIL_FROM`). Recommended: the SPA does not log or forward the token (analytics, Referer: e.g.
+`<meta name="referrer" content="no-referrer">` on these two pages, NFR-08).
+
 ### catalog (public, read model)
 | Method & path | UC | P1 |
 |---|---|---|

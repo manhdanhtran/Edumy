@@ -227,8 +227,8 @@ learning/
 notification/
 ├── package-info.java                 # allowedDependencies = {"shared", "identity :: api", "authoring :: api", "commerce :: api", "learning :: api"}
 ├── listener/     IdentityMailListener, AuthoringMailListener, CommerceMailListener, LearningMailListener
-├── service/      MailComposer (picks template, fills Vietnamese text)
-└── integration/  MailGateway (interface), SmtpMailGateway (Spring Mail → Mailpit in dev)
+├── service/      MailComposer (picks template, fills Vietnamese text), MailService (compose + send)
+└── integration/  MailGateway (interface), MailMessage (record), SmtpMailGateway (Spring Mail → Mailpit in dev)
 ```
 
 ## 1.6 "Where does this class go?"

@@ -16,7 +16,9 @@ import org.springframework.test.context.ActiveProfiles;
  * Full application context on the shared MySQL container, database {@code edumy} (migrations only, no dev seed), with
  * {@code MockMvc} (whole filter chain: TraceIdFilter, Spring Security), the test helpers {@link TestUsers} and
  * {@link JwtTestTokens}, and the {@link MutableClock} as the application {@code Clock} (reset to the real time after
- * every test by {@link MutableClockResetExtension}). All tests with this annotation share one cached Spring context:
+ * every test by {@link MutableClockResetExtension}), and the {@link CapturingMailGateway} as the application
+ * {@code MailGateway} (records sent mails; cleared after every test by {@link CapturingMailGatewayResetExtension}).
+ * All tests with this annotation share one cached Spring context:
  * never add {@code @MockitoBean}, {@code @TestPropertySource}, {@code @DirtiesContext} or {@code @Import} to a test
  * class.
  * See docs/ai/07-testing.md.
@@ -27,7 +29,8 @@ import org.springframework.test.context.ActiveProfiles;
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Import({TestcontainersConfiguration.class, TestUsers.class, JwtTestTokens.class, MutableClock.class})
-@ExtendWith(MutableClockResetExtension.class)
+@Import({TestcontainersConfiguration.class, TestUsers.class, JwtTestTokens.class, MutableClock.class,
+        CapturingMailGateway.class})
+@ExtendWith({MutableClockResetExtension.class, CapturingMailGatewayResetExtension.class})
 public @interface MySqlSpringBootTest {
 }
