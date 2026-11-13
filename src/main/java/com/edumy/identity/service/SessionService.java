@@ -16,6 +16,7 @@ import com.edumy.identity.repository.RefreshTokenRepository;
 import com.edumy.identity.repository.UserRepository;
 import com.edumy.identity.repository.UserRoleRepository;
 import com.edumy.identity.security.JwtIssuer;
+import com.edumy.identity.security.LoginAttemptLimiter;
 import com.edumy.identity.security.SessionStatusCache;
 import com.edumy.shared.config.EdumyProperties;
 import com.edumy.shared.error.BusinessException;
@@ -57,6 +58,7 @@ public class SessionService {
     private final PasswordEncoder passwordEncoder;
     private final JwtIssuer jwtIssuer;
     private final SessionStatusCache sessionStatus;
+    private final LoginAttemptLimiter loginAttempts;
     private final TransactionTemplate transactions;
     private final Clock clock;
     private final Duration refreshTtl;
@@ -64,13 +66,15 @@ public class SessionService {
 
     public SessionService(UserRepository users, UserRoleRepository userRoles, RefreshTokenRepository refreshTokens,
                           PasswordEncoder passwordEncoder, JwtIssuer jwtIssuer, SessionStatusCache sessionStatus,
-                          TransactionTemplate transactions, Clock clock, EdumyProperties properties) {
+                          LoginAttemptLimiter loginAttempts, TransactionTemplate transactions, Clock clock,
+                          EdumyProperties properties) {
         this.users = users;
         this.userRoles = userRoles;
         this.refreshTokens = refreshTokens;
         this.passwordEncoder = passwordEncoder;
         this.jwtIssuer = jwtIssuer;
         this.sessionStatus = sessionStatus;
+        this.loginAttempts = loginAttempts;
         this.transactions = transactions;
         this.clock = clock;
         this.refreshTtl = properties.security().jwt().refreshTtl();
@@ -81,13 +85,15 @@ public class SessionService {
     /**
      * UC-G07. Unknown email and wrong password give the same 401 {@code AUTH_INVALID_CREDENTIALS} after the same
      * BCrypt work; only the right password on a locked account reveals the lock (403 {@code AUTH_ACCOUNT_LOCKED}, Q1).
-     * An unverified email may log in (D-02 restricts actions, not login).
+     * An unverified email may log in (D-02 restricts actions, not login). NFR-03: 5 consecutive failures for an email
+     * block it for 15 min (429 {@code AUTH_LOGIN_TEMPORARILY_BLOCKED}, {@link LoginAttemptLimiter}).
      */
     public SessionTokens login(String email, String password, String userAgent, String ipAddress) {
         Objects.requireNonNull(email, "email");
         Objects.requireNonNull(password, "password");
         String normalizedEmail = User.normalizeEmail(email);
-        // P04-f: LoginAttemptLimiter check for normalizedEmail goes here, before any password work (NFR-03)
+        // NFR-03: a blocked email gets 429 before any lookup or BCrypt, whatever the password (read-only check)
+        loginAttempts.checkNotBlocked(normalizedEmail);
 
         Optional<User> found = users.findByEmail(normalizedEmail);
         if (found.isEmpty()) {
@@ -98,7 +104,8 @@ public class SessionService {
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             throw invalidCredentials(normalizedEmail);
         }
-        // P04-f: successful password check → reset the attempt counter of normalizedEmail
+        // successful password check (also on a locked account, which then gets 403) → forget the failures
+        loginAttempts.reset(normalizedEmail);
         if (!user.isActive()) {
             throw new BusinessException(ErrorCode.AUTH_ACCOUNT_LOCKED);
         }
@@ -228,7 +235,7 @@ public class SessionService {
     }
 
     private BusinessException invalidCredentials(String normalizedEmail) {
-        // P04-f: record the failed attempt of normalizedEmail here (unknown emails included)
+        loginAttempts.recordFailure(normalizedEmail); // NFR-03, unknown emails included
         return new BusinessException(ErrorCode.AUTH_INVALID_CREDENTIALS);
     }
 

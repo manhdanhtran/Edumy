@@ -15,7 +15,8 @@ import org.springframework.context.annotation.Primary;
  * plus an offset that a test can move: {@link #advance} (e.g. past a 24 h code expiry) or {@link #setInstant}. Time
  * keeps running from there. {@link MutableClockResetExtension} puts it back to the real time after every test, so a
  * shifted clock never leaks into the next test of the shared context.
- * <p>Only application time moves: MySQL {@code CURRENT_TIMESTAMP} and Caffeine expiry (own ticker) do not.
+ * <p>Only application time moves: MySQL {@code CURRENT_TIMESTAMP} and the Spring Cache Caffeine expiry (own ticker) do
+ * not; the abuse limiters read this Clock, so their expiry and refill move with it.
  */
 @Primary
 public class MutableClock extends Clock {

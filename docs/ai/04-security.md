@@ -99,12 +99,32 @@ CourseDetailResponse update(@PathVariable Long courseId, @Valid @RequestBody Upd
   course (BR-32).
 - Every protected endpoint gets an IDOR test with two users (see `07-testing.md`).
 
-## 4.4 Abuse protection (NFR-03) — single-instance, in-memory (documented limitation)
-- Login: `LoginAttemptLimiter` keyed by normalized email, Caffeine `expireAfterWrite(15 min)`; 5 consecutive
-  failures → reject further attempts for 15 min with 429 + generic message; success resets the counter.
-- Certificate verification `GET /api/v1/catalog/certificates/{code}`: Bucket4j bucket per client IP, 30 req/min → 429.
+## 4.4 Abuse protection (NFR-03) — single-instance, in-memory (documented limitation, ADR-002)
+- Login: `identity.security.LoginAttemptLimiter`, keyed by the normalized email (unknown emails too), Caffeine
+  `expireAfterWrite(15 min)` + `maximumSize(100 000)`, ticker = the application `Clock`. Called by
+  `SessionService.login`:
+  - failures 1–4 → normal 401 `AUTH_INVALID_CREDENTIALS`; the **5th consecutive failure** also answers 401 and starts
+    the block: `blockedUntil = time of failure #5 + 15 min`;
+  - "consecutive within 15 min" = each failure rewrites the entry and restarts its 15-min life; a gap of 15 min or
+    more between two failures starts again at 1;
+  - while blocked, **every** attempt for that email (correct password too) → 429 `AUTH_LOGIN_TEMPORARILY_BLOCKED` +
+    `Retry-After` (seconds until `blockedUntil`, rounded up), checked before any user lookup or BCrypt. A blocked
+    attempt only reads: it never extends the block nor refreshes the entry;
+  - never permanent: from `blockedUntil` on (compared with the `Clock`, not left to cache eviction) the next attempt
+    is checked normally and a correct password logs in;
+  - a successful password check removes the entry; that includes the correct password on a locked account, which then
+    still gets 403 `AUTH_ACCOUNT_LOCKED` (Q1). The email is never logged.
+- Certificate verification `GET /api/v1/catalog/certificates/{code}`: `identity.security.CertificateVerifyRateLimiter`,
+  a filter registered only in the Spring Security chain (before token processing), Bucket4j bucket per
+  `request.getRemoteAddr()` (never `X-Forwarded-For`): capacity 30, greedy refill 30/min (one token every 2 s); over the
+  limit → 429 `RATE_LIMITED` ProblemDetail + `Retry-After` (seconds to the next token, rounded up). Buckets in Caffeine
+  (`expireAfterAccess(5 min)`, `maximumSize(100 000)`); Bucket4j time = the application `Clock`, never going backwards.
+  Behind a reverse proxy, configure `server.forward-headers-strategy` for the trusted proxy only (ADR-002).
+- `Retry-After` comes from `shared.error.RetryAfterException` (a `BusinessException`), added by
+  `GlobalExceptionHandler`; it is in the CORS exposed headers so the SPA can read it.
 - Email resend: 60 s cooldown from `user_tokens.created_at` (no extra storage).
-If the app is ever scaled to >1 instance, move these to Redis (new ADR).
+If the app is ever scaled to >1 instance, move these to Redis (new ADR); see ADR-002 "Abuse protection — known
+limitations".
 
 ## 4.5 Transport & headers
 - CORS: allowed origins from `edumy.cors.allowed-origins` (dev: `http://localhost:5173,http://localhost:3000`),

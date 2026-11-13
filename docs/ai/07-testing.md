@@ -17,7 +17,10 @@ Rules
 - Time-dependent rules (QR 15 min, token 24 h/30 min, order 24 h) use an injected `java.time.Clock` bean; tests use a
   fixed/mutable clock. Never call `Instant.now()` directly in entity/ or service/ code. In `@MySqlSpringBootTest` the
   application Clock is `support/MutableClock` (`advance`, `setInstant`); it is reset to the real time after every test.
-  Only application time moves (not MySQL `CURRENT_TIMESTAMP`, not Caffeine expiry).
+  Only application time moves (not MySQL `CURRENT_TIMESTAMP`, not the Spring Cache Caffeine expiry); the two abuse
+  limiters (`LoginAttemptLimiter`, `CertificateVerifyRateLimiter`) read the `Clock`, so it moves their expiry and
+  refill too. Their state lives in the shared context: use a UUID email / random `remoteAddr` per test. Unit tests
+  that need a clock standing still use `support/ManualClock`.
 - Published events in `@MySqlSpringBootTest`: put `@RecordApplicationEvents` on the class and inject
   `ApplicationEvents` (Spring test support, same cached context); events published in the request thread of MockMvc
   are recorded.

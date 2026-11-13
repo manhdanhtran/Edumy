@@ -5,6 +5,7 @@ import java.util.List;
 import com.edumy.shared.security.CurrentUserIdArgumentResolver;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.web.config.EnableSpringDataWebSupport;
+import org.springframework.http.HttpHeaders;
 import org.springframework.web.method.support.HandlerMethodArgumentResolver;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -35,6 +36,7 @@ class WebConfig implements WebMvcConfigurer {
                 .allowedOrigins(origins.toArray(String[]::new))
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowCredentials(true) // refresh cookie edumy_rt
+                .exposedHeaders(HttpHeaders.RETRY_AFTER) // 429 of the abuse limiters (docs/ai/04 §4.4)
                 .maxAge(3600);
     }
 

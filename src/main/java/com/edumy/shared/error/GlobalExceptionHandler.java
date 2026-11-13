@@ -52,9 +52,17 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         this.translator = translator;
     }
 
+    /** A {@link RetryAfterException} also gets the {@code Retry-After} header (whole seconds). */
     @ExceptionHandler(BusinessException.class)
     ResponseEntity<Object> handleBusiness(BusinessException ex, WebRequest request) {
-        return build(ex.getCode(), ex.getCode().status(), ex.getArgs(), ex.getErrors(), request, traceId());
+        ResponseEntity<Object> response =
+                build(ex.getCode(), ex.getCode().status(), ex.getArgs(), ex.getErrors(), request, traceId());
+        if (ex instanceof RetryAfterException retry) {
+            return ResponseEntity.status(response.getStatusCode())
+                    .header(HttpHeaders.RETRY_AFTER, Long.toString(retry.retryAfterSeconds()))
+                    .body(response.getBody());
+        }
+        return response;
     }
 
     /**

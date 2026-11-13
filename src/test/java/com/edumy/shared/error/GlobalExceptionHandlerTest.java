@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.List;
 
 import com.edumy.shared.web.TraceIdFilter;
@@ -20,6 +21,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.support.ResourceBundleMessageSource;
 import org.springframework.dao.QueryTimeoutException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.UncategorizedSQLException;
 import org.springframework.test.web.servlet.MockMvc;
@@ -74,6 +76,38 @@ class GlobalExceptionHandlerTest {
     void unexpectedException_traceIdInBodyEqualsResponseHeader() throws Exception {
         assertTraceIdInBodyEqualsHeader(
                 mvc.perform(get("/probe/boom")).andExpect(status().isInternalServerError()).andReturn());
+    }
+
+    @Test
+    void retryAfterException_addsRetryAfterHeaderRoundedUp_NFR03() throws Exception {
+        MvcResult result = mvc.perform(get("/probe/rate-limited"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string(HttpHeaders.RETRY_AFTER, "2"))
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"))
+                .andExpect(jsonPath("$.title").value("Quá nhiều yêu cầu"))
+                .andReturn();
+        assertTraceIdInBodyEqualsHeader(result);
+    }
+
+    @Test
+    void plainBusinessException_hasNoRetryAfterHeader() throws Exception {
+        mvc.perform(get("/probe/not-editable")).andExpect(header().doesNotExist(HttpHeaders.RETRY_AFTER));
+    }
+
+    @Test
+    void retryAfterSeconds_roundsUpAndIsAtLeastOne() {
+        org.assertj.core.api.Assertions.assertThat(
+                new RetryAfterException(ErrorCode.RATE_LIMITED, Duration.ofSeconds(900)).retryAfterSeconds())
+                .isEqualTo(900);
+        org.assertj.core.api.Assertions.assertThat(
+                new RetryAfterException(ErrorCode.RATE_LIMITED, Duration.ofSeconds(899, 1)).retryAfterSeconds())
+                .isEqualTo(900);
+        org.assertj.core.api.Assertions.assertThat(
+                new RetryAfterException(ErrorCode.RATE_LIMITED, Duration.ZERO).retryAfterSeconds()).isEqualTo(1);
+        org.assertj.core.api.Assertions.assertThat(
+                new RetryAfterException(ErrorCode.RATE_LIMITED, Duration.ofSeconds(-5)).retryAfterSeconds())
+                .isEqualTo(1);
     }
 
     @Test
@@ -212,6 +246,11 @@ class GlobalExceptionHandlerTest {
         @GetMapping("/probe/not-editable")
         void notEditable() {
             throw new BusinessException(ErrorCode.COURSE_NOT_EDITABLE);
+        }
+
+        @GetMapping("/probe/rate-limited")
+        void rateLimited() {
+            throw new RetryAfterException(ErrorCode.RATE_LIMITED, Duration.ofMillis(1500));
         }
 
         @GetMapping("/probe/checklist")

@@ -113,7 +113,8 @@ Names below are the expected classes. New classes follow §1.7 naming and go to 
 shared/
 ├── package-info.java                 # @ApplicationModule(type = Type.OPEN)
 ├── config/      ClockConfig, CacheConfig (Caffeine per-cache specs), OpenApiConfig, WebConfig (CORS, paging), EdumyProperties
-├── error/       ErrorCode, BusinessException, GlobalExceptionHandler, ConstraintViolationTranslator
+├── error/       ErrorCode, BusinessException, RetryAfterException, GlobalExceptionHandler, ConstraintViolationTranslator,
+│                ProblemResponder
 ├── security/    CurrentUser, @CurrentUserId, CurrentUserIdArgumentResolver, RoleCode
 ├── jpa/         CodeEnum, CodeEnumConverter
 ├── text/        VietnameseNormalizer, SlugGenerator

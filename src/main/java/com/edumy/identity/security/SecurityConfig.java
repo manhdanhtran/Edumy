@@ -52,6 +52,7 @@ import org.springframework.security.web.access.AccessDeniedHandler;
  * health/info, API docs and {@code /error}; {@code /api/v1/admin/**} needs ADMIN; everything else needs login.
  * <p>The public auth endpoints ignore any {@code Authorization} header ({@link AuthEndpointBearerTokenResolver}), and
  * {@code POST /auth/refresh} / {@code POST /auth/logout} reject a foreign {@code Origin} ({@link AuthOriginFilter}).
+ * {@code GET /api/v1/catalog/certificates/*} is rate limited per client IP ({@link CertificateVerifyRateLimiter}).
  * <p>401/403 raised by the filter chain are rendered by {@code GlobalExceptionHandler} through
  * {@link ProblemResponder} ({@code UNAUTHENTICATED} / {@code ACCESS_DENIED}), so they have the same ProblemDetail shape
  * and {@code traceId} as every other error.
@@ -65,8 +66,8 @@ public class SecurityConfig {
     private static final String ROLE_PREFIX = "ROLE_";
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http, ProblemResponder problems, EdumyProperties properties)
-            throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, ProblemResponder problems, EdumyProperties properties,
+                                            Clock clock) throws Exception {
         AuthenticationEntryPoint unauthenticated = (request, response, ex) -> {
             response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
             problems.respond(request, response, ErrorCode.UNAUTHENTICATED);
@@ -94,6 +95,9 @@ public class SecurityConfig {
                         .anyRequest().authenticated())
                 // §4.5: Origin check of the cookie endpoints, before any token is read
                 .addFilterBefore(new AuthOriginFilter(properties.cors().allowedOrigins(), problems),
+                        BearerTokenAuthenticationFilter.class)
+                // §4.4 NFR-03: 30 req/min per IP on the public certificate check, before any token is read
+                .addFilterBefore(new CertificateVerifyRateLimiter(clock, problems),
                         BearerTokenAuthenticationFilter.class)
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .bearerTokenResolver(new AuthEndpointBearerTokenResolver())
