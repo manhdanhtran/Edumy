@@ -256,6 +256,35 @@ Catalog responses (P05):
 | GET `/admin/courses/pending` | A09 | R |
 | POST `/admin/courses/{id}/approve` · `/reject` · `/hide` · `/unhide` | A10–A12, A16 | R |
 
+Authoring reads (P05):
+- Instructor endpoints need an **active** instructor role in the database (BR-26, D-07): otherwise 403 `ACCESS_DENIED`
+  (a revoked instructor's JWT still claiming the role does not help). `{id}` endpoints: a course the caller is not a
+  course instructor of (main, or co with an **accepted** invitation — pending/declined/removed do not count) → 404
+  `RESOURCE_NOT_FOUND`, identical to an unknown id (NFR-01). Admin endpoints: `/admin/**` route rule + `hasRole('ADMIN')`.
+- `GET /instructor/courses?page=&size=` → **200** `PagedModel<InstructorCourseSummaryResponse {id,title,slug,
+  thumbnailUrl,price,isFree,status,relation,categoryId,categoryName,chapterCount,lessonCount,reviewNote,submittedAt,
+  publishedAt,createdAt,updatedAt}>`: every status; `relation` = `main` / `co`; newest course first (`createdAt` desc,
+  `id` desc, `sort` ignored); no filter (UC-I02 describes none). `reviewNote` = latest rejection/hiding reason (UC-I18),
+  `null` when none. 3 statements per page (page, count, outline counts).
+- `GET /instructor/courses/{id}` → **200** `InstructorCourseDetailResponse {id,title,slug,description,thumbnailUrl,
+  price,isFree,status,relation,categoryId,categoryName,categoryActive,mainInstructor{id,fullName},
+  coInstructors[{id,fullName,invitationStatus,invitedAt,respondedAt}],reviewNote,submittedAt,reviewedAt,publishedAt,
+  createdAt,updatedAt,chapters[ChapterResponse {id,title,sortOrder,lessons[LessonResponse {id,title,contentType,videoUrl,
+  articleContent,durationSeconds,isPreview,sortOrder}]}]}` — lessons **with** content; `coInstructors` = every
+  invitation of the course (all four statuses, oldest first), shown to the main and to accepted co-instructors alike;
+  readable while `pending_review` (BR-33 forbids editing only). 6 statements (access check included).
+- `GET /instructor/courses/{id}/review-status` → **200** `ReviewStatusResponse {courseId,status,submittedAt,reviewedAt,
+  reviewNote}` (UC-I18: latest submission, latest admin decision, latest rejection/hiding reason).
+- `GET /instructor/invitations` → **200** `[InvitationResponse {id,courseId,courseTitle,courseSlug,mainInstructor{id,
+  fullName},invitedAt}]`: the caller's **pending** invitations only (UC-I14 precondition), newest first, not paged.
+- `GET /admin/categories` → **200** `[AdminCategoryResponse {id,name,slug,active,courseCount,createdAt,updatedAt}]`:
+  active and inactive, by name (not paged); `courseCount` = courses of any status using it (D-21). 1 statement.
+- `GET /admin/courses/pending?page=&size=` → **200** `PagedModel<PendingCourseResponse {id,title,slug,price,isFree,
+  categoryId,categoryName,mainInstructor{id,fullName},submittedAt}>`: `pending_review` only, oldest submission first
+  (`sort` ignored). 3 statements per full page. UC-A10 step 1 (admin reads the whole content before deciding) uses
+  `GET /learn/courses/{courseId}` + `GET /learn/lessons/{lessonId}` (D-32: admin views content without enrollment, any
+  course status) — no authoring endpoint for it.
+
 ### commerce
 | Method & path | UC | P1 |
 |---|---|---|

@@ -70,7 +70,7 @@ Two layers, both server-side:
 
 | Bean | Methods | Used for |
 |---|---|---|
-| `@courseAccess` (authoring) | `isMain(#courseId)`, `isInstructor(#courseId)`, `canEditContent(#courseId)` (instructor + status ≠ pending_review) | UC-I01…I20 |
+| `@courseAccess` (authoring) | `isMain(#courseId)`, `isInstructor(#courseId)`, `canEditContent(#courseId)` (instructor + status ≠ pending_review); `isActiveInstructor()` (active instructor role only, for endpoints without a course id: UC-I02 list, UC-I14 invitations; never 404) | UC-I01…I20 |
 | `@chapterAccess` / `@lessonAccess` (authoring) | same three methods by chapter / lesson id: role first, then resolve the parent course (unknown → 404) and delegate | chapter/lesson endpoints |
 | `@enrollmentAccess` (learning) | `isEnrolled(#courseId)`, `canViewContent(#courseId)` (enrolled OR course instructor OR admin, D-32), `canViewLesson(#lessonId)`, `isEnrolledForLesson(#lessonId)` | UC-S09…S20 |
 | `@qaAccess` (learning) | `canReply(#questionId)` (asker or course instructor, BR-38), `isQuestionAuthor(#questionId)`, `isAnswerAuthor(#answerId)` | Q&A |

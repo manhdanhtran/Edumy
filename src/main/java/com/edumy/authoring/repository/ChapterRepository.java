@@ -1,5 +1,6 @@
 package com.edumy.authoring.repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -28,6 +29,18 @@ public interface ChapterRepository extends JpaRepository<Chapter, Long> {
 
     /** UC-I02 outline / UC-I08: chapters of a course in display order. */
     List<Chapter> findByCourseIdOrderBySortOrderAsc(Long courseId);
+
+    /**
+     * UC-I02 list: number of chapters and lessons of each course in {@code courseIds}, in one statement (no N+1). A
+     * course without chapters has no row (= 0 / 0).
+     */
+    @Query("""
+            select ch.course.id as courseId, count(distinct ch.id) as chapterCount, count(l.id) as lessonCount
+            from Chapter ch left join Lesson l on l.chapter = ch
+            where ch.course.id in :courseIds
+            group by ch.course.id
+            """)
+    List<OutlineCountView> countOutlineByCourseIdIn(@Param("courseIds") Collection<Long> courseIds);
 
     /** {@code @chapterAccess}: parent course of a chapter. */
     @Query("select ch.course.id from Chapter ch where ch.id = :id")
@@ -61,4 +74,13 @@ public interface ChapterRepository extends JpaRepository<Chapter, Long> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update Chapter ch set ch.sortOrder = :sortOrder where ch.id = :id")
     int updateSortOrder(@Param("id") Long id, @Param("sortOrder") int sortOrder);
+
+    /** Row of {@link #countOutlineByCourseIdIn}. */
+    interface OutlineCountView {
+        Long getCourseId();
+
+        long getChapterCount();
+
+        long getLessonCount();
+    }
 }

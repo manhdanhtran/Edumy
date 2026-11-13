@@ -1,6 +1,8 @@
 package com.edumy.identity.repository;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 import com.edumy.identity.entity.User;
@@ -55,6 +57,21 @@ public interface UserRepository extends JpaRepository<User, Long> {
             """)
     Page<AdminUserView> searchForAdmin(@Param("q") String q, @Param("status") UserStatus status,
                                        @Param("role") RoleCode role, Pageable pageable);
+
+    /** {@code identity::api.UserQueryApi}: public columns of several users in one statement (no N+1). */
+    @Query("select u.id as id, u.fullName as fullName, u.email as email, u.status as status from User u where u.id in :ids")
+    List<UserSummaryView> findSummariesByIdIn(@Param("ids") Collection<Long> ids);
+
+    /** Row of {@link #findSummariesByIdIn}. */
+    interface UserSummaryView {
+        Long getId();
+
+        String getFullName();
+
+        String getEmail();
+
+        UserStatus getStatus();
+    }
 
     /** Row of the admin user list (UC-A01). */
     interface AdminUserView {

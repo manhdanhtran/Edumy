@@ -294,7 +294,7 @@ Consequences:
 ## 1.9 Public APIs (initial set — extend, never bypass)
 | Module | Interface | Purpose |
 |---|---|---|
-| identity | `UserQueryApi` | `UserSummary findSummary(Long id)` → id, fullName, email, status |
+| identity | `UserQueryApi` | `Optional<UserSummary> findSummary(Long id)` → id, fullName, email, status (lower-case code); `Map<Long, UserSummary> findSummaries(Collection<Long> ids)` — one query for a whole list (no N+1), unknown ids absent (P05-authoring) |
 | identity | `RoleQueryApi` | `Set<RoleCode> activeRoles(Long userId)`, `boolean hasActiveRole(Long userId, RoleCode role)` — cached 60 s (`identity.active-roles`, key = user id), evicted after commit by `service/RoleCacheEvictor` on every grant/revoke |
 | authoring | `CourseQueryApi` | `boolean exists(Long courseId)` (P04-e, admin content access D-32); later `Optional<SellableCourse> findSellable(Long courseId)` (published only, BR-31) and course summaries |
 | authoring | `CourseAccessApi` | `isMainInstructor`, `isCourseInstructor` (main or accepted co **and** active instructor role) |

@@ -35,6 +35,14 @@ public class CourseAccess {
         this.roles = roles;
     }
 
+    /**
+     * The caller holds an active instructor role in the database (BR-26, D-07), for instructor endpoints without a
+     * course id (UC-I02 list, UC-I14 invitations): {@code false} → 403. Nothing to look up, so never 404.
+     */
+    public boolean isActiveInstructor() {
+        return hasInstructorRole(callerId());
+    }
+
     /** Main instructor of the course (BR-04/06: info, price, invitations, submit). */
     public boolean isMain(Long courseId) {
         Long userId = callerId();

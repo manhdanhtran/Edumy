@@ -64,7 +64,7 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     @Query(value = """
             select c.id as id, c.title as title, c.slug as slug, c.thumbnailUrl as thumbnailUrl, c.price as price,
                    c.status as status, cat.id as categoryId, cat.name as categoryName,
-                   c.mainInstructorId as mainInstructorId, c.submittedAt as submittedAt,
+                   c.mainInstructorId as mainInstructorId, c.reviewNote as reviewNote, c.submittedAt as submittedAt,
                    c.publishedAt as publishedAt, c.createdAt as createdAt, c.updatedAt as updatedAt
             from Course c join c.category cat
             where (c.mainInstructorId = :instructorId
@@ -120,6 +120,8 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
         String getCategoryName();
 
         Long getMainInstructorId();
+
+        String getReviewNote();
 
         Instant getSubmittedAt();
 
