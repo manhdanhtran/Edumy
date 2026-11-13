@@ -117,6 +117,7 @@ shared/
 ├── security/    CurrentUser, @CurrentUserId, CurrentUserIdArgumentResolver, RoleCode
 ├── jpa/         CodeEnum, CodeEnumConverter
 ├── text/        VietnameseNormalizer, SlugGenerator
+├── validation/  StrongPassword (+ validator): password policy NFR-02, texts in ValidationMessages.properties
 └── web/         StubSupport (X-Edumy-Stub), PageResponses
 ```
 
@@ -127,9 +128,9 @@ identity/
 ├── api/          UserQueryApi, RoleQueryApi, UserSummary,
 │                 UserRegistered, EmailVerificationRequested, PasswordResetRequested, PasswordChanged
 ├── controller/   AuthController, MeController, AdminUserController
-├── dto/request/  RegisterRequest, LoginRequest, VerifyEmailRequest, ResendVerificationRequest, ForgotPasswordRequest,
+├── dto/request/  RegisterRequest, LoginRequest, VerifyEmailRequest, ForgotPasswordRequest,
 │                 ResetPasswordRequest, UpdateProfileRequest, ChangePasswordRequest
-├── dto/response/ AuthTokenResponse, MeResponse, AdminUserResponse
+├── dto/response/ AuthTokenResponse, ForgotPasswordResponse, MeResponse, AdminUserResponse
 ├── service/      AuthService, SessionService, AccountTokenService, ProfileService, InstructorRegistrationService,
 │                 UserAdminService, UserAdminQueryService, UserQueryApiImpl, RoleQueryApiImpl
 ├── mapper/       UserMapper

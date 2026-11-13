@@ -15,7 +15,12 @@ Rules
 - One container per JVM: `support/SharedMySql` (singleton, see "How to write a MySQL IT"). Never declare another `MySQLContainer`.
 - Test names: `methodOrScenario_condition_expected` and mention the rule: `addToCart_ownedCourse_rejected_BR10`.
 - Time-dependent rules (QR 15 min, token 24 h/30 min, order 24 h) use an injected `java.time.Clock` bean; tests use a
-  fixed/mutable clock. Never call `Instant.now()` directly in entity/ or service/ code.
+  fixed/mutable clock. Never call `Instant.now()` directly in entity/ or service/ code. In `@MySqlSpringBootTest` the
+  application Clock is `support/MutableClock` (`advance`, `setInstant`); it is reset to the real time after every test.
+  Only application time moves (not MySQL `CURRENT_TIMESTAMP`, not Caffeine expiry).
+- Published events in `@MySqlSpringBootTest`: put `@RecordApplicationEvents` on the class and inject
+  `ApplicationEvents` (Spring test support, same cached context); events published in the request thread of MockMvc
+  are recorded.
 - `*IT` classes run via surefire in `./mvnw test` (decision in V1); if the suite gets too slow they move to failsafe/`verify`.
 - Never delete or `@Disabled` a failing test to finish a task; report it.
 

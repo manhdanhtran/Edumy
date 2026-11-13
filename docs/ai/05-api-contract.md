@@ -44,22 +44,28 @@
 | `AUTH_INVALID_CREDENTIALS` | 401 | |
 | `ACCESS_DENIED` | 403 | |
 | `AUTH_ACCOUNT_LOCKED` | 403 | Q1: correct password on a locked account (a wrong password stays `AUTH_INVALID_CREDENTIALS`) |
-| `EMAIL_NOT_VERIFIED` | 403 | D-02 |
+| `EMAIL_NOT_VERIFIED` | 403 | D-02; UC-G13 E1 |
+| `INSTRUCTOR_ROLE_REVOKED` | 403 | UC-G13 E2, D-04: the instructor role was revoked by an admin; only an admin can grant it again (UC-A04) |
 | `ENROLLMENT_REQUIRED` | 403 | |
 | `QA_REPLY_NOT_ALLOWED` | 403 | BR-38 |
 | `RESOURCE_NOT_FOUND` | 404 | "does not exist" **and** "not yours": identical body (NFR-01); only `traceId`/`instance` differ |
 | `DATA_CONFLICT` | 409 | unmapped UNIQUE violation (1062) or FK 1451 (parent still referenced); see the translator rules below |
+| `EMAIL_ALREADY_REGISTERED` | 409 | UC-G05 E1; pre-check + `uq_users_email` under concurrency |
 | `COURSE_NOT_EDITABLE` | 409 | BR-33 |
 | `CART_COURSE_ALREADY_OWNED` | 409 | BR-10 |
 | `CART_ITEM_DUPLICATE` | 409 | BR-11; `uq_cart_items_cart_course` |
 | `COURSE_DELETE_FORBIDDEN` | 409 | BR-19; trigger: the course was published once |
 | `REVIEW_HIDDEN_BY_ADMIN` | 409 | BR-35 |
 | `ADMIN_LAST_ACTIVE` | 409 | BR-36 |
+| `ACCOUNT_TOKEN_INVALID` | 422 | UC-G06 / UC-G08 E1: emailed code unknown, wrong type, used or expired — never says which (BR-34); also reset of a locked account |
+| `PASSWORD_INCORRECT` | 422 | UC-G12: wrong current password |
+| `PASSWORD_SAME_AS_OLD` | 422 | UC-G12: new password = current password |
 | `COURSE_SUBMIT_CHECKLIST_FAILED` | 422 | BR-07; `errors` lists every failed checklist item (`field` = item, `message` = Vietnamese reason) |
 | `CART_OWN_COURSE` | 422 | BR-32 |
 | `COURSE_CO_INSTRUCTOR_IS_MAIN` | 422 | BR-02; trigger: the invited instructor is the course's main instructor |
 | `LESSON_COURSE_MISMATCH` | 422 | BR-24 / BR-37; triggers: the lesson does not belong to the enrollment's course |
 | `AUTH_LOGIN_TEMPORARILY_BLOCKED` | 429 | |
+| `TOKEN_RESEND_TOO_SOON` | 429 | D-03: resend of the verification code within 60 s of the last one (forgot password never shows it, Q3) |
 | `RATE_LIMITED` | 429 | |
 | `INTERNAL_ERROR` | 500 | generic Vietnamese detail, never the exception message; also unmapped CHECK / trigger violations |
 - `ConstraintViolationTranslator`: walks the cause chain down to the root `java.sql.SQLException` and decides by
@@ -82,6 +88,7 @@
   | `BR-19` | `COURSE_DELETE_FORBIDDEN` | 409 |
   | `BR-24`, `BR-37` | `LESSON_COURSE_MISMATCH` | 422 |
   | `uq_cart_items_cart_course` | `CART_ITEM_DUPLICATE` | 409 |
+  | `uq_users_email` | `EMAIL_ALREADY_REGISTERED` | 409 |
   | `ck_lessons_type` + `ck_lessons_content_match`; `ck_orders_status` + `ck_orders_state`; `ck_enrollments_source` + `ck_enrollments_source_order` | `INTERNAL_ERROR` | 500 |
 
   An unknown value in these columns breaks two overlapping CHECKs and MySQL reports only one of them, so **both names of
@@ -106,7 +113,7 @@
   Messages (Vietnamese) live in `messages.properties` / `messages_vi.properties`, keyed by code.
 - Other framework 4xx (405, 415, 406…) keep their original status and share the code `MALFORMED_REQUEST` (decision).
 
-### Validation messages (decision — implement in P05/P06, not in P00)
+### Validation messages (decision; file created in P04-c with the keys used so far, extended as DTOs need them)
 Bean Validation texts are separate from the error-code texts above (they come from Hibernate Validator, not Spring's `MessageSource`):
 - File: `src/main/resources/ValidationMessages.properties` — **no `_vi` suffix** (it is the default bundle, so it applies
   whatever the request locale is), saved as UTF-8.
@@ -115,6 +122,10 @@ Bean Validation texts are separate from the error-code texts above (they come fr
 - Put an explicit `message` on an annotation **only** when the text is specific (e.g. `@Size(max = 100, message = "Họ tên tối đa 100 ký tự")`,
   price rule BR-07). Prefer a key in `ValidationMessages.properties` (`message = "{course.price.invalid}"`) over inline text.
 - These texts become the `message` of each entry in the ProblemDetail `errors` array (`VALIDATION_FAILED`).
+- Password policy (NFR-02, docs/ai/04 §4.2) on every **new** password (register, reset, change): `@StrongPassword`
+  (`shared.validation`) — 8–72 characters, at least one letter and one digit, and at most 72 UTF-8 bytes (BCrypt
+  limit; Vietnamese letters take 2–3 bytes). Keys `edumy.password.policy`, `edumy.password.too-many-bytes`. Login and
+  "current password" fields get no policy check.
 
 ## 5.3 Caching (Spring Cache + Caffeine)
 | Cache | Key | TTL | Evicted by |
@@ -141,6 +152,22 @@ via Actuator `caches`/metrics in dev.
 | POST `/auth/password/forgot` · POST `/auth/password/reset` | G08 | R |
 | GET `/me` · PATCH `/me` · PUT `/me/password` | G09, G12 | R |
 | POST `/me/instructor-registration` | G13 | R |
+
+Identity response codes (P04-c):
+- `POST /auth/register` → **201** + `AuthTokenResponse` + `edumy_rt` cookie (UC-G05 step 7 logs the user in).
+- `POST /auth/email-verification/confirm` `{token}` (public, no session needed) → **204**; any bad code → 422
+  `ACCOUNT_TOKEN_INVALID`.
+- `POST /auth/email-verification/resend` (Bearer, no body) → **202** new code mailed · **204** email already verified,
+  nothing sent · 429 `TOKEN_RESEND_TOO_SOON` within 60 s.
+- `POST /auth/password/forgot` `{email}` → always **202** `{"message":"Nếu email tồn tại, hướng dẫn đã được gửi"}`
+  (unknown email, locked account, within the 60 s cooldown and the normal case look the same, D-03/Q3).
+- `POST /auth/password/reset` `{token,newPassword}` → **204**, every session ended, no login, no cookie.
+- `GET /me`, `PATCH /me` `{fullName}` → **200** `MeResponse {id,email,fullName,emailVerified,roles,createdAt}`;
+  `roles` = lower-case codes active **in the database** (the JWT may be up to 15 min older).
+- `PUT /me/password` `{currentPassword,newPassword}` → **204**; other sessions end, the current one keeps working.
+- `POST /me/instructor-registration` (no body, Q6) → **201** role granted · **200** already active (E3) · 403
+  `EMAIL_NOT_VERIFIED` (E1) · 403 `INSTRUCTOR_ROLE_REVOKED` (E2). Body = `MeResponse`; the SPA then calls
+  `/auth/refresh` to get an access token with the new role.
 | GET `/admin/users?q=&status=&role=` | A01 | R |
 | POST `/admin/users/{id}/lock` · POST `/admin/users/{id}/unlock` | A02, A03 | R |
 | PUT `/admin/users/{id}/roles/instructor` · DELETE `/admin/users/{id}/roles/instructor` | A04, A05 | R |

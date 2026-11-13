@@ -25,6 +25,12 @@ public enum ErrorCode {
     AUTH_LOGIN_TEMPORARILY_BLOCKED(HttpStatus.TOO_MANY_REQUESTS),
     AUTH_ACCOUNT_LOCKED(HttpStatus.FORBIDDEN),                       // Q1: correct password, status locked
     EMAIL_NOT_VERIFIED(HttpStatus.FORBIDDEN),
+    EMAIL_ALREADY_REGISTERED(HttpStatus.CONFLICT),                   // UC-G05 E1; also uq_users_email
+    ACCOUNT_TOKEN_INVALID(HttpStatus.UNPROCESSABLE_CONTENT),         // UC-G06 / UC-G08 E1: never says which (BR-34)
+    TOKEN_RESEND_TOO_SOON(HttpStatus.TOO_MANY_REQUESTS),             // D-03: 60 s between codes
+    PASSWORD_INCORRECT(HttpStatus.UNPROCESSABLE_CONTENT),            // UC-G12: wrong current password
+    PASSWORD_SAME_AS_OLD(HttpStatus.UNPROCESSABLE_CONTENT),          // UC-G12: new = current
+    INSTRUCTOR_ROLE_REVOKED(HttpStatus.FORBIDDEN),                   // UC-G13 E2, D-04
     ADMIN_LAST_ACTIVE(HttpStatus.CONFLICT),
 
     // authoring

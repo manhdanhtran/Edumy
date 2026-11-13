@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
@@ -29,6 +30,7 @@ public class TestUsers {
 
     private final JdbcClient jdbc;
     private final List<Long> created = new ArrayList<>();
+    private final List<String> trackedEmails = new ArrayList<>();
 
     public TestUsers(JdbcClient jdbc) {
         this.jdbc = jdbc;
@@ -61,8 +63,44 @@ public class TestUsers {
         jdbc.sql("UPDATE users SET status = 'locked' WHERE id = ?").param(userId).update();
     }
 
-    /** Deletes every user created since the last call (refresh_tokens and user_tokens go by ON DELETE CASCADE). */
+    /** Sets {@code users.is_email_verified = false} (test users are created verified). */
+    public void markEmailUnverified(Long userId) {
+        jdbc.sql("UPDATE users SET is_email_verified = FALSE WHERE id = ?").param(userId).update();
+    }
+
+    /** Sets the user's {@code role} row inactive, as an admin revoke would (UC-A05, D-04); no cache eviction. */
+    public void revokeRole(Long userId, RoleCode role) {
+        jdbc.sql("""
+                        UPDATE user_roles SET is_active = FALSE
+                        WHERE user_id = ? AND role_id = (SELECT id FROM roles WHERE code = ?)
+                        """)
+                .params(userId, role.code())
+                .update();
+    }
+
+    /**
+     * A user created through the API (e.g. {@code POST /auth/register}) with this email (any case / outer spaces) is
+     * deleted by the next {@link #deleteAll()} too. Call it before the request, so a failing assertion still cleans up.
+     */
+    public synchronized void deleteLaterByEmail(String email) {
+        trackedEmails.add(email.strip().toLowerCase(Locale.ROOT));
+    }
+
+    /** Id of the user with this normalized email. */
+    public Long idByEmail(String normalizedEmail) {
+        return jdbc.sql("SELECT id FROM users WHERE email = ?").param(normalizedEmail).query(Long.class).single();
+    }
+
+    /**
+     * Deletes every user created or tracked since the last call (refresh_tokens and user_tokens go by ON DELETE
+     * CASCADE).
+     */
     public synchronized void deleteAll() {
+        for (String email : trackedEmails) {
+            jdbc.sql("SELECT id FROM users WHERE email = ?").param(email).query(Long.class).optional()
+                    .ifPresent(created::add);
+        }
+        trackedEmails.clear();
         for (Long id : created) {
             jdbc.sql("DELETE FROM user_roles WHERE user_id = ?").param(id).update();
             jdbc.sql("DELETE FROM users WHERE id = ?").param(id).update();

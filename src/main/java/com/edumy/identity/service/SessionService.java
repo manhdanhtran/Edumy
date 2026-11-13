@@ -25,6 +25,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -104,6 +105,18 @@ public class SessionService {
         // a lock committed after this check is still effective: the lock revokes every session of the user, and the
         // access-token check and refresh both require status = active
         return Objects.requireNonNull(transactions.execute(status -> openSession(user.getId(), userAgent, ipAddress)));
+    }
+
+    /**
+     * UC-G05 step 7: opens a session for a user that was just created in the caller's transaction (no password check:
+     * the caller has just set it). {@code MANDATORY}: the account, its first session and its verification code commit
+     * or roll back together, so a 201 always carries tokens of a committed account and a failure leaves no half-made
+     * account behind.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public SessionTokens startSessionForNewUser(Long userId, String userAgent, String ipAddress) {
+        Objects.requireNonNull(userId, "userId");
+        return openSession(userId, userAgent, ipAddress);
     }
 
     /**

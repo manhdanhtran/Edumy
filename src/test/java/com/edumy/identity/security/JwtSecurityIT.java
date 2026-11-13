@@ -175,8 +175,9 @@ class JwtSecurityIT {
                 .andExpect(status().is(not(401)))
                 .andExpect(status().is(not(403)))
                 .andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
-        mvc.perform(post("/api/v1/auth/email-verification/confirm"))
-                .andExpect(status().isNotFound());
+        mvc.perform(post("/api/v1/auth/email-verification/confirm")) // public (Q2): no body → 400, not 401
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("MALFORMED_REQUEST"));
         mvc.perform(get("/actuator/health"))
                 .andExpect(status().is(not(401)))
                 .andExpect(status().is(not(403)));

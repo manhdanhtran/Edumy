@@ -60,3 +60,10 @@ Recorded after the P01 review (2026-11-12). Migrations V1–V6 are frozen at tag
 - **Triggers do not fire for FK cascades**, and BR-24/BR-37 are checked on the child row only (docs/ai/03 §3.5).
 - **`certificate_code VARCHAR(19)`** while the format has 18 characters: minor DDD error, kept as is
   (docs/ai/03 "DDD inconsistencies").
+
+## SRS deviations decided during the build
+- **UC-G08 E2 vs D-03 (P04, Q3, approved 2026-11-13).** UC-G08 E2 asks to tell the user to wait when a reset is
+  requested again within 60 s; D-03 asks for one uniform answer to "forgot password". D-03 wins: `POST
+  /auth/password/forgot` always returns the same 202 and body; inside the 60 s cooldown no new code and no mail are
+  produced, without any visible signal. Unknown email and locked account (E3) give the same answer. The 60 s rule
+  stays visible (429 `TOKEN_RESEND_TOO_SOON`) only on the authenticated email-verification resend (UC-G06).
