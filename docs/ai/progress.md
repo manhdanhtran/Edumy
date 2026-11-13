@@ -1,4 +1,4 @@
-# Build progress — P01 Flyway schema, P02 dev seed, P03 entities, P04 security (docs/prompts/)
+# Build progress — P01 schema, P02 seed, P03 entities, P04 security, P05 reads, P06 writes, P07 stubs, P08 cache, P09 tests (docs/prompts/)
 
 Resume from the first unit that is not `done`. Never redo a committed unit.
 Constraint-by-constraint status: [schema-checklist.md](schema-checklist.md).
@@ -28,6 +28,7 @@ Constraint-by-constraint status: [schema-checklist.md](schema-checklist.md).
 | P04-e RoleQueryApi + access beans | done | d99bbec | 1175 tests green (+67), suite 3 min 01 s, one boot context; RoleQueryApi via Cache API (immutable Set, key = userId) + RoleCacheEvictor (after commit, used by UC-G13, ready for UC-A04/A05); no role → false (403), missing / not related → 404, pending_review → 409, BR-38 → 403 QA_REPLY_NOT_ALLOWED; BusinessException leaves SpEL unwrapped; test-only AccessProbeController + IdorAssertions |
 | P04-f LoginAttemptLimiter + CertificateVerifyRateLimiter | done | 88ae5e1 | 1199 tests green (+24), suite 2 min 36 s, one boot context; login: 5th consecutive failure (401) starts a 15-min block from that failure, blocked attempts (correct password too) → 429 AUTH_LOGIN_TEMPORARILY_BLOCKED before lookup/BCrypt and never write, blockedUntil checked against the Clock; certificate verify: Bucket4j 30 + greedy 30/min per remoteAddr (no X-Forwarded-For) → 429 RATE_LIMITED; Retry-After via shared.error.RetryAfterException; limits of in-memory/remoteAddr in ADR-002 |
 | P10 self-review of P02–P04 | todo | | |
+| P05-0 ValidationMessages.properties (all jakarta.* keys in Vietnamese) | done | 39d9a13 | baseline before P05: 1199 tests green; 22 built-in keys overridden + ValidationMessagesTest (2 tests); P05–P09 run as one orchestrated session (subagent per unit) |
 
 ## P02 seed coverage
 State-machine value → seed row ids in `db/seed/V1000__dev_seed.sql` (asserted by `SeedCoverageIT`).
