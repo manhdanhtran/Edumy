@@ -22,6 +22,10 @@ public interface UserRepository extends JpaRepository<User, Long> {
     /** Registration pre-check (uq_users_email still decides under concurrency). Normalized email. */
     boolean existsByEmail(String email);
 
+    /** Status only (no entity load): access-token check on every request (ADR-002, {@code SessionStatusCache}). */
+    @Query("select u.status from User u where u.id = :id")
+    Optional<UserStatus> findStatusById(@Param("id") Long id);
+
     /** Row lock for lock/unlock and role changes of one user (UC-A02…A05, BR-36 checks in the same transaction). */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select u from User u where u.id = :id")

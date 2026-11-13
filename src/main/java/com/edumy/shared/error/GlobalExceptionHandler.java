@@ -4,8 +4,8 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
-import java.util.UUID;
 
+import com.edumy.shared.web.TraceIdFilter;
 import jakarta.persistence.PersistenceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +32,9 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 /**
  * Renders every error as RFC 9457 ProblemDetail with extra properties {@code code}, {@code traceId} and, when
  * present, {@code errors} (docs/ai/05-api-contract.md §5.2). Titles/details are Vietnamese, from messages_vi.properties.
+ * This is the only place that builds ProblemDetails: errors raised outside Spring MVC (security entry point, access
+ * denied handler, filters) are routed here by {@link ProblemResponder}. {@code traceId} comes from the MDC
+ * ({@link TraceIdFilter}).
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
@@ -148,8 +151,8 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem;
     }
 
+    /** Set by {@link TraceIdFilter} for the whole request (also when called from the security handlers). */
     private static String traceId() {
-        String fromMdc = MDC.get("traceId");
-        return fromMdc != null ? fromMdc : UUID.randomUUID().toString().replace("-", "");
+        return MDC.get(TraceIdFilter.MDC_KEY);
     }
 }

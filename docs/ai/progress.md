@@ -20,8 +20,8 @@ Constraint-by-constraint status: [schema-checklist.md](schema-checklist.md).
 | P03-authoring entities + repositories | done | a11566b | 744 tests green (+158: 146 entity unit, 12 AuthoringRepositoryIT), suite 1 min 50 s; ddl-auto=validate OK on test DB and dev DB (v1000), no Hibernate setting needed (ADR-001); equality helper moved to shared.jpa.JpaEntities |
 | P03-commerce entities + repositories | done | df96e32 | 846 tests green (+102: 88 entity unit, 14 CommerceRepositoryIT), suite 1 min 51 s; ddl-auto=validate OK on test DB and dev DB (v1000), no Hibernate setting needed (ADR-001); generated pending_* columns unmapped — flush the cancel/close before inserting the next pending row |
 | P03-learning entities + repositories | done | 6c4ea20 | 975 tests green (+129: 116 entity unit, 13 LearningRepositoryIT), suite 3 min 26 s; ddl-auto=validate OK on test DB and dev DB (v1000), no Hibernate setting needed (ADR-001); T2 uses INSERT IGNORE (insertPurchaseIfAbsent) for BR-17 — IGNORE also hides FK/CHECK errors |
-| P04-plan (HARD STOP: approval) | waiting approval | — | plan presented after P03; no P04 code written until approved |
-| P04-a JWT, SecurityConfig, TraceIdFilter | todo | | |
+| P04-plan (HARD STOP: approval) | approved | — | approved 2026-11-13 with Q1–Q7 = A/approved + 7 SRS constraints (NFR-02/03/08, UC-G05 E3, UC-G08/G12) |
+| P04-a JWT, SecurityConfig, TraceIdFilter | done | (this commit) | 1015 tests green (+40), suite 2 min 59 s, one boot context; 401/403 from the filter chain rendered by GlobalExceptionHandler via ProblemResponder; session/user status through Cache API, evicted after commit |
 | P04-b SessionService + /auth/login, refresh, logout | todo | | |
 | P04-c account tokens, register, verify, reset, /me | todo | | |
 | P04-d notification module (mail) | todo | | |

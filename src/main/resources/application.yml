@@ -22,6 +22,12 @@ spring:
     basename: messages
     encoding: UTF-8
     fallback-to-system-locale: false
+  cache:
+    type: caffeine   # per-cache specs in shared.config.CacheConfig (docs/ai/05 §5.3)
+
+logging:
+  pattern:
+    level: "%5p [%X{traceId:-}]"   # traceId from shared.web.TraceIdFilter (= X-Trace-Id = ProblemDetail traceId)
 
 management:
   endpoints:
@@ -47,3 +53,7 @@ edumy:
     enabled: false   # phase 1: all schedulers are stubs (ADR-005)
   payment:
     provider: fake
+  frontend:
+    base-url: ${EDUMY_FRONTEND_BASE_URL:http://localhost:5173}   # SPA origin for links in emails (Q5)
+  mail:
+    from: ${EDUMY_MAIL_FROM:no-reply@edumy.local}

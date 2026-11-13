@@ -9,7 +9,7 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info,modulith
+        include: health,info,modulith,caches,metrics   # caches/metrics: Caffeine stats (docs/ai/05 §5.3)
 
 springdoc:
   api-docs:
@@ -21,6 +21,10 @@ edumy:
   security:
     jwt:
       secret: ghGCINn4MQ2kYBkk2E087RkPFGI989/2RI5DNzMDxt4=   # DEV ONLY — never reuse outside local development
+  frontend:
+    base-url: http://localhost:5173
+  mail:
+    from: no-reply@edumy.local
   cors:
     allowed-origins:
       - http://localhost:5173

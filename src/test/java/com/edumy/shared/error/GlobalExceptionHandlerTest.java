@@ -5,12 +5,14 @@ import static org.hamcrest.Matchers.matchesPattern;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.sql.SQLException;
 import java.util.List;
 
+import com.edumy.shared.web.TraceIdFilter;
 import jakarta.persistence.PersistenceException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -21,6 +23,7 @@ import org.springframework.dao.QueryTimeoutException;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.UncategorizedSQLException;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -39,12 +42,13 @@ class GlobalExceptionHandlerTest {
         messages.setFallbackToSystemLocale(false);
         mvc = MockMvcBuilders.standaloneSetup(new ProbeController())
                 .setControllerAdvice(new GlobalExceptionHandler(messages, new ConstraintViolationTranslator()))
+                .addFilters(new TraceIdFilter()) // the handler reads traceId from the MDC only
                 .build();
     }
 
     @Test
     void businessException_rendersProblemDetailWithCodeAndTraceId() throws Exception {
-        mvc.perform(get("/probe/not-editable"))
+        MvcResult result = mvc.perform(get("/probe/not-editable"))
                 .andExpect(status().isConflict())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
                 .andExpect(jsonPath("$.type").value("https://edumy.local/problems/course-not-editable"))
@@ -53,7 +57,23 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.instance").value("/probe/not-editable"))
                 .andExpect(jsonPath("$.code").value("COURSE_NOT_EDITABLE"))
                 .andExpect(jsonPath("$.traceId").value(matchesPattern("[0-9a-f]{32}")))
-                .andExpect(jsonPath("$.errors").doesNotExist());
+                .andExpect(jsonPath("$.errors").doesNotExist())
+                .andReturn();
+        assertTraceIdInBodyEqualsHeader(result);
+    }
+
+    @Test
+    void businessException_validIncomingTraceId_usedInBodyAndHeader() throws Exception {
+        mvc.perform(get("/probe/not-editable").header(TraceIdFilter.HEADER, "spa-req-0001"))
+                .andExpect(status().isConflict())
+                .andExpect(header().string(TraceIdFilter.HEADER, "spa-req-0001"))
+                .andExpect(jsonPath("$.traceId").value("spa-req-0001"));
+    }
+
+    @Test
+    void unexpectedException_traceIdInBodyEqualsResponseHeader() throws Exception {
+        assertTraceIdInBodyEqualsHeader(
+                mvc.perform(get("/probe/boom")).andExpect(status().isInternalServerError()).andReturn());
     }
 
     @Test
@@ -167,6 +187,12 @@ class GlobalExceptionHandlerTest {
                 .andExpect(status().isInternalServerError())
                 .andExpect(jsonPath("$.code").value("INTERNAL_ERROR"))
                 .andExpect(jsonPath("$.detail").value("Đã có lỗi xảy ra, vui lòng thử lại sau."));
+    }
+
+    private static void assertTraceIdInBodyEqualsHeader(MvcResult result) throws Exception {
+        String header = result.getResponse().getHeader(TraceIdFilter.HEADER);
+        org.assertj.core.api.Assertions.assertThat(header).matches("[0-9a-f]{32}");
+        jsonPath("$.traceId").value(header).match(result);
     }
 
     private String body(String url) throws Exception {

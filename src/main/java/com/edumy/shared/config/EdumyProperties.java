@@ -12,7 +12,9 @@ public record EdumyProperties(
         @DefaultValue Security security,
         @DefaultValue Cors cors,
         @DefaultValue Scheduler scheduler,
-        @DefaultValue Payment payment) {
+        @DefaultValue Payment payment,
+        @DefaultValue Frontend frontend,
+        @DefaultValue Mail mail) {
 
     public record Security(@DefaultValue Jwt jwt) {
     }
@@ -37,5 +39,16 @@ public record EdumyProperties(
     }
 
     public record Payment(@DefaultValue("fake") String provider) {
+    }
+
+    /**
+     * SPA origin used to build links in emails (Q5): {@code {baseUrl}/verify-email?token=} and
+     * {@code {baseUrl}/reset-password?token=}. No trailing slash.
+     */
+    public record Frontend(@DefaultValue("http://localhost:5173") String baseUrl) {
+    }
+
+    /** Sender address of every email ({@code From:}). */
+    public record Mail(@DefaultValue("no-reply@edumy.local") String from) {
     }
 }
