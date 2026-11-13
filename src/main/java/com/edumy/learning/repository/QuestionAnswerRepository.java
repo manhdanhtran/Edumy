@@ -30,4 +30,17 @@ public interface QuestionAnswerRepository extends JpaRepository<QuestionAnswer, 
 
     /** {@code @qaAccess.isAuthor}. */
     boolean existsByIdAndAuthorId(Long id, Long authorId);
+
+    /**
+     * {@code @qaAccess.isAnswerAuthor}: {@code authorId} wrote the answer, and neither the answer nor its question is
+     * deleted (a deleted question takes its whole thread with it). Hidden ones count: the author gets the BR-41
+     * conflict from the service, not a 404.
+     */
+    @Query("""
+            select case when count(a) > 0 then true else false end from QuestionAnswer a
+            where a.id = :id and a.authorId = :authorId
+              and a.visibilityStatus <> com.edumy.learning.entity.ContentStatus.DELETED
+              and a.question.visibilityStatus <> com.edumy.learning.entity.ContentStatus.DELETED
+            """)
+    boolean existsNotDeletedByIdAndAuthorId(@Param("id") Long id, @Param("authorId") Long authorId);
 }

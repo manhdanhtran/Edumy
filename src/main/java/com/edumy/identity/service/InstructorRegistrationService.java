@@ -12,18 +12,13 @@ import com.edumy.identity.mapper.UserMapper;
 import com.edumy.identity.repository.RoleRepository;
 import com.edumy.identity.repository.UserRepository;
 import com.edumy.identity.repository.UserRoleRepository;
-import com.edumy.shared.config.CacheConfig;
 import com.edumy.shared.error.BusinessException;
 import com.edumy.shared.error.ErrorCode;
 import com.edumy.shared.security.RoleCode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.cache.Cache;
-import org.springframework.cache.CacheManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 /**
  * UC-G13 self-registration as instructor (D-04: no admin approval; quality control happens at course review). No
@@ -38,17 +33,16 @@ public class InstructorRegistrationService {
     private final RoleRepository roles;
     private final UserRoleRepository userRoles;
     private final UserMapper mapper;
-    private final Cache activeRoles;
+    private final RoleCacheEvictor roleCache;
     private final Clock clock;
 
     public InstructorRegistrationService(UserRepository users, RoleRepository roles, UserRoleRepository userRoles,
-                                         UserMapper mapper, CacheManager cacheManager, Clock clock) {
+                                         UserMapper mapper, RoleCacheEvictor roleCache, Clock clock) {
         this.users = users;
         this.roles = roles;
         this.userRoles = userRoles;
         this.mapper = mapper;
-        this.activeRoles = Objects.requireNonNull(cacheManager.getCache(CacheConfig.ACTIVE_ROLES),
-                "cache " + CacheConfig.ACTIVE_ROLES);
+        this.roleCache = roleCache;
         this.clock = clock;
     }
 
@@ -62,7 +56,7 @@ public class InstructorRegistrationService {
      *   <li>otherwise step 4: grant now, {@code assigned_by} null ({@code granted = true}, 201).</li>
      * </ol>
      * The user row is locked, which serializes this with an admin grant/revoke of the same user (UC-A04/A05 lock it
-     * too). A grant evicts the user's {@value CacheConfig#ACTIVE_ROLES} entry (key = user id) after commit. The new
+     * too). A grant evicts the user's cached active roles after commit ({@link RoleCacheEvictor}). The new
      * role is in the database (and in the returned roles) at once; the access token gets it at the next refresh.
      */
     @Transactional
@@ -82,21 +76,11 @@ public class InstructorRegistrationService {
             Role instructor = roles.findByCode(RoleCode.INSTRUCTOR).orElseThrow(
                     () -> new IllegalStateException("Role instructor missing (V6__reference_data.sql)"));
             userRoles.save(UserRole.grant(user, instructor, null, clock.instant()));
-            evictActiveRolesAfterCommit(userId);
+            roleCache.evict(userId);
             log.info("Instructor role self-registered: userId={}", userId);
         }
         MeResponse me = mapper.toMeResponse(user, userRoles.findActiveRoleCodesByUserId(userId));
         return new InstructorRegistrationResult(granted, me);
-    }
-
-    /** Evicting before commit would let a concurrent read re-cache the old roles (same reasoning as SessionStatusCache). */
-    private void evictActiveRolesAfterCommit(Long userId) {
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                activeRoles.evict(userId);
-            }
-        });
     }
 
     /** Outcome of {@link #register}: {@code granted} = a new role row was created (201) rather than E3 (200). */

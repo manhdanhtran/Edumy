@@ -71,9 +71,21 @@ Two layers, both server-side:
 | Bean | Methods | Used for |
 |---|---|---|
 | `@courseAccess` (authoring) | `isMain(#courseId)`, `isInstructor(#courseId)`, `canEditContent(#courseId)` (instructor + status ≠ pending_review) | UC-I01…I20 |
-| `@chapterAccess` / `@lessonAccess` (authoring) | resolve parent course then delegate | chapter/lesson endpoints |
-| `@enrollmentAccess` (learning) | `isEnrolled(#courseId)`, `canViewContent(#courseId)` (enrolled OR course instructor OR admin, D-32) | UC-S09…S20 |
-| `@qaAccess` (learning) | `canReply(#questionId)` (asker or course instructor, BR-38), `isAuthor(...)` | Q&A |
+| `@chapterAccess` / `@lessonAccess` (authoring) | same three methods by chapter / lesson id: role first, then resolve the parent course (unknown → 404) and delegate | chapter/lesson endpoints |
+| `@enrollmentAccess` (learning) | `isEnrolled(#courseId)`, `canViewContent(#courseId)` (enrolled OR course instructor OR admin, D-32), `canViewLesson(#lessonId)`, `isEnrolledForLesson(#lessonId)` | UC-S09…S20 |
+| `@qaAccess` (learning) | `canReply(#questionId)` (asker or course instructor, BR-38), `isQuestionAuthor(#questionId)`, `isAnswerAuthor(#answerId)` | Q&A |
+
+Outcomes (Q7, P04-e): **`false` → 403 `ACCESS_DENIED`** only when the caller lacks the needed role in the database
+(`@courseAccess`/`@chapterAccess`/`@lessonAccess`: no active instructor role — checked before any lookup, so ids cannot be
+probed). Unknown resource, or no relation to it → **`RESOURCE_NOT_FOUND` (404, identical body)**. State conflicts are not
+permissions: `canEditContent` on a `pending_review` course → `COURSE_NOT_EDITABLE` (409, BR-33, only for a course
+instructor; a stranger still gets 404). `canReply`: a caller who can see the question (enrolled, admin) but is neither
+the asker nor a course instructor → `QA_REPLY_NOT_ALLOWED` (403); a caller who cannot see it → 404. Question visibility:
+`deleted` → nobody; `hidden` → only the asker and an admin; `visible` → whoever passes `canViewContent`. The
+`@enrollmentAccess` methods never return false (true or 404). A `BusinessException` thrown inside the SpEL call leaves
+the expression unwrapped (SpEL `MethodReference` rethrows a `RuntimeException` cause as is, Spring Security only catches
+`AuthorizationDeniedException`) and is rendered by `GlobalExceptionHandler`; proved by `AuthoringAccessIT` /
+`LearningAccessIT` through the test-only `AccessProbeController`.
 
 Example:
 ```java

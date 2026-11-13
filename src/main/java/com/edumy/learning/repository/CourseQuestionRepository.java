@@ -116,6 +116,23 @@ public interface CourseQuestionRepository extends JpaRepository<CourseQuestion, 
     @Query("select q.enrollment.courseId from CourseQuestion q where q.id = :id")
     Optional<Long> findCourseIdById(@Param("id") Long id);
 
+    /** {@code @qaAccess}: course, asker and visibility of a question in one query (BR-38, NFR-01). */
+    @Query("""
+            select e.courseId as courseId, e.studentId as askerId, q.visibilityStatus as visibilityStatus
+            from CourseQuestion q join q.enrollment e
+            where q.id = :id
+            """)
+    Optional<QuestionAccessView> findAccessViewById(@Param("id") Long id);
+
+    /** What {@code @qaAccess} needs to know about a question. */
+    interface QuestionAccessView {
+        Long getCourseId();
+
+        Long getAskerId();
+
+        ContentStatus getVisibilityStatus();
+    }
+
     /** Row of the question lists (UC-S17, UC-S18, UC-I22). Asker names come from {@code identity::api}. */
     interface QuestionSummaryView {
         Long getId();

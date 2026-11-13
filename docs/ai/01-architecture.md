@@ -132,7 +132,7 @@ identity/
 │                 ResetPasswordRequest, UpdateProfileRequest, ChangePasswordRequest
 ├── dto/response/ AuthTokenResponse, ForgotPasswordResponse, MeResponse, AdminUserResponse
 ├── service/      AuthService, SessionService, AccountTokenService, ProfileService, InstructorRegistrationService,
-│                 UserAdminService, UserAdminQueryService, UserQueryApiImpl, RoleQueryApiImpl
+│                 UserAdminService, UserAdminQueryService, UserQueryApiImpl, RoleQueryApiImpl, RoleCacheEvictor
 ├── mapper/       UserMapper
 ├── entity/       User, Role, UserRole, UserToken, RefreshToken, UserStatus, TokenType, RevokeReason
 ├── repository/   UserRepository, RoleRepository, UserRoleRepository, UserTokenRepository, RefreshTokenRepository
@@ -294,10 +294,10 @@ Consequences:
 | Module | Interface | Purpose |
 |---|---|---|
 | identity | `UserQueryApi` | `UserSummary findSummary(Long id)` → id, fullName, email, status |
-| identity | `RoleQueryApi` | `boolean hasActiveRole(Long userId, RoleCode role)` — cached 60 s, evicted on change |
-| authoring | `CourseQueryApi` | `Optional<SellableCourse> findSellable(Long courseId)` (published only, BR-31) and course summaries |
+| identity | `RoleQueryApi` | `Set<RoleCode> activeRoles(Long userId)`, `boolean hasActiveRole(Long userId, RoleCode role)` — cached 60 s (`identity.active-roles`, key = user id), evicted after commit by `service/RoleCacheEvictor` on every grant/revoke |
+| authoring | `CourseQueryApi` | `boolean exists(Long courseId)` (P04-e, admin content access D-32); later `Optional<SellableCourse> findSellable(Long courseId)` (published only, BR-31) and course summaries |
 | authoring | `CourseAccessApi` | `isMainInstructor`, `isCourseInstructor` (main or accepted co **and** active instructor role) |
-| authoring | `LessonQueryApi` | lesson → course, lesson ids / count per course |
+| authoring | `LessonQueryApi` | `Optional<Long> findCourseId(lessonId)`; later: lesson ids / count per course |
 | learning | `EnrollmentApi` | `boolean owns(studentId, courseId)`; `void grantForPaidOrder(GrantEnrollmentCommand)` — `@Transactional(propagation = MANDATORY)` (ADR-004) |
 
 ## 1.10 Events

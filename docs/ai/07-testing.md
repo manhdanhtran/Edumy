@@ -24,6 +24,13 @@ Rules
 - Mails in `@MySqlSpringBootTest`: the `MailGateway` is `support/CapturingMailGateway` (`@Primary`, cleared after every
   test). Mails are sent async after commit, so wait with `awaitMail(to, template)` / `awaitFailuresConsumed(to)`
   (Awaitility, 10 s) and filter by the UUID-unique recipient; `failNextSendsTo(to, n)` simulates SMTP failures.
+- Access beans / IDOR (NFR-01): until the real controllers exist, `support/AccessProbeController` (registered only by
+  the `@Import` of `@MySqlSpringBootTest`, `@TestComponent` + `@Profile("test")`) exposes `GET /api/v1/test-probe/...`
+  guarded by each access bean. `support/IdorAssertions.assertSameNotFound(mvc, othersResource, missing)` asserts both
+  are 404 `RESOURCE_NOT_FOUND` with bodies equal except `traceId` / `instance`. `support/CourseFixtures` inserts committed
+  course / chapter / lesson / enrollment / question / answer rows (draft courses, so BR-19 lets `deleteAll()` remove
+  them; call it before `TestUsers.deleteAll()`). Unit tests of access beans set the caller with
+  `support/TestSecurityContext.authenticate(userId, jwtRoles...)` and mock `RoleQueryApi` for the database roles.
 - `*IT` classes run via surefire in `./mvnw test` (decision in V1); if the suite gets too slow they move to failsafe/`verify`.
 - Never delete or `@Disabled` a failing test to finish a task; report it.
 

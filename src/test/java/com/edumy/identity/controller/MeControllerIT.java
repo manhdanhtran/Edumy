@@ -10,7 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -232,7 +232,7 @@ class MeControllerIT {
         TestUser user = users.create(RoleCode.STUDENT);
         LoggedIn session = login(user.email(), TestUsers.PASSWORD);
         Cache activeRoles = cacheManager.getCache(CacheConfig.ACTIVE_ROLES);
-        activeRoles.put(user.id(), List.of("student")); // stale entry the grant must evict
+        activeRoles.put(user.id(), Set.of(RoleCode.STUDENT)); // stale entry the grant must evict
 
         mvc.perform(post(INSTRUCTOR).header(HttpHeaders.AUTHORIZATION, "Bearer " + session.accessToken()))
                 .andExpect(status().isCreated())
