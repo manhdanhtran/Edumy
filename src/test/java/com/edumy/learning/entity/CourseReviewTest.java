@@ -131,6 +131,29 @@ class CourseReviewTest {
         assertThat(review.getVisibilityStatus()).isEqualTo(ReviewStatus.WITHDRAWN);
     }
 
+    @Test
+    void edit_visible_staysVisible_UCS13() {
+        CourseReview review = newReview();
+
+        review.edit(1, "Chưa như kỳ vọng");
+
+        assertThat(review.getRating()).isEqualTo((short) 1);
+        assertThat(review.getComment()).isEqualTo("Chưa như kỳ vọng");
+        assertThat(review.getVisibilityStatus()).isEqualTo(ReviewStatus.VISIBLE);
+    }
+
+    @Test
+    void edit_hidden_reviewHiddenByAdmin_withdrawn_conflict_unchanged() {
+        CourseReview hidden = reviewIn(ReviewStatus.HIDDEN);
+        CourseReview withdrawn = reviewIn(ReviewStatus.WITHDRAWN);
+
+        assertCode(() -> hidden.edit(5, "x"), ErrorCode.REVIEW_HIDDEN_BY_ADMIN);
+        assertConflict(() -> withdrawn.edit(5, "x"));
+        assertThat(hidden.getRating()).isEqualTo((short) 4);
+        assertThat(withdrawn.getRating()).isEqualTo((short) 4);
+        assertThat(withdrawn.getVisibilityStatus()).isEqualTo(ReviewStatus.WITHDRAWN);
+    }
+
     // ----------------------------------------------------------------------------------------------------- withdraw
 
     @Test

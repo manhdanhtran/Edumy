@@ -84,7 +84,7 @@ public class CourseReview {
     }
 
     /**
-     * UC-S13: the student changes rating and comment. visible → visible, withdrawn → visible (re-rate); hidden →
+     * UC-S12 / UC-S13: the student sets rating and comment. visible → visible, withdrawn → visible (re-rate, UC-S12 step 3); hidden →
      * {@code REVIEW_HIDDEN_BY_ADMIN} (BR-35/BR-41).
      */
     public void update(int newRating, String newComment) {
@@ -94,6 +94,19 @@ public class CourseReview {
         rating = validRating;
         comment = validComment;
         visibilityStatus = ReviewStatus.VISIBLE;
+    }
+
+    /**
+     * UC-S13: the student edits the review. Only a visible review can be edited: hidden →
+     * {@code REVIEW_HIDDEN_BY_ADMIN} (BR-35/BR-41), withdrawn → conflict (a withdrawn review is re-rated through
+     * UC-S12, {@link #update}). Nothing changes on failure.
+     */
+    public void edit(int newRating, String newComment) {
+        requireNotHidden();
+        if (visibilityStatus != ReviewStatus.VISIBLE) {
+            throw new BusinessException(ErrorCode.DATA_CONFLICT);
+        }
+        update(newRating, newComment);
     }
 
     /** UC-S14: visible → withdrawn (student); hidden → {@code REVIEW_HIDDEN_BY_ADMIN}; withdrawn → conflict. */

@@ -165,6 +165,15 @@ public class CourseFixtures {
         return id;
     }
 
+    /** A review of the enrollment in {@code status} (hidden by {@code adminId}); removed with its enrollment by {@link #deleteAll()}. */
+    public long review(long enrollmentId, int rating, String status, Long adminId) {
+        return insert(jdbc.sql("""
+                        INSERT INTO course_reviews (enrollment_id, rating, comment, visibility_status, moderated_by,
+                                                    moderated_at)
+                        VALUES (?, ?, 'Nhận xét', ?, ?, CASE WHEN ? THEN CURRENT_TIMESTAMP(6) END)""")
+                .params(enrollmentId, rating, status, adminId, adminId != null));
+    }
+
     /** A visible course-level question of the enrollment's student. */
     public long question(long enrollmentId) {
         long id = insert(jdbc.sql("""
@@ -199,6 +208,7 @@ public class CourseFixtures {
             jdbc.sql("DELETE FROM course_questions WHERE id = ?").param(id).update();
         }
         for (Long id : enrollments) {
+            jdbc.sql("DELETE FROM course_reviews WHERE enrollment_id = ?").param(id).update();
             jdbc.sql("DELETE FROM certificates WHERE enrollment_id = ?").param(id).update();
             jdbc.sql("DELETE FROM lesson_progresses WHERE enrollment_id = ?").param(id).update();
             jdbc.sql("DELETE FROM enrollments WHERE id = ?").param(id).update();
