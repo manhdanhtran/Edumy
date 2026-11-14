@@ -61,6 +61,8 @@ public enum ErrorCode {
 
     // learning
     ENROLLMENT_REQUIRED(HttpStatus.FORBIDDEN),
+    ENROLLMENT_COURSE_NOT_FREE(HttpStatus.UNPROCESSABLE_CONTENT),     // UC-S15, BR-09: only free courses are enrolled directly
+    ENROLLMENT_OWN_COURSE(HttpStatus.UNPROCESSABLE_CONTENT),          // UC-S15 E2, BR-32: instructors view as instructors
     REVIEW_HIDDEN_BY_ADMIN(HttpStatus.CONFLICT),
     QA_REPLY_NOT_ALLOWED(HttpStatus.FORBIDDEN);
 

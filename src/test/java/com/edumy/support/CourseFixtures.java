@@ -22,6 +22,7 @@ public class CourseFixtures {
     private final List<Long> categories = new ArrayList<>();
     private final List<Long> courses = new ArrayList<>();
     private final List<Long> enrollments = new ArrayList<>();
+    private final List<Long> orders = new ArrayList<>();
     private final List<Long> questions = new ArrayList<>();
 
     public CourseFixtures(JdbcClient jdbc) {
@@ -139,6 +140,31 @@ public class CourseFixtures {
         return id;
     }
 
+    /** An enrollment created through the API (UC-S15): {@link #deleteAll()} removes it (no-op if already gone). */
+    public void trackEnrollment(long enrollmentId) {
+        enrollments.add(enrollmentId);
+    }
+
+    /**
+     * A purchase enrollment of {@code studentId} in {@code courseId}: a paid order of 499 000 VND with one line for the
+     * course, deleted by {@link #deleteAll()} after the enrollment.
+     */
+    public long purchaseEnrollment(long studentId, long courseId) {
+        long order = insert(jdbc.sql("""
+                        INSERT INTO orders (student_id, order_code, total_amount, status, paid_at)
+                        VALUES (?, ?, 499000, 'paid', CURRENT_TIMESTAMP(6))""")
+                .params(studentId, "ORD-" + UUID.randomUUID().toString().replace("-", "").substring(0, 20)));
+        orders.add(order);
+        jdbc.sql("INSERT INTO order_items (order_id, course_id, unit_price) VALUES (?, ?, 499000)")
+                .params(order, courseId).update();
+        long id = insert(jdbc.sql("""
+                        INSERT INTO enrollments (student_id, course_id, order_id, enroll_source)
+                        VALUES (?, ?, ?, 'purchase')""")
+                .params(studentId, courseId, order));
+        enrollments.add(id);
+        return id;
+    }
+
     /** A visible course-level question of the enrollment's student. */
     public long question(long enrollmentId) {
         long id = insert(jdbc.sql("""
@@ -173,7 +199,13 @@ public class CourseFixtures {
             jdbc.sql("DELETE FROM course_questions WHERE id = ?").param(id).update();
         }
         for (Long id : enrollments) {
+            jdbc.sql("DELETE FROM certificates WHERE enrollment_id = ?").param(id).update();
+            jdbc.sql("DELETE FROM lesson_progresses WHERE enrollment_id = ?").param(id).update();
             jdbc.sql("DELETE FROM enrollments WHERE id = ?").param(id).update();
+        }
+        for (Long id : orders) {
+            jdbc.sql("DELETE FROM order_items WHERE order_id = ?").param(id).update();
+            jdbc.sql("DELETE FROM orders WHERE id = ?").param(id).update();
         }
         for (Long id : courses) {
             // BR-19 trigger: a course with published_at cannot be deleted, so reset it to a never-published draft
@@ -185,6 +217,7 @@ public class CourseFixtures {
         }
         questions.clear();
         enrollments.clear();
+        orders.clear();
         courses.clear();
         categories.clear();
     }

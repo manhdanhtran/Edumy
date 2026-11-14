@@ -222,6 +222,7 @@ learning/
 ├── repository/   EnrollmentRepository, LessonProgressRepository, CourseReviewRepository, CourseQuestionRepository,
 │                 QuestionAnswerRepository, CertificateRepository
 ├── security/     EnrollmentAccess ("enrollmentAccess"), QaAccess ("qaAccess")
+├── listener/     CertificateIssuedListener            # logs CertificateIssued after commit (P06-G6)
 └── integration/  CertificatePdfRenderer (interface), SampleCertificatePdfRenderer   # STUB-P1
 ```
 
@@ -315,7 +316,7 @@ Consequences:
 | `OrderPaid` | commerce | notification (BR-20) | async — mail failure never touches the order |
 | `ReviewChanged` | learning | catalog (rating cache) | after commit |
 | `QuestionAnsweredByInstructor` | learning | notification (D-42) | async |
-| `CertificateIssued` | learning | logging (NFR-08) | after commit |
+| `CertificateIssued` (certificateId, enrollmentId, studentId, courseId) | learning (UC-S10, P06-G6) | logging (NFR-08, `learning.listener.CertificateIssuedListener`: ids only) | after commit |
 
 ## 1.11 Transactions
 - `@Transactional` only in `service/`. Never in controllers, listeners (they call a service), entities.

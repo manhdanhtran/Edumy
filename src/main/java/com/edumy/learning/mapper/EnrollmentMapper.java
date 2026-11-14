@@ -7,9 +7,11 @@ import com.edumy.identity.api.UserSummary;
 import com.edumy.learning.dto.response.EnrollmentResponse;
 import com.edumy.learning.dto.response.LearningOutlineResponse;
 import com.edumy.learning.dto.response.LessonContentResponse;
+import com.edumy.learning.dto.response.ProgressResponse;
 import com.edumy.learning.dto.response.StudentProgressResponse;
 import com.edumy.learning.repository.EnrollmentRepository.CourseStudentView;
 import com.edumy.learning.repository.EnrollmentRepository.StudentEnrollmentView;
+import java.time.Instant;
 import java.util.List;
 import java.util.Set;
 import org.mapstruct.Mapper;
@@ -66,6 +68,13 @@ public interface EnrollmentMapper {
     default LessonContentResponse toLessonContent(LessonContent l, Boolean completed) {
         return new LessonContentResponse(l.id(), l.courseId(), l.chapterId(), l.title(), l.contentType(),
                 l.durationSeconds(), l.videoUrl(), l.articleContent(), completed);
+    }
+
+    /** UC-S10 result; {@code certificateIssued} only when this very request issued the certificate. */
+    default ProgressResponse toProgress(Long lessonId, Instant completedAt, long completedLessons, long totalLessons,
+                                        int percent, String certificateCode, boolean certificateIssued) {
+        return new ProgressResponse(lessonId, completedAt != null, completedAt, (int) completedLessons,
+                (int) totalLessons, percent, certificateCode, certificateIssued);
     }
 
     /** UC-I19 row; {@code student} null = account gone. */

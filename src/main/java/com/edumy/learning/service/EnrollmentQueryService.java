@@ -80,6 +80,17 @@ public class EnrollmentQueryService {
                 totals.getOrDefault(e.getCourseId(), 0), codes.get(e.getId())));
     }
 
+
+    /** UC-S15 response: the caller's enrollment in {@code courseId} (the same row as UC-S08), after the write. */
+    public EnrollmentResponse findMine(Long studentId, Long courseId) {
+        StudentEnrollmentView view = enrollments.findSummaryByStudentIdAndCourseId(studentId, courseId)
+                .orElseThrow(BusinessException::notFound);
+        CourseSummary course = courses.findSummaries(Set.of(courseId)).get(courseId);
+        int total = lessons.countLessons(Set.of(courseId)).getOrDefault(courseId, 0);
+        String code = certificates.findByEnrollmentIdIn(List.of(view.getId())).stream()
+                .map(EnrollmentCertificateView::getCertificateCode).findFirst().orElse(null);
+        return mapper.toEnrollment(view, course, total, code);
+    }
     /**
      * UC-S11 / UC-S09 preview of the whole course: the caller may view the content (checked by the access bean).
      * Instructors and admins get the outline without progress (D-32).

@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * UC-S20 list of the caller's certificates (the issue-on-read catch-up of step 1 is a write, left to P06; the PDF is
+ * UC-S20 list of the caller's certificates (the issue-on-read catch-up of step 1 is not implemented, see progress.md; the PDF is
  * a stub of P07). Not in docs/ai/01 §1.5, named per §1.7. Statements: page + count.
  */
 @Service

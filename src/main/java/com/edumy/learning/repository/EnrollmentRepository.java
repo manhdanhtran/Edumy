@@ -7,9 +7,11 @@ import java.util.Optional;
 
 import com.edumy.learning.entity.Enrollment;
 import com.edumy.learning.entity.EnrollmentSource;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -49,6 +51,44 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
     int insertPurchaseIfAbsent(@Param("studentId") Long studentId, @Param("courseId") Long courseId,
                                @Param("orderId") Long orderId, @Param("enrolledAt") Instant enrolledAt);
 
+
+    /**
+     * UC-S10 / D-34 writes: the enrollment of a student in a course with a row lock, so completions, visits and the
+     * certificate issue of one enrollment queue up (BR-39: exactly once). Call it first in a READ COMMITTED
+     * transaction: later reads then see what the previous holder of the lock committed.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select e from Enrollment e where e.studentId = :studentId and e.courseId = :courseId")
+    Optional<Enrollment> findByStudentIdAndCourseIdForUpdate(@Param("studentId") Long studentId,
+                                                             @Param("courseId") Long courseId);
+
+    /**
+     * BR-17 / UC-S15: free enrollment of {@code studentId} in {@code courseId} unless the student already has one
+     * (then nothing is written). Returns 1 when inserted, 0 when it existed. Same caveat as
+     * {@link #insertPurchaseIfAbsent}: {@code IGNORE} also hides FK / CHECK errors, so the caller passes an existing
+     * student and a published free course it has just read.
+     */
+    @Modifying(flushAutomatically = true)
+    @Query(nativeQuery = true, value = """
+            INSERT IGNORE INTO enrollments (student_id, course_id, order_id, enroll_source, enrolled_at)
+            VALUES (:studentId, :courseId, NULL, 'free', :enrolledAt)
+            """)
+    int insertFreeIfAbsent(@Param("studentId") Long studentId, @Param("courseId") Long courseId,
+                           @Param("enrolledAt") Instant enrolledAt);
+
+    /** UC-S15 response: the {@link #findSummariesByStudentId} row of one enrollment, addressed by student + course. */
+    @Query("""
+            select e.id as id, e.courseId as courseId, e.enrollSource as enrollSource, e.enrolledAt as enrolledAt,
+                   (select count(p) from LessonProgress p where p.enrollment = e and p.completed = true)
+                       as completedLessonCount,
+                   (select p.lessonId from LessonProgress p where p.enrollment = e
+                    order by p.lastAccessedAt desc, p.id desc limit 1) as lastAccessedLessonId,
+                   (select max(p.lastAccessedAt) from LessonProgress p where p.enrollment = e) as lastAccessedAt
+            from Enrollment e
+            where e.studentId = :studentId and e.courseId = :courseId
+            """)
+    Optional<StudentEnrollmentView> findSummaryByStudentIdAndCourseId(@Param("studentId") Long studentId,
+                                                                      @Param("courseId") Long courseId);
     /**
      * UC-S08 {@code GET /me/enrollments}: enrollments of a student, newest first, with the number of completed lessons
      * (percent = floor(completed * 100 / total lessons), D-33, total from {@code authoring::api.LessonQueryApi}) and
