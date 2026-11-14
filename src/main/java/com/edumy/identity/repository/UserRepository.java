@@ -24,6 +24,9 @@ public interface UserRepository extends JpaRepository<User, Long> {
     /** Registration pre-check (uq_users_email still decides under concurrency). Normalized email. */
     boolean existsByEmail(String email);
 
+    /** {@code identity::api.UserQueryApi.isEmailVerified} (D-02). */
+    boolean existsByIdAndEmailVerifiedTrue(Long id);
+
     /** Status only (no entity load): access-token check on every request (ADR-002, {@code SessionStatusCache}). */
     @Query("select u.status from User u where u.id = :id")
     Optional<UserStatus> findStatusById(@Param("id") Long id);

@@ -29,3 +29,5 @@ edumy:
     allowed-origins:
       - http://localhost:5173
       - http://localhost:3000
+  payment:
+    webhook-secret: dev-only-fake-payment-webhook-secret   # DEV ONLY — HMAC key of POST /webhooks/payments/fake

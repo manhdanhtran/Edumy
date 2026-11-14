@@ -58,6 +58,7 @@ public enum ErrorCode {
     CART_OWN_COURSE(HttpStatus.UNPROCESSABLE_CONTENT),
     CART_COURSE_FREE(HttpStatus.UNPROCESSABLE_CONTENT),               // UC-S01 E3, BR-09: free courses are enrolled, not carted
     CART_ITEM_DUPLICATE(HttpStatus.CONFLICT),                         // uq_cart_items_cart_course (BR-11)
+    CART_EMPTY(HttpStatus.UNPROCESSABLE_CONTENT),                     // UC-S04 E1, BR-27: no purchasable line left
 
     // learning
     ENROLLMENT_REQUIRED(HttpStatus.FORBIDDEN),

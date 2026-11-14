@@ -22,4 +22,7 @@ public interface UserQueryApi {
 
     /** Id of the account with this email (case-insensitive, trimmed); empty for an unknown or blank email. */
     Optional<Long> findIdByEmail(String email);
+
+    /** The account's email is verified (D-02: needed to place an order); {@code false} for an unknown id or {@code null}. */
+    boolean isEmailVerified(Long id);
 }

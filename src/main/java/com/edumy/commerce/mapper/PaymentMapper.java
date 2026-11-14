@@ -1,6 +1,7 @@
 package com.edumy.commerce.mapper;
 
 import com.edumy.commerce.dto.response.AdminPaymentResponse;
+import com.edumy.commerce.dto.response.PaymentQrResponse;
 import com.edumy.commerce.dto.response.PaymentStatusResponse;
 import com.edumy.commerce.entity.HandledAction;
 import com.edumy.commerce.entity.Order;
@@ -8,6 +9,7 @@ import com.edumy.commerce.entity.PaymentStatus;
 import com.edumy.commerce.entity.PaymentTransaction;
 import com.edumy.commerce.repository.PaymentTransactionRepository.AdminPaymentView;
 import com.edumy.identity.api.UserSummary;
+import java.time.Instant;
 import java.util.Map;
 
 import org.mapstruct.Mapper;
@@ -38,6 +40,33 @@ public interface PaymentMapper {
                                 handler == null ? null : handler.fullName()),
                 code(payment.getHandledAction()), payment.getHandledNote(), payment.getHandledAt(),
                 payment.getCreatedAt());
+    }
+
+    /** UC-S05: the pending attempt as the QR response (a stored one being reused, or a sample). */
+    default PaymentQrResponse toQr(String orderCode, PaymentTransaction payment) {
+        return new PaymentQrResponse(orderCode, payment.getTransactionRef(), payment.getStatus().code(),
+                payment.getAmount(), payment.getQrData(), payment.getQrExpiresAt(), payment.getCreatedAt());
+    }
+
+    /**
+     * UC-A18 preview (phase-1 stub): the attempt as it WOULD look after the admin handled it. {@code activated} →
+     * status {@code success}, {@code confirmedAt} = now; {@code refund_outside} keeps the attempt's result (step 4).
+     * Built from values: the entity is never changed.
+     */
+    default AdminPaymentResponse toResolvedAdmin(PaymentTransaction payment, Order order, HandledAction action,
+                                                 String note, Long adminId, Instant now,
+                                                 Map<Long, UserSummary> users) {
+        UserSummary student = users.get(order.getStudentId());
+        UserSummary admin = users.get(adminId);
+        boolean activated = action == HandledAction.ACTIVATED;
+        return new AdminPaymentResponse(payment.getId(), order.getId(), order.getOrderCode(),
+                new AdminPaymentResponse.Student(order.getStudentId(), student == null ? null : student.fullName(),
+                        student == null ? null : student.email()),
+                payment.getTransactionRef(), payment.getAmount(), payment.getQrExpiresAt(),
+                (activated ? PaymentStatus.SUCCESS : payment.getStatus()).code(),
+                activated ? now : payment.getConfirmedAt(),
+                new AdminPaymentResponse.Handler(adminId, admin == null ? null : admin.fullName()),
+                action.code(), note, now, payment.getCreatedAt());
     }
 
     private String code(HandledAction action) {

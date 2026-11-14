@@ -7,3 +7,5 @@ edumy:
   security:
     jwt:
       secret: bSLDLXBtujvgr0zpYoZNZGbn9pMzRaa4W358RrPR83M=   # TEST ONLY
+  payment:
+    webhook-secret: test-only-fake-payment-webhook-secret   # TEST ONLY

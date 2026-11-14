@@ -52,4 +52,9 @@ class UserQueryApiImpl implements UserQueryApi {
         }
         return users.findIdByEmail(User.normalizeEmail(email));
     }
+
+    @Override
+    public boolean isEmailVerified(Long id) {
+        return id != null && users.existsByIdAndEmailVerifiedTrue(id);
+    }
 }

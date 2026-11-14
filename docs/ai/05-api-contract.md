@@ -70,6 +70,7 @@
 | `PASSWORD_SAME_AS_OLD` | 422 | UC-G12: new password = current password |
 | `COURSE_SUBMIT_CHECKLIST_FAILED` | 422 | BR-07; `errors` lists every failed checklist item (`field` = item, `message` = Vietnamese reason) |
 | `CART_OWN_COURSE` | 422 | BR-32 |
+| `CART_EMPTY` | 422 | UC-S04 E1 "Giỏ hàng trống" / BR-27: after D-26 re-validation no purchasable line is left, so no order is created (P07-commerce; the SRS names the text, no code) |
 | `CART_COURSE_FREE` | 422 | BR-09 / UC-S01 E3: the course is free (price 0) — enroll with UC-S15 instead (P06-G5; the SRS names no error text, only "chuyển sang ghi danh") |
 | `COURSE_CO_INSTRUCTOR_IS_MAIN` | 422 | BR-02; trigger: the invited instructor is the course's main instructor |
 | `LESSON_COURSE_MISMATCH` | 422 | BR-24 / BR-37; triggers: the lesson does not belong to the enrollment's course |
@@ -513,6 +514,39 @@ Commerce writes (P06-G5), login required (D-23; no verified email needed to cart
   `CourseHiddenListener` persists nothing (it only logs courseId + number of carts).
 - Known limit: the `own_course` flag of `GET /cart` still looks at the main instructor only; `POST /cart/items` also
   refuses accepted co-instructors (BR-32).
+
+Commerce stubs (P07-commerce, ADR-005 phase 1): every response carries `X-Edumy-Stub: true` (also the error responses of
+these handlers); nothing is written, no payment provider is called; the controllers are final, phase 2 replaces the
+bodies of `OrderService` / `PaymentService` / `ReconciliationService`.
+- `POST /orders` `CreateOrderRequest {paymentMethod?}` (body optional, only `qr`; else 400) (UC-S04) → **201**
+  `OrderDetailResponse`: the order the caller's cart WOULD become: `orderCode` `ORD-<yyyyMMdd>-STUB` (UTC, never stored),
+  `status` `pending`, one line per purchasable cart line at the **current** price (BR-12), `totalAmount` = Σ (BR-27),
+  `payments: []`. Checks: unverified email → 403 `EMAIL_NOT_VERIFIED` (D-02); lines re-validated like D-26 — hidden / owned
+  / own / now-free lines are left out of the preview (their reason stays in `GET /cart`; `OrderDetailResponse` has no
+  field for excluded lines); no purchasable line left (also: no cart) → 422 new `CART_EMPTY` (UC-S04 E1). An existing
+  pending order is not touched (D-24 is phase 2).
+- `POST /orders/{orderCode}/cancel` `CancelOrderRequest {}` (body optional, empty: the reason is always `user`) (UC-S16) →
+  **200** `OrderDetailResponse` as it WOULD look: `status` `cancelled`, `cancelReason` `user`, `cancelledAt` = now, the
+  pending attempt shown as `expired`. Unknown / another student's code → 404 `RESOURCE_NOT_FOUND` (identical); not
+  `pending` → 409 `DATA_CONFLICT`.
+- `POST /orders/{orderCode}/payments` (UC-S05) → **201** `PaymentQrResponse {orderCode,transactionRef,status,amount,qrData,
+  qrExpiresAt,createdAt}`: sample attempt `FAKEPAY-<yyyyMMdd>-STUB`, `qrData` `FAKEQR|EDUMY|<orderCode>|<amount>`,
+  `amount` = order total (BR-14), `qrExpiresAt` = now + 15 min (BR-13, `edumy.payment.qr-ttl`), `status` `pending`; when
+  the order already has a still-valid pending attempt, that stored attempt is returned instead with **200** (UC-S05
+  precondition). 404 as above; order not `pending` → 409 `DATA_CONFLICT`.
+- `POST /webhooks/payments/fake` (UC-S05, **dev and test profiles only**: the controller is not registered otherwise →
+  404) `PaymentWebhookRequest {transactionRef ≤100, orderCode ≤30, amount > 0, status success|failed, paidAt?}` → **200**
+  `PaymentWebhookResponse {received:true, transactionRef}`. No JWT; header `X-Signature` = hex (any case) HMAC-SHA256 of
+  the RAW body with `edumy.payment.webhook-secret` (set in `application-dev.yml` / `application-test.yml` only; blank =
+  every call refused); missing / wrong / malformed signature or a tampered body → 401 `UNAUTHENTICATED` (constant-time
+  compare, nothing logged about it); signed but unreadable / invalid body → 400 `MALFORMED_REQUEST` / `VALIDATION_FAILED`
+  (checked after the signature). No database access at all.
+- `POST /admin/payments/{id}/resolve` `ResolvePaymentRequest {action activated|refund_outside, note}` (note required,
+  trimmed, ≤16 383 chars; the SRS names no limit) (UC-A18) → **200** `AdminPaymentResponse` as it WOULD look after handling
+  (`handledBy`, `handledAction`, `handledNote`, `handledAt`; `activated` → `status` `success` + `confirmedAt`;
+  `refund_outside` keeps `needs_review`). Route + `hasRole('ADMIN')` + admin role re-checked in the database (BR-26 →
+  403 `ACCESS_DENIED`); unknown id → 404; not an unhandled `needs_review` (E1) or `activated` with every course of the
+  order already owned (E2) → 409 `DATA_CONFLICT`.
 
 ### learning
 | Method & path | UC | P1 |
