@@ -40,6 +40,17 @@ public interface CertificateRepository extends JpaRepository<Certificate, Long> 
             countQuery = "select count(c) from Certificate c where c.enrollment.studentId = :studentId")
     Page<StudentCertificateView> findByStudent(@Param("studentId") Long studentId, Pageable pageable);
 
+    /** UC-S20 {@code GET /me/certificates/{code}/pdf}: the snapshot row of that code, only if it is the student's (one statement). */
+    @Query("""
+            select c.id as id, e.id as enrollmentId, e.courseId as courseId, c.certificateCode as certificateCode,
+                   c.studentName as studentName, c.courseTitle as courseTitle, c.instructorName as instructorName,
+                   c.issuedAt as issuedAt
+            from Certificate c join c.enrollment e
+            where c.certificateCode = :code and e.studentId = :studentId
+            """)
+    Optional<StudentCertificateView> findViewByCodeAndStudent(@Param("code") String code,
+                                                              @Param("studentId") Long studentId);
+
     /** Row of "my certificates" (UC-S20). */
     interface StudentCertificateView {
         Long getId();
