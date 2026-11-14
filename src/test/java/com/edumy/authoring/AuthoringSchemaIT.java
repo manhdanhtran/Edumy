@@ -198,6 +198,22 @@ class AuthoringSchemaIT {
         assertViolates("fk_courses_main_instructor_id", () -> insertCourse(-1L, "khong-co-gv", 0L));
     }
 
+    /** DDD §8 row 5 (BR-02): "FK NOT NULL" - a course always has exactly one main instructor (MySQL error 1048). */
+    @Test
+    void insertCourse_withoutMainInstructor_rejected_BR02() {
+        long category = fx.category();
+        assertViolates("main_instructor_id", () -> jdbc.sql("""
+                INSERT INTO courses (main_instructor_id, category_id, title, title_normalized, slug)
+                VALUES (NULL, ?, 'Khóa', 'khoa', ?)""").params(category, "khoa-" + SchemaFixtures.next()).update());
+    }
+
+    @Test
+    void updateCourse_clearMainInstructor_rejected_BR02() {
+        long course = fx.course();
+        assertViolates("main_instructor_id",
+                () -> jdbc.sql("UPDATE courses SET main_instructor_id = NULL WHERE id = ?").param(course).update());
+    }
+
     @Test
     void insertCourse_unknownCategory_rejected() {
         long instructor = fx.user();

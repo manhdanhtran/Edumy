@@ -19,8 +19,10 @@ import org.springframework.cache.CacheManager;
  * {@code /auth/login} would write into the shared read-only database {@code edumy_seed}. Instead this helper uses one
  * fixed {@code sid} per user and marks it active in the {@value CacheConfig#SESSION_STATUS} cache (the answer the
  * validator would cache after reading such a row), refreshed on every call so the 30 s TTL never runs out during a
- * request. Everything else stays real: signature, expiry (application {@code Clock}), issuer, and the user-status check
- * ({@code users.status} read from the seed: user {@value #LOCKED} is {@code locked} → 401).
+ * request (the {@value CacheConfig#USER_STATUS} entry of every non-locked seed user is refreshed the same way: the seed
+ * is read-only, so those users are always {@code active}). Everything else stays real: signature, expiry (application
+ * {@code Clock}), issuer, and for user {@value #LOCKED} the user-status check ({@code users.status} read from the seed:
+ * {@code locked} → 401).
  * <p>Call {@link #bearer} per request (it is cheap: no SQL, one HMAC):
  * <pre>{@code
  * mvc.perform(get("/api/v1/me").header(HttpHeaders.AUTHORIZATION, seedTokens.bearer(SeedUserTokens.ADMIN)))
@@ -49,10 +51,12 @@ public class SeedUserTokens {
 
     private final JwtIssuer issuer;
     private final Cache sessions;
+    private final Cache users;
 
     public SeedUserTokens(JwtIssuer issuer, CacheManager cacheManager) {
         this.issuer = issuer;
         this.sessions = cacheManager.getCache(CacheConfig.SESSION_STATUS);
+        this.users = cacheManager.getCache(CacheConfig.USER_STATUS);
     }
 
     /** {@code Authorization} header value for seed user {@code userId}, roles claim = its active seed roles. */
@@ -64,6 +68,12 @@ public class SeedUserTokens {
     public String bearer(long userId, RoleCode... roles) {
         String sid = sid(userId);
         sessions.put(sid, Boolean.TRUE);
+        if (userId != LOCKED) {
+            // the seed is read-only, so every other seed user stays `active`: refreshing the 30 s user-status entry here
+            // keeps a statement-count test from seeing an extra `select status from users` when the TTL expires between
+            // its warm-up and the measured call. The locked user stays unprimed: its 401 is decided from the database.
+            users.put(userId, Boolean.TRUE);
+        }
         return "Bearer " + issuer.issue(userId, List.of(roles), sid).value();
     }
 

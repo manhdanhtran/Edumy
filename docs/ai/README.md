@@ -9,6 +9,7 @@
 | 05-api-contract.md | viết controller/DTO, lỗi, cache |
 | 06-phase-plan.md | biết endpoint nào thật / stub, Definition of Done |
 | 07-testing.md | viết test |
+| 09-constraint-coverage.md | biết ràng buộc nào của DDD §8 (hàng 1-31) do test nào chứng minh; mỗi bảng có test hàng hợp lệ nào |
 | adr/ | lý do của các quyết định lệch khỏi tài liệu gốc |
 
 Cài vào repo: chép `AGENTS.md`, `CLAUDE.md`, `.cursor/`, `.github/`, `docs/` vào **gốc repo backend**.
