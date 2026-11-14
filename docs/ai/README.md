@@ -10,6 +10,7 @@
 | 06-phase-plan.md | biết endpoint nào thật / stub, Definition of Done |
 | 07-testing.md | viết test |
 | 09-constraint-coverage.md | biết ràng buộc nào của DDD §8 (hàng 1-31) do test nào chứng minh; mỗi bảng có test hàng hợp lệ nào |
+| 10-idor-coverage.md | biết endpoint nào có path id thuộc người dùng, quan hệ chủ sở hữu và test nào chứng minh 404 giống hệt id không tồn tại (NFR-01); các hàng 403 hợp lệ và endpoint miễn trừ |
 | adr/ | lý do của các quyết định lệch khỏi tài liệu gốc |
 
 Cài vào repo: chép `AGENTS.md`, `CLAUDE.md`, `.cursor/`, `.github/`, `docs/` vào **gốc repo backend**.
