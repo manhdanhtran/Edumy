@@ -16,4 +16,7 @@ public interface CartItemRepository extends JpaRepository<CartItem, Long> {
 
     /** Cart badge (UC-S01 step 4): number of items of a student's cart (0 without a cart). */
     long countByCartStudentId(Long studentId);
+
+    /** Number of carts holding {@code courseId} (an item is unique per cart, BR-11): CourseHiddenListener log. */
+    long countByCourseId(Long courseId);
 }

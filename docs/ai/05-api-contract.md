@@ -67,6 +67,7 @@
 | `PASSWORD_SAME_AS_OLD` | 422 | UC-G12: new password = current password |
 | `COURSE_SUBMIT_CHECKLIST_FAILED` | 422 | BR-07; `errors` lists every failed checklist item (`field` = item, `message` = Vietnamese reason) |
 | `CART_OWN_COURSE` | 422 | BR-32 |
+| `CART_COURSE_FREE` | 422 | BR-09 / UC-S01 E3: the course is free (price 0) — enroll with UC-S15 instead (P06-G5; the SRS names no error text, only "chuyển sang ghi danh") |
 | `COURSE_CO_INSTRUCTOR_IS_MAIN` | 422 | BR-02; trigger: the invited instructor is the course's main instructor |
 | `LESSON_COURSE_MISMATCH` | 422 | BR-24 / BR-37; triggers: the lesson does not belong to the enrollment's course |
 | `COURSE_CATEGORY_UNAVAILABLE` | 422 | UC-I01 E "danh mục ngừng sử dụng" / UC-I03: the chosen category does not exist or is inactive (keeping a course's current, since deactivated category is allowed) |
@@ -493,6 +494,21 @@ Commerce reads (P05):
   handledAction,handledNote,handledAt,createdAt}>` (no QR payload), newest first; `status` in `pending|success|failed|
   expired|needs_review` (else 400 `VALIDATION_FAILED`); `awaitingReview=true` = needs_review and not handled, oldest
   first (UC-A18 queue), overrides `status`. 3 statements per full page.
+
+Commerce writes (P06-G5), login required (D-23; no verified email needed to cart, D-02 applies to ordering):
+- `POST /cart/items` `AddCartItemRequest {courseId}` (required; missing / null → 400 `VALIDATION_FAILED`) → **201**
+  `CartResponse` (the whole cart after the add). Checked in this order: course not `published` or unknown → 404
+  `RESOURCE_NOT_FOUND` (BR-31) · price 0 → 422 `CART_COURSE_FREE` (BR-09) · already enrolled → 409
+  `CART_COURSE_ALREADY_OWNED` (BR-10) · instructor of the course (main, or accepted co-instructor with an active
+  instructor role; the main instructor id counts whatever the role) → 422 `CART_OWN_COURSE` (BR-32) · already in the
+  cart → 409 `CART_ITEM_DUPLICATE` (BR-11, also `uq_cart_items_cart_course` under concurrency). The cart row is created
+  lazily by the first successful add (BR-22, race-safe). Nothing is cached.
+- `DELETE /cart/items/{courseId}` → **204**; a course that is not in the caller's own cart (no cart, other student's
+  item, unknown course) → 404 `RESOURCE_NOT_FOUND`, identical body. Unavailable lines can be removed too.
+- Cart flags are derived on every `GET /cart` (hide → `course_unavailable`, unhide → purchasable again); the commerce
+  `CourseHiddenListener` persists nothing (it only logs courseId + number of carts).
+- Known limit: the `own_course` flag of `GET /cart` still looks at the main instructor only; `POST /cart/items` also
+  refuses accepted co-instructors (BR-32).
 
 ### learning
 | Method & path | UC | P1 |

@@ -5,6 +5,7 @@ import com.edumy.authoring.api.CourseSummary;
 import com.edumy.commerce.dto.response.CartResponse;
 import com.edumy.commerce.entity.CartItem;
 import com.edumy.commerce.mapper.CartMapper;
+import com.edumy.commerce.repository.CartItemRepository;
 import com.edumy.commerce.repository.CartRepository;
 import com.edumy.identity.api.UserQueryApi;
 import com.edumy.identity.api.UserSummary;
@@ -25,18 +26,25 @@ import org.springframework.transaction.annotation.Transactional;
 public class CartQueryService {
 
     private final CartRepository carts;
+    private final CartItemRepository cartItems;
     private final CourseQueryApi courses;
     private final EnrollmentApi enrollments;
     private final UserQueryApi users;
     private final CartMapper mapper;
 
-    public CartQueryService(CartRepository carts, CourseQueryApi courses, EnrollmentApi enrollments,
-                            UserQueryApi users, CartMapper mapper) {
+    public CartQueryService(CartRepository carts, CartItemRepository cartItems, CourseQueryApi courses,
+                            EnrollmentApi enrollments, UserQueryApi users, CartMapper mapper) {
         this.carts = carts;
+        this.cartItems = cartItems;
         this.courses = courses;
         this.enrollments = enrollments;
         this.users = users;
         this.mapper = mapper;
+    }
+
+    /** Number of carts that hold {@code courseId} (CourseHiddenListener log; no user ids). */
+    public long countCartsHolding(Long courseId) {
+        return cartItems.countByCourseId(courseId);
     }
 
     public CartResponse getCart(Long studentId) {
