@@ -63,4 +63,44 @@ public class MailService {
         gateway.send(composer.coInstructorInvited(invitee.email(), invitee.fullName(), inviter.fullName(),
                 course.title()));
     }
+
+    /** UC-A10 step 5: "your course is published" to the main instructor (title, slug, main instructor read now). */
+    public void sendCourseApproved(Long courseId) {
+        Recipient r = mainInstructorOf(courseId);
+        gateway.send(composer.courseApproved(r.user().email(), r.user().fullName(), r.course().title(),
+                r.course().slug()));
+    }
+
+    /** UC-A11 / D-16: the rejection reason to the main instructor. */
+    public void sendCourseRejected(Long courseId, String reason) {
+        Recipient r = mainInstructorOf(courseId);
+        gateway.send(composer.courseRejected(r.user().email(), r.user().fullName(), r.course().title(), courseId,
+                reason));
+    }
+
+    /** UC-A12 step 6: the hiding reason to the main instructor. */
+    public void sendCourseHidden(Long courseId, String reason) {
+        Recipient r = mainInstructorOf(courseId);
+        gateway.send(composer.courseHidden(r.user().email(), r.user().fullName(), r.course().title(), courseId,
+                reason));
+    }
+
+    /**
+     * The course and its main instructor (two statements, through the owners' {@code api/}); a course or user gone
+     * since → {@link IllegalStateException} without personal data (logged by the listener).
+     */
+    private Recipient mainInstructorOf(Long courseId) {
+        CourseSummary course = courses.findSummaries(List.of(courseId)).get(courseId);
+        if (course == null) {
+            throw new IllegalStateException("Review mail: course no longer exists");
+        }
+        UserSummary main = users.findSummaries(List.of(course.mainInstructorId())).get(course.mainInstructorId());
+        if (main == null) {
+            throw new IllegalStateException("Review mail: main instructor no longer exists");
+        }
+        return new Recipient(course, main);
+    }
+
+    private record Recipient(CourseSummary course, UserSummary user) {
+    }
 }

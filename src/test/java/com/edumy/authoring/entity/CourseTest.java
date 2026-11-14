@@ -189,11 +189,13 @@ class CourseTest {
     void submitForReview_draftOrRejected_pendingWithSubmittedAt_UCI17(CourseStatus status) {
         Course course = courseIn(status);
         Instant at = NOW.plusSeconds(60);
+        assertThat(course.canBeSubmitted()).isTrue();
 
         course.submitForReview(at);
 
         assertThat(course.getStatus()).isEqualTo(CourseStatus.PENDING_REVIEW);
         assertThat(course.getSubmittedAt()).isEqualTo(at);
+        assertThat(course.canBeSubmitted()).isFalse();
     }
 
     @ParameterizedTest
@@ -201,7 +203,8 @@ class CourseTest {
     void submitForReview_otherStatus_rejected(CourseStatus status) {
         Course course = courseIn(status);
 
-        assertConflict(() -> course.submitForReview(NOW.plusSeconds(60)));
+        assertThat(course.canBeSubmitted()).isFalse();
+        assertInvalidTransition(() -> course.submitForReview(NOW.plusSeconds(60)));
         assertThat(course.getStatus()).isEqualTo(status);
     }
 
@@ -225,7 +228,7 @@ class CourseTest {
     void approve_notPending_rejected(CourseStatus status) {
         Course course = courseIn(status);
 
-        assertConflict(() -> course.approve(ADMIN, NOW.plusSeconds(60)));
+        assertInvalidTransition(() -> course.approve(ADMIN, NOW.plusSeconds(60)));
         assertThat(course.getStatus()).isEqualTo(status);
     }
 
@@ -251,7 +254,7 @@ class CourseTest {
     void reject_blankNote_rejectedAndStillPending_BR08(String note) {
         Course course = courseIn(CourseStatus.PENDING_REVIEW);
 
-        assertValidationFailed(() -> course.reject(ADMIN, note, NOW), "reviewNote");
+        assertValidationFailed(() -> course.reject(ADMIN, note, NOW), "reason");
         assertThat(course.getStatus()).isEqualTo(CourseStatus.PENDING_REVIEW);
     }
 
@@ -260,7 +263,7 @@ class CourseTest {
     void reject_notPending_rejected(CourseStatus status) {
         Course course = courseIn(status);
 
-        assertConflict(() -> course.reject(ADMIN, "Lý do", NOW));
+        assertInvalidTransition(() -> course.reject(ADMIN, "Lý do", NOW));
         assertThat(course.getStatus()).isEqualTo(status);
     }
 
@@ -286,7 +289,7 @@ class CourseTest {
     void hide_blankNote_rejected_BR08(String note) {
         Course course = courseIn(CourseStatus.PUBLISHED);
 
-        assertValidationFailed(() -> course.hide(ADMIN, note, NOW), "reviewNote");
+        assertValidationFailed(() -> course.hide(ADMIN, note, NOW), "reason");
         assertThat(course.getStatus()).isEqualTo(CourseStatus.PUBLISHED);
     }
 
@@ -295,7 +298,7 @@ class CourseTest {
     void hide_notPublished_rejected(CourseStatus status) {
         Course course = courseIn(status);
 
-        assertConflict(() -> course.hide(ADMIN, "Lý do", NOW));
+        assertInvalidTransition(() -> course.hide(ADMIN, "Lý do", NOW));
         assertThat(course.getStatus()).isEqualTo(status);
     }
 
@@ -316,7 +319,7 @@ class CourseTest {
     void unhide_notHidden_rejected(CourseStatus status) {
         Course course = courseIn(status);
 
-        assertConflict(() -> course.unhide(ADMIN, NOW));
+        assertInvalidTransition(() -> course.unhide(ADMIN, NOW));
         assertThat(course.getStatus()).isEqualTo(status);
     }
 
@@ -345,8 +348,14 @@ class CourseTest {
 
     // ------------------------------------------------------------------------------------------------------ helpers
 
+    /** DATA_CONFLICT: generic state conflict, shared with the other authoring entity tests. */
     static void assertConflict(ThrowingCallable call) {
         assertCode(call, ErrorCode.DATA_CONFLICT);
+    }
+
+    /** Course state machine: a transition from the wrong status (docs/ai/02 §2.2). */
+    static void assertInvalidTransition(ThrowingCallable call) {
+        assertCode(call, ErrorCode.COURSE_INVALID_TRANSITION);
     }
 
     static void assertNotEditable(ThrowingCallable call) {

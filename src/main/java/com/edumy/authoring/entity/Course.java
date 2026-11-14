@@ -25,8 +25,8 @@ import lombok.NoArgsConstructor;
 
 /**
  * {@code courses} (EDU-DDD-001 §5.6). State machine (docs/ai/02 §2.2, SRS §3.4): draft|rejected → pending_review →
- * published|rejected; published ⇄ hidden. Any other transition is rejected with {@code DATA_CONFLICT}; editing while
- * pending_review with {@code COURSE_NOT_EDITABLE} (BR-33). Who may act (main instructor BR-04/06, admin) and the BR-07
+ * published|rejected; published ⇄ hidden. Any other transition is rejected with {@code COURSE_INVALID_TRANSITION} (409);
+ * editing while pending_review with {@code COURSE_NOT_EDITABLE} (BR-33). Who may act (main instructor BR-04/06, admin) and the BR-07
  * content checklist (chapters/lessons, active category) are service concerns.
  */
 @Entity
@@ -150,11 +150,16 @@ public class Course {
      */
     public void submitForReview(Instant now) {
         Objects.requireNonNull(now, "now");
-        if (status != CourseStatus.DRAFT && status != CourseStatus.REJECTED) {
-            throw new BusinessException(ErrorCode.DATA_CONFLICT);
+        if (!canBeSubmitted()) {
+            throw new BusinessException(ErrorCode.COURSE_INVALID_TRANSITION);
         }
         status = CourseStatus.PENDING_REVIEW;
         submittedAt = now;
+    }
+
+    /** UC-I17 precondition "nháp hoặc bị từ chối" (checked by the service before the BR-07 checklist). */
+    public boolean canBeSubmitted() {
+        return status == CourseStatus.DRAFT || status == CourseStatus.REJECTED;
     }
 
     /** UC-A10: pending_review → published; {@code published_at} is set on the first publication only. */
@@ -174,7 +179,7 @@ public class Course {
     public void reject(Long adminId, String note, Instant now) {
         Objects.requireNonNull(adminId, "adminId");
         Objects.requireNonNull(now, "now");
-        String validNote = requireText(note, "reviewNote", "Lý do từ chối không được để trống");
+        String validNote = requireText(note, "reason", "Lý do từ chối không được để trống");
         requireStatus(CourseStatus.PENDING_REVIEW);
         status = CourseStatus.REJECTED;
         reviewNote = validNote;
@@ -186,7 +191,7 @@ public class Course {
     public void hide(Long adminId, String note, Instant now) {
         Objects.requireNonNull(adminId, "adminId");
         Objects.requireNonNull(now, "now");
-        String validNote = requireText(note, "reviewNote", "Lý do ẩn khóa học không được để trống");
+        String validNote = requireText(note, "reason", "Lý do ẩn khóa học không được để trống");
         requireStatus(CourseStatus.PUBLISHED);
         status = CourseStatus.HIDDEN;
         reviewNote = validNote;
@@ -244,7 +249,7 @@ public class Course {
 
     private void requireStatus(CourseStatus expected) {
         if (status != expected) {
-            throw new BusinessException(ErrorCode.DATA_CONFLICT);
+            throw new BusinessException(ErrorCode.COURSE_INVALID_TRANSITION);
         }
     }
 

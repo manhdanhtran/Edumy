@@ -51,6 +51,7 @@ public enum ErrorCode {
     COURSE_CO_INSTRUCTOR_ALREADY_INVITED(HttpStatus.CONFLICT),        // UC-I13 E2: pending / accepted; uq_cci_course_instructor
     INVITATION_NOT_PENDING(HttpStatus.CONFLICT),                      // UC-I14/I15 E: invitation revoked or already answered
     COURSE_MAIN_INSTRUCTOR_LEAVE_FORBIDDEN(HttpStatus.FORBIDDEN),     // UC-I20, RBAC §3.3, BR-02: main never leaves
+    COURSE_INVALID_TRANSITION(HttpStatus.CONFLICT),                   // UC-I17 pre, UC-A10/A11 E1, A12/A16 pre: wrong status
 
     // commerce
     CART_COURSE_ALREADY_OWNED(HttpStatus.CONFLICT),

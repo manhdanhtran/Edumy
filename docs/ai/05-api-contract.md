@@ -75,6 +75,7 @@
 | `COURSE_CO_INSTRUCTOR_ALREADY_INVITED` | 409 | UC-I13 E2: the invitee's invitation is pending or accepted; `uq_cci_course_instructor` under concurrency |
 | `INVITATION_NOT_PENDING` | 409 | UC-I14 / UC-I15 E "lời mời đã bị thu hồi": the caller's own invitation is no longer pending (removed, accepted, declined) |
 | `COURSE_MAIN_INSTRUCTOR_LEAVE_FORBIDDEN` | 403 | UC-I20 / RBAC §3.3 / BR-02: the main instructor cannot leave the course |
+| `COURSE_INVALID_TRANSITION` | 409 | docs/ai/02 §2.2: the course is not in the starting status of the requested transition — UC-I17 submit outside draft/rejected; UC-A10/A11 E1 "không còn chờ duyệt (Admin khác đã xử lý): không ghi đè"; UC-A12 hide outside published; UC-A16 unhide outside hidden |
 | `COURSE_LAST_LESSON_DELETE_FORBIDDEN` | 409 | D-14 / UC-I07 E "khóa đã công khai sẽ không còn bài" / UC-I11 E "khóa đã công khai chỉ còn một bài": deleting the only lesson, or a chapter holding every lesson, of a published or hidden course |
 | `AUTH_LOGIN_TEMPORARILY_BLOCKED` | 429 | NFR-03: 5 consecutive failed logins for the email → every login for it blocked 15 min (correct password too); header `Retry-After` (docs/ai/04 §4.4) |
 | `TOKEN_RESEND_TOO_SOON` | 429 | D-03: resend of the verification code within 60 s of the last one (forgot password never shows it, Q3) |
@@ -214,7 +215,8 @@ transaction. Preconditions that do not hold are refused with 409 and change noth
   (number of main / co-taught / published courses) has no endpoint in this contract.
 
 ### Front-end routes used in emails (contract for the SPA team, Q5)
-The identity mails link to two SPA routes, the co-instructor invitation mail to a third. Base = `edumy.frontend.base-url` (env `EDUMY_FRONTEND_BASE_URL`, default
+The identity mails link to two SPA routes, the co-instructor invitation mail to a third, the review-result mails
+(P06-G4) to two more. Base = `edumy.frontend.base-url` (env `EDUMY_FRONTEND_BASE_URL`, default
 `http://localhost:5173`; a trailing `/` is ignored). `token` is the one-time code, URL-encoded (base64url, 43 chars).
 
 | Route (in the mail) | Mail | What the SPA does |
@@ -222,6 +224,8 @@ The identity mails link to two SPA routes, the co-instructor invitation mail to 
 | `{base}/verify-email?token={code}` | "Xác thực địa chỉ email" (UC-G05 register, UC-G06 resend), valid 24 h | calls `POST /api/v1/auth/email-verification/confirm` `{"token": "<code>"}` — public, works without a session (link may be opened on another device); 204 → "email verified", 422 `ACCOUNT_TOKEN_INVALID` → "link no longer valid", offer resend after login |
 | `{base}/reset-password?token={code}` | "Đặt lại mật khẩu" (UC-G08), valid 30 min | shows the new-password form (entered twice, NFR-02 policy), then calls `POST /api/v1/auth/password/reset` `{"token": "<code>", "newPassword": "..."}`; 204 → go to login (no auto-login), 422 `ACCOUNT_TOKEN_INVALID` → offer "forgot password" again |
 
+| `{base}/courses/{slug}` | "Khóa học của bạn đã được phê duyệt trên Edumy" (UC-A10, P06-G4) | public course page (UC-G04): `GET /api/v1/catalog/courses/{slug}` |
+| `{base}/instructor/courses/{courseId}` | "Khóa học của bạn chưa được phê duyệt trên Edumy" (UC-A11, with the reason) · "Khóa học của bạn đã bị ẩn trên Edumy" (UC-A12, with the reason) (P06-G4) | after login, the instructor's course page: `GET /api/v1/instructor/courses/{id}` (+ `…/review-status`); after a rejection the instructor edits and calls `POST /api/v1/instructor/courses/{id}/submit` |
 | `{base}/instructor/invitations` | "Lời mời làm đồng giảng viên khóa học trên Edumy" (UC-I13, P06-G3); no token | after login, lists `GET /api/v1/instructor/invitations` and answers with `POST /api/v1/instructor/invitations/{id}/accept` / `…/decline` (204; 409 `INVITATION_NOT_PENDING` → "lời mời đã bị thu hồi"; 403 without an active instructor role) |
 
 The "password changed" notice (UC-G08 step 6, UC-G12) has no link. Mail sender = `edumy.mail.from`
@@ -410,6 +414,44 @@ content). Every write locks the course row FOR UPDATE, then reads the invitation
   declined / removed invitees and strangers → 404; the main instructor → 403 `COURSE_MAIN_INSTRUCTOR_LEAVE_FORBIDDEN`.
 - Accept, removal of an accepted co-instructor and leave on a **published / hidden** course publish
   `CourseContentChanged(courseId, slug)` (the catalog page lists accepted co-instructors; eviction P08).
+
+Authoring writes (P06-G4, UC-I17 submit, UC-A10…A12, A16 moderation; docs/ai/02 §2.2). Every write locks the course
+row FOR UPDATE, then checks the status; a status the transition does not start from → 409 `COURSE_INVALID_TRANSITION`,
+nothing changes. Every answer is **200** `ReviewStatusResponse {courseId,status,submittedAt,reviewedAt,reviewNote}`
+(the UC-I18 view, read after the change). `reviewNote` = the latest rejection / hiding reason: set by reject / hide,
+kept by submit / approve / unhide (DDD "lý do từ chối hoặc ẩn gần nhất").
+- `POST /instructor/courses/{id}/submit` (no body) → `pending_review`, `submittedAt` = now; read-only from then on
+  (BR-33). Main instructor only (`@courseAccess.isMain`: co-instructor / stranger → 404, no active instructor role →
+  403). Status draft or rejected, else 409 (checked **before** the checklist). BR-07 checklist, every item checked, all
+  failures in **one** 422 `COURSE_SUBMIT_CHECKLIST_FAILED`; `errors[].field` = stable item key, in this order (SPA
+  contract), `message` = Vietnamese reason:
+
+  | `field` | Item (SRS UC-I17 step 1 / BR-07) |
+  |---|---|
+  | `title` | the course has a (non-blank) title |
+  | `description` | the course has a description |
+  | `categoryId` | its category is active (a category deactivated since creation fails) |
+  | `price` | 0 or ≥ 10 000 and a multiple of 1 000 (always true while `ck_courses_price` holds; kept for completeness) |
+  | `chapters` | at least one chapter (when it fails, the two items below are not reported) |
+  | `emptyChapters` | no chapter without lessons (`message` gives the number) |
+  | `lessonContent` | every lesson has content of its type: video → `videoUrl`, article → `articleContent` (`message` gives the number) |
+
+  The thumbnail is not a checklist item (SRS). Pending / declined invitations do not matter (BR-05). No event, no mail.
+- Admin moderation (`/admin/courses/{id}/…`): route rule + `hasRole('ADMIN')`, and the admin role is re-checked
+  **active in the database** (BR-26, UC-A10 E2: a stale admin JWT → 403 `ACCESS_DENIED`) · 401 without token · 404
+  unknown id · 409 wrong status (e.g. a second admin deciding the same submission, UC-A10 E1).
+  - `POST …/approve` (no body): `pending_review → published`; `reviewedBy`/`reviewedAt` = admin / now; `publishedAt`
+    set only when null (the first publication date is kept). Listed in the catalog at once. Publishes
+    `CourseApproved(courseId, slug)` → mail "Khóa học của bạn đã được phê duyệt trên Edumy" to the main instructor.
+  - `POST …/reject` `RejectCourseRequest {reason}` (required, trimmed, ≤16 383 chars; missing / null / blank → 400
+    `VALIDATION_FAILED` on `reason`, BR-08 — `ck_courses_note_required` is never reached; no body → 400
+    `MALFORMED_REQUEST`): `pending_review → rejected`, `reviewNote` = reason. Publishes `CourseRejected(courseId, slug,
+    reason)` → mail with the reason to the main instructor (D-16).
+  - `POST …/hide` `HideCourseRequest {reason}` (same rules): `published → hidden`, `reviewNote` = reason; leaves the
+    catalog list, search and detail; enrolled students keep learning (BR-31). Publishes `CourseHidden(courseId, slug,
+    reason)` → mail with the reason to the main instructor (commerce cart flagging: P06-G5).
+  - `POST …/unhide` (no body): `hidden → published` (back in the catalog, D-20). Publishes `CourseUnhidden(courseId,
+    slug)`; no mail (SRS §7 lists none).
 
 ### commerce
 | Method & path | UC | P1 |

@@ -90,12 +90,71 @@ class MailComposerTest {
     }
 
     @Test
+    void courseApproved_vietnameseSubject_titleAndPublicCourseLink_UCA10() {
+        MailMessage mail = composer.courseApproved("gv@edumy.test", "Nguyễn Văn A", "Lập trình Java",
+                "lap-trinh-java");
+
+        assertThat(mail.template()).isEqualTo("course-approved");
+        assertThat(mail.to()).isEqualTo("gv@edumy.test");
+        assertThat(mail.subject()).isEqualTo("Khóa học của bạn đã được phê duyệt trên Edumy");
+        assertThat(mail.htmlBody())
+                .contains("Xin chào Nguyễn Văn A,")
+                .contains("“Lập trình Java”")
+                .contains("href=\"https://app.edumy.vn/courses/lap-trinh-java\"")
+                .doesNotContain("${");
+    }
+
+    @Test
+    void courseRejected_reasonAndInstructorCourseLink_UCA11_D16() {
+        MailMessage mail = composer.courseRejected("gv@edumy.test", "Nguyễn Văn A", "Lập trình Java", 12L,
+                "Thiếu mô tả chi tiết");
+
+        assertThat(mail.template()).isEqualTo("course-rejected");
+        assertThat(mail.subject()).isEqualTo("Khóa học của bạn chưa được phê duyệt trên Edumy");
+        assertThat(mail.htmlBody())
+                .contains("“Lập trình Java”")
+                .contains(">Thiếu mô tả chi tiết</blockquote>")
+                .contains("href=\"https://app.edumy.vn/instructor/courses/12\"")
+                .doesNotContain("${");
+    }
+
+    @Test
+    void courseHidden_reasonAndInstructorCourseLink_UCA12() {
+        MailMessage mail = composer.courseHidden("gv@edumy.test", "Nguyễn Văn A", "Lập trình Java", 12L,
+                "Vi phạm bản quyền");
+
+        assertThat(mail.template()).isEqualTo("course-hidden");
+        assertThat(mail.subject()).isEqualTo("Khóa học của bạn đã bị ẩn trên Edumy");
+        assertThat(mail.htmlBody())
+                .contains("“Lập trình Java”")
+                .contains(">Vi phạm bản quyền</blockquote>")
+                .contains("Học viên đã ghi danh vẫn tiếp tục học")
+                .contains("href=\"https://app.edumy.vn/instructor/courses/12\"")
+                .doesNotContain("${");
+    }
+
+    @Test
+    void courseRejectedAndHidden_hostileReasonAndTitle_htmlEscaped() {
+        for (MailMessage mail : new MailMessage[] {
+                composer.courseRejected("a@edumy.test", "A", HOSTILE_NAME, 1L, HOSTILE_NAME),
+                composer.courseHidden("a@edumy.test", "A", HOSTILE_NAME, 1L, HOSTILE_NAME)}) {
+            assertThat(mail.htmlBody()).as(mail.template())
+                    .contains("“" + ESCAPED_NAME + "”")
+                    .contains(">" + ESCAPED_NAME + "</blockquote>")
+                    .doesNotContain("<script>");
+        }
+    }
+
+    @Test
     void everyTemplate_hostileFullName_htmlEscaped() {
         for (MailMessage mail : new MailMessage[] {
                 composer.emailVerification("a@edumy.test", HOSTILE_NAME, CODE),
                 composer.passwordReset("a@edumy.test", HOSTILE_NAME, CODE),
                 composer.passwordChanged("a@edumy.test", HOSTILE_NAME, Instant.EPOCH),
-                composer.coInstructorInvited("a@edumy.test", HOSTILE_NAME, "A", "K")}) {
+                composer.coInstructorInvited("a@edumy.test", HOSTILE_NAME, "A", "K"),
+                composer.courseApproved("a@edumy.test", HOSTILE_NAME, "K", "k"),
+                composer.courseRejected("a@edumy.test", HOSTILE_NAME, "K", 1L, "R"),
+                composer.courseHidden("a@edumy.test", HOSTILE_NAME, "K", 1L, "R")}) {
             assertThat(mail.htmlBody()).as(mail.template())
                     .contains("Xin chào " + ESCAPED_NAME + ",")
                     .doesNotContain("<script>")

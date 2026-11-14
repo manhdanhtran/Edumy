@@ -30,7 +30,8 @@ import org.springframework.web.util.HtmlUtils;
  * the placeholder only, never a value (values may be one-time codes, NFR-08).
  * <p>Links point to the SPA (Q5, docs/ai/05 "Front-end routes used in emails"):
  * {@code {edumy.frontend.base-url}/verify-email?token=} and {@code /reset-password?token=}, code URL-encoded;
- * {@code /instructor/invitations} (no code: the invitee logs in and answers there).
+ * {@code /instructor/invitations} (no code: the invitee logs in and answers there); review results (UC-A10…A12):
+ * {@code /courses/{slug}} (public course page) and {@code /instructor/courses/{courseId}} (the instructor's course).
  */
 @Service
 public class MailComposer {
@@ -41,6 +42,13 @@ public class MailComposer {
     static final String CO_INSTRUCTOR_INVITED = "co-instructor-invited";
     /** SPA page listing the caller's pending invitations (UC-I14 / UC-I15), docs/ai/05 "Front-end routes". */
     static final String INVITATIONS_PATH = "/instructor/invitations";
+    static final String COURSE_APPROVED = "course-approved";
+    static final String COURSE_REJECTED = "course-rejected";
+    static final String COURSE_HIDDEN = "course-hidden";
+    /** SPA public course page (UC-G04), docs/ai/05 "Front-end routes". */
+    static final String PUBLIC_COURSE_PATH = "/courses/";
+    /** SPA page of one course of the instructor (UC-I02 / UC-I03 / UC-I18), docs/ai/05 "Front-end routes". */
+    static final String INSTRUCTOR_COURSE_PATH = "/instructor/courses/";
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([A-Za-z][A-Za-z0-9]*)}");
     private static final ZoneId VIETNAM = ZoneId.of("Asia/Ho_Chi_Minh");
@@ -56,7 +64,10 @@ public class MailComposer {
                 VERIFY_EMAIL, load(VERIFY_EMAIL),
                 PASSWORD_RESET, load(PASSWORD_RESET),
                 PASSWORD_CHANGED, load(PASSWORD_CHANGED),
-                CO_INSTRUCTOR_INVITED, load(CO_INSTRUCTOR_INVITED));
+                CO_INSTRUCTOR_INVITED, load(CO_INSTRUCTOR_INVITED),
+                COURSE_APPROVED, load(COURSE_APPROVED),
+                COURSE_REJECTED, load(COURSE_REJECTED),
+                COURSE_HIDDEN, load(COURSE_HIDDEN));
     }
 
     /** UC-G05 step 6 / UC-G06: link with the 24 h email-verification code. */
@@ -90,6 +101,39 @@ public class MailComposer {
                 "inviterName", inviterName,
                 "courseTitle", courseTitle,
                 "invitationsUrl", baseUrl + INVITATIONS_PATH));
+    }
+
+    /**
+     * UC-A10 step 5 (SRS §7 "Kết quả duyệt"): {@code courseTitle} is published; links to the public course page
+     * ({@code slug} is {@code [a-z0-9-]} only, no encoding needed).
+     */
+    public MailMessage courseApproved(String to, String fullName, String courseTitle, String slug) {
+        return compose(COURSE_APPROVED, to, "Khóa học của bạn đã được phê duyệt trên Edumy", Map.of(
+                "fullName", fullName,
+                "courseTitle", courseTitle,
+                "courseUrl", baseUrl + PUBLIC_COURSE_PATH + Objects.requireNonNull(slug, "slug")));
+    }
+
+    /** UC-A11 (SRS §7 "từ chối", D-16): the reason, and a link to the course to edit and resubmit (UC-I17). */
+    public MailMessage courseRejected(String to, String fullName, String courseTitle, Long courseId, String reason) {
+        return compose(COURSE_REJECTED, to, "Khóa học của bạn chưa được phê duyệt trên Edumy", Map.of(
+                "fullName", fullName,
+                "courseTitle", courseTitle,
+                "reason", reason,
+                "courseUrl", instructorCourseUrl(courseId)));
+    }
+
+    /** UC-A12 step 6 (SRS §7 "ẩn khóa"): the reason; enrolled students keep their access (BR-31). */
+    public MailMessage courseHidden(String to, String fullName, String courseTitle, Long courseId, String reason) {
+        return compose(COURSE_HIDDEN, to, "Khóa học của bạn đã bị ẩn trên Edumy", Map.of(
+                "fullName", fullName,
+                "courseTitle", courseTitle,
+                "reason", reason,
+                "courseUrl", instructorCourseUrl(courseId)));
+    }
+
+    private String instructorCourseUrl(Long courseId) {
+        return baseUrl + INSTRUCTOR_COURSE_PATH + Objects.requireNonNull(courseId, "courseId");
     }
 
     private MailMessage compose(String template, String to, String subject, Map<String, String> values) {

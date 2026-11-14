@@ -10,6 +10,7 @@ import com.edumy.authoring.dto.response.ReviewStatusResponse;
 import com.edumy.authoring.service.CourseQueryService;
 import com.edumy.authoring.service.CourseService;
 import com.edumy.authoring.service.CreateCourseCommand;
+import com.edumy.authoring.service.SubmitForReviewService;
 import com.edumy.authoring.service.UpdateCourseCommand;
 import com.edumy.shared.security.CurrentUserId;
 import io.swagger.v3.oas.annotations.Operation;
@@ -41,10 +42,13 @@ public class InstructorCourseController {
 
     private final CourseQueryService queries;
     private final CourseService courses;
+    private final SubmitForReviewService submissions;
 
-    public InstructorCourseController(CourseQueryService queries, CourseService courses) {
+    public InstructorCourseController(CourseQueryService queries, CourseService courses,
+                                      SubmitForReviewService submissions) {
         this.queries = queries;
         this.courses = courses;
+        this.submissions = submissions;
     }
 
     /**
@@ -103,6 +107,20 @@ public class InstructorCourseController {
     public ResponseEntity<Void> delete(@PathVariable Long id) {
         courses.delete(id);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * Main instructor only (BR-06, E2: co-instructor / stranger → 404). 200 + the review status ({@code pending_review},
+     * {@code submittedAt} = now) · 422 {@code COURSE_SUBMIT_CHECKLIST_FAILED} with one {@code errors[]} entry per failed
+     * BR-07 item ({@code title}, {@code description}, {@code categoryId}, {@code price}, {@code chapters},
+     * {@code emptyChapters}, {@code lessonContent}) · 409 {@code COURSE_INVALID_TRANSITION} (not draft / rejected).
+     */
+    @PostMapping("/{id}/submit")
+    @PreAuthorize("@courseAccess.isMain(#id)")
+    @Operation(summary = "UC-I17 Gửi yêu cầu duyệt khóa học (kiểm tra checklist BR-07)")
+    public ReviewStatusResponse submit(@PathVariable Long id) {
+        submissions.submit(id);
+        return queries.reviewStatus(id);
     }
 
     @GetMapping("/{id}/review-status")
