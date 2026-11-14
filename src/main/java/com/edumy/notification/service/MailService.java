@@ -1,12 +1,19 @@
 package com.edumy.notification.service;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
 
+import com.edumy.authoring.api.CourseQueryApi;
+import com.edumy.authoring.api.CourseSummary;
+import com.edumy.identity.api.UserQueryApi;
+import com.edumy.identity.api.UserSummary;
 import com.edumy.notification.integration.MailGateway;
 import org.springframework.stereotype.Service;
 
 /**
- * Composes a mail ({@link MailComposer}) and hands it to the {@link MailGateway}. No database, so no transaction.
+ * Composes a mail ({@link MailComposer}) and hands it to the {@link MailGateway}. No own database access, so no
+ * transaction; mails of events carrying ids only read the data through the owners' {@code api/} (docs/ai/01 §1.8).
  * Exceptions propagate to the caller (the mail listeners), which log and swallow them (BR-20).
  */
 @Service
@@ -14,10 +21,14 @@ public class MailService {
 
     private final MailComposer composer;
     private final MailGateway gateway;
+    private final UserQueryApi users;
+    private final CourseQueryApi courses;
 
-    public MailService(MailComposer composer, MailGateway gateway) {
+    public MailService(MailComposer composer, MailGateway gateway, UserQueryApi users, CourseQueryApi courses) {
         this.composer = composer;
         this.gateway = gateway;
+        this.users = users;
+        this.courses = courses;
     }
 
     /** UC-G05 / UC-G06: verification link (24 h code). */
@@ -33,5 +44,23 @@ public class MailService {
     /** UC-G08 step 6 / UC-G12: "your password was changed" notice. */
     public void sendPasswordChanged(String to, String fullName, Instant changedAt) {
         gateway.send(composer.passwordChanged(to, fullName, changedAt));
+    }
+
+    /**
+     * UC-I13 step 5: invitation to co-author a course, mailed to the invitee (link to the SPA invitations page). Names,
+     * email and course title are read now through {@code identity::api} / {@code authoring::api} (two statements); if
+     * one of them is gone (e.g. the draft course was deleted right after the invitation) nothing is sent and an
+     * {@link IllegalStateException} without personal data reaches the listener, which logs it.
+     */
+    public void sendCoInstructorInvited(Long courseId, Long instructorId, Long invitedBy) {
+        Map<Long, UserSummary> people = users.findSummaries(List.of(instructorId, invitedBy));
+        UserSummary invitee = people.get(instructorId);
+        UserSummary inviter = people.get(invitedBy);
+        CourseSummary course = courses.findSummaries(List.of(courseId)).get(courseId);
+        if (invitee == null || inviter == null || course == null) {
+            throw new IllegalStateException("Invitation mail: invitee, inviter or course no longer exists");
+        }
+        gateway.send(composer.coInstructorInvited(invitee.email(), invitee.fullName(), inviter.fullName(),
+                course.title()));
     }
 }

@@ -16,6 +16,13 @@ public interface CourseCoInstructorRepository extends JpaRepository<CourseCoInst
     /** The (unique) row of a pair, any status: invite vs. re-invite (D-18), remove (UC-I16), leave (UC-I20). */
     Optional<CourseCoInstructor> findByCourseIdAndInstructorId(Long courseId, Long instructorId);
 
+    /**
+     * UC-I14 / UC-I15: course of the invitation {@code id} sent to {@code instructorId}; empty when unknown or sent to
+     * someone else (one answer for both, NFR-01). A scalar, so no entity is loaded before the course row lock.
+     */
+    @Query("select cci.course.id from CourseCoInstructor cci where cci.id = :id and cci.instructorId = :instructorId")
+    Optional<Long> findCourseIdByIdAndInstructorId(@Param("id") Long id, @Param("instructorId") Long instructorId);
+
     /** Access check: {@code ACCEPTED} = the user is a co-instructor of the course (BR-04, {@code @courseAccess}). */
     boolean existsByCourseIdAndInstructorIdAndInvitationStatus(Long courseId, Long instructorId,
                                                                InvitationStatus invitationStatus);

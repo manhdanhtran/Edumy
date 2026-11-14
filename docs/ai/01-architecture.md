@@ -308,9 +308,9 @@ Consequences:
 |---|---|---|---|
 | `UserRegistered`, `EmailVerificationRequested`, `PasswordResetRequested`, `PasswordChanged` | identity | notification | `@ApplicationModuleListener` (async, after commit) |
 | `CourseApproved`, `CourseRejected`, `CourseHidden`, `CourseUnhidden`, `CourseContentChanged` | authoring | notification, catalog (cache), commerce (`CourseHidden`) | after commit |
-|  ↳ `CourseContentChanged` (courseId, slug) | published only for a **published or hidden** course (D-14 edit without re-review; P06-G1: UC-I03; P06-G2: UC-I05…I12 chapter / lesson writes) | catalog (`catalog.course-detail` by slug, P08) | after commit |
+|  ↳ `CourseContentChanged` (courseId, slug) | published only for a **published or hidden** course (D-14 edit without re-review; P06-G1: UC-I03; P06-G2: UC-I05…I12 chapter / lesson writes; P06-G3: accepted co-instructors changed — accept, remove accepted, leave) | catalog (`catalog.course-detail` by slug, P08) | after commit |
 | `CategoryChanged` (categoryId) | authoring (UC-A06…A08: create, update, deactivate, delete) | catalog (`catalog.categories` eviction, P08) | after commit |
-| `CoInstructorInvited` | authoring | notification | async |
+| `CoInstructorInvited` (invitationId, courseId, instructorId, invitedBy) | authoring (UC-I13 invite and D-18 re-invite, P06-G3) | notification (`AuthoringMailListener` → invitation mail; names, email, course title read through `identity::api` / `authoring::api` by `MailService`) | async, after commit |
 | `OrderPaid` | commerce | notification (BR-20) | async — mail failure never touches the order |
 | `ReviewChanged` | learning | catalog (rating cache) | after commit |
 | `QuestionAnsweredByInstructor` | learning | notification (D-42) | async |

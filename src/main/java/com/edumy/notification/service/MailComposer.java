@@ -29,7 +29,8 @@ import org.springframework.web.util.HtmlUtils;
  * {@code ${…}} in a template throws {@link IllegalStateException} (fail fast); the message names the template and
  * the placeholder only, never a value (values may be one-time codes, NFR-08).
  * <p>Links point to the SPA (Q5, docs/ai/05 "Front-end routes used in emails"):
- * {@code {edumy.frontend.base-url}/verify-email?token=} and {@code /reset-password?token=}, code URL-encoded.
+ * {@code {edumy.frontend.base-url}/verify-email?token=} and {@code /reset-password?token=}, code URL-encoded;
+ * {@code /instructor/invitations} (no code: the invitee logs in and answers there).
  */
 @Service
 public class MailComposer {
@@ -37,6 +38,9 @@ public class MailComposer {
     static final String VERIFY_EMAIL = "verify-email";
     static final String PASSWORD_RESET = "password-reset";
     static final String PASSWORD_CHANGED = "password-changed";
+    static final String CO_INSTRUCTOR_INVITED = "co-instructor-invited";
+    /** SPA page listing the caller's pending invitations (UC-I14 / UC-I15), docs/ai/05 "Front-end routes". */
+    static final String INVITATIONS_PATH = "/instructor/invitations";
 
     private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{([A-Za-z][A-Za-z0-9]*)}");
     private static final ZoneId VIETNAM = ZoneId.of("Asia/Ho_Chi_Minh");
@@ -51,7 +55,8 @@ public class MailComposer {
         this.templates = Map.of(
                 VERIFY_EMAIL, load(VERIFY_EMAIL),
                 PASSWORD_RESET, load(PASSWORD_RESET),
-                PASSWORD_CHANGED, load(PASSWORD_CHANGED));
+                PASSWORD_CHANGED, load(PASSWORD_CHANGED),
+                CO_INSTRUCTOR_INVITED, load(CO_INSTRUCTOR_INVITED));
     }
 
     /** UC-G05 step 6 / UC-G06: link with the 24 h email-verification code. */
@@ -73,6 +78,18 @@ public class MailComposer {
         return compose(PASSWORD_CHANGED, to, "Mật khẩu tài khoản Edumy đã được thay đổi", Map.of(
                 "fullName", fullName,
                 "changedAt", CHANGED_AT.format(Objects.requireNonNull(changedAt, "changedAt"))));
+    }
+
+    /**
+     * UC-I13 step 5 (SRS §7 "Lời mời cộng tác"): {@code fullName} (invitee) is invited by {@code inviterName} to
+     * co-author {@code courseTitle}; links to the SPA invitations page. The course title stays out of the subject.
+     */
+    public MailMessage coInstructorInvited(String to, String fullName, String inviterName, String courseTitle) {
+        return compose(CO_INSTRUCTOR_INVITED, to, "Lời mời làm đồng giảng viên khóa học trên Edumy", Map.of(
+                "fullName", fullName,
+                "inviterName", inviterName,
+                "courseTitle", courseTitle,
+                "invitationsUrl", baseUrl + INVITATIONS_PATH));
     }
 
     private MailMessage compose(String template, String to, String subject, Map<String, String> values) {

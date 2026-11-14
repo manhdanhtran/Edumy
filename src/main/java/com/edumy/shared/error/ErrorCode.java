@@ -47,6 +47,10 @@ public enum ErrorCode {
     COURSE_CATEGORY_UNAVAILABLE(HttpStatus.UNPROCESSABLE_CONTENT),    // UC-I01 E / UC-I03: category unknown or inactive
     CATEGORY_ALREADY_EXISTS(HttpStatus.CONFLICT),                     // UC-A06/A07 E: uq_categories_name / _slug
     COURSE_LAST_LESSON_DELETE_FORBIDDEN(HttpStatus.CONFLICT),         // UC-I07/I11 E, D-14: published course keeps a lesson
+    COURSE_CO_INSTRUCTOR_NOT_ELIGIBLE(HttpStatus.UNPROCESSABLE_CONTENT), // UC-I13 E1: no account or no active GV role
+    COURSE_CO_INSTRUCTOR_ALREADY_INVITED(HttpStatus.CONFLICT),        // UC-I13 E2: pending / accepted; uq_cci_course_instructor
+    INVITATION_NOT_PENDING(HttpStatus.CONFLICT),                      // UC-I14/I15 E: invitation revoked or already answered
+    COURSE_MAIN_INSTRUCTOR_LEAVE_FORBIDDEN(HttpStatus.FORBIDDEN),     // UC-I20, RBAC §3.3, BR-02: main never leaves
 
     // commerce
     CART_COURSE_ALREADY_OWNED(HttpStatus.CONFLICT),

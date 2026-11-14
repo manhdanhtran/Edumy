@@ -96,15 +96,17 @@ public class CourseFixtures {
                 .update();
     }
 
-    /** A co-instructor row in {@code status} (pending / accepted / declined / removed), invited by {@code invitedBy}. */
-    public void coInstructor(long courseId, long instructorId, long invitedBy, String status) {
+    /**
+     * A co-instructor row in {@code status} (pending / accepted / declined / removed), invited by {@code invitedBy};
+     * returns its id (the invitation id of UC-I14 / UC-I15). Deleted with its course.
+     */
+    public long coInstructor(long courseId, long instructorId, long invitedBy, String status) {
         boolean responded = "accepted".equals(status) || "declined".equals(status) || "removed".equals(status);
-        jdbc.sql("""
+        return insert(jdbc.sql("""
                         INSERT INTO course_co_instructors (course_id, instructor_id, invited_by, invitation_status,
                                                            responded_at)
                         VALUES (?, ?, ?, ?, CASE WHEN ? THEN CURRENT_TIMESTAMP(6) END)""")
-                .params(courseId, instructorId, invitedBy, status, responded)
-                .update();
+                .params(courseId, instructorId, invitedBy, status, responded));
     }
 
     public long chapter(long courseId) {

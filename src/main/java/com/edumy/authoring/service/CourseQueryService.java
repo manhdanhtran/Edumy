@@ -108,6 +108,16 @@ public class CourseQueryService {
     }
 
     /**
+     * The invitation of {@code instructorId} to the course as shown in {@link #detail}'s {@code coInstructors} (answer
+     * of UC-I13). Two statements (row, name).
+     */
+    public InstructorCourseDetailResponse.CoInstructor coInstructor(Long courseId, Long instructorId) {
+        CourseCoInstructor row = coInstructors.findByCourseIdAndInstructorId(courseId, instructorId)
+                .orElseThrow(BusinessException::notFound);
+        return courseMapper.toCoInstructor(row, users.findSummary(instructorId).orElse(null));
+    }
+
+    /**
      * Chapters of the course in order, each with its lessons (with content) in order — the editor outline of
      * {@link #detail} and the answer of UC-I08. Two statements (chapters, lessons with their chapter).
      */

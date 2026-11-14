@@ -63,11 +63,39 @@ class MailComposerTest {
     }
 
     @Test
+    void coInstructorInvited_vietnameseSubject_namesCourseAndInvitationsLink_UCI13() {
+        MailMessage mail = composer.coInstructorInvited("gv@edumy.test", "Trần Thị B", "Nguyễn Văn A",
+                "Lập trình Java");
+
+        assertThat(mail.template()).isEqualTo("co-instructor-invited");
+        assertThat(mail.to()).isEqualTo("gv@edumy.test");
+        assertThat(mail.subject()).isEqualTo("Lời mời làm đồng giảng viên khóa học trên Edumy");
+        assertThat(mail.htmlBody())
+                .contains("Xin chào Trần Thị B,")
+                .contains("<strong>Nguyễn Văn A</strong>")
+                .contains("“Lập trình Java”")
+                .contains("href=\"https://app.edumy.vn/instructor/invitations\"")
+                .doesNotContain("${")
+                .doesNotContain("edumy.vn//");
+    }
+
+    @Test
+    void coInstructorInvited_hostileInviterAndCourseTitle_htmlEscaped() {
+        MailMessage mail = composer.coInstructorInvited("gv@edumy.test", "B", HOSTILE_NAME, HOSTILE_NAME);
+
+        assertThat(mail.htmlBody())
+                .contains("<strong>" + ESCAPED_NAME + "</strong>")
+                .contains("“" + ESCAPED_NAME + "”")
+                .doesNotContain("<script>");
+    }
+
+    @Test
     void everyTemplate_hostileFullName_htmlEscaped() {
         for (MailMessage mail : new MailMessage[] {
                 composer.emailVerification("a@edumy.test", HOSTILE_NAME, CODE),
                 composer.passwordReset("a@edumy.test", HOSTILE_NAME, CODE),
-                composer.passwordChanged("a@edumy.test", HOSTILE_NAME, Instant.EPOCH)}) {
+                composer.passwordChanged("a@edumy.test", HOSTILE_NAME, Instant.EPOCH),
+                composer.coInstructorInvited("a@edumy.test", HOSTILE_NAME, "A", "K")}) {
             assertThat(mail.htmlBody()).as(mail.template())
                     .contains("Xin chào " + ESCAPED_NAME + ",")
                     .doesNotContain("<script>")

@@ -71,6 +71,10 @@
 | `LESSON_COURSE_MISMATCH` | 422 | BR-24 / BR-37; triggers: the lesson does not belong to the enrollment's course |
 | `COURSE_CATEGORY_UNAVAILABLE` | 422 | UC-I01 E "danh mục ngừng sử dụng" / UC-I03: the chosen category does not exist or is inactive (keeping a course's current, since deactivated category is allowed) |
 | `CATEGORY_ALREADY_EXISTS` | 409 | UC-A06 / UC-A07 E "trùng tên hoặc slug": pre-check (`errors[].field` = `name` / `slug`; name compared accent/case-insensitively like the ai_ci UNIQUE) + `uq_categories_name` / `uq_categories_slug` |
+| `COURSE_CO_INSTRUCTOR_NOT_ELIGIBLE` | 422 | UC-I13 E1 "Tài khoản chưa đăng ký làm giảng viên": no account with that email **or** no active instructor role — one code and body for both (no email probing) |
+| `COURSE_CO_INSTRUCTOR_ALREADY_INVITED` | 409 | UC-I13 E2: the invitee's invitation is pending or accepted; `uq_cci_course_instructor` under concurrency |
+| `INVITATION_NOT_PENDING` | 409 | UC-I14 / UC-I15 E "lời mời đã bị thu hồi": the caller's own invitation is no longer pending (removed, accepted, declined) |
+| `COURSE_MAIN_INSTRUCTOR_LEAVE_FORBIDDEN` | 403 | UC-I20 / RBAC §3.3 / BR-02: the main instructor cannot leave the course |
 | `COURSE_LAST_LESSON_DELETE_FORBIDDEN` | 409 | D-14 / UC-I07 E "khóa đã công khai sẽ không còn bài" / UC-I11 E "khóa đã công khai chỉ còn một bài": deleting the only lesson, or a chapter holding every lesson, of a published or hidden course |
 | `AUTH_LOGIN_TEMPORARILY_BLOCKED` | 429 | NFR-03: 5 consecutive failed logins for the email → every login for it blocked 15 min (correct password too); header `Retry-After` (docs/ai/04 §4.4) |
 | `TOKEN_RESEND_TOO_SOON` | 429 | D-03: resend of the verification code within 60 s of the last one (forgot password never shows it, Q3) |
@@ -98,6 +102,7 @@
   | `uq_cart_items_cart_course` | `CART_ITEM_DUPLICATE` | 409 |
   | `uq_users_email` | `EMAIL_ALREADY_REGISTERED` | 409 |
   | `uq_categories_name`, `uq_categories_slug` | `CATEGORY_ALREADY_EXISTS` | 409 |
+  | `uq_cci_course_instructor` | `COURSE_CO_INSTRUCTOR_ALREADY_INVITED` | 409 |
   | `ck_lessons_type` + `ck_lessons_content_match`; `ck_orders_status` + `ck_orders_state`; `ck_enrollments_source` + `ck_enrollments_source_order` | `INTERNAL_ERROR` | 500 |
 
   An unknown value in these columns breaks two overlapping CHECKs and MySQL reports only one of them, so **both names of
@@ -209,13 +214,15 @@ transaction. Preconditions that do not hold are refused with 409 and change noth
   (number of main / co-taught / published courses) has no endpoint in this contract.
 
 ### Front-end routes used in emails (contract for the SPA team, Q5)
-The identity mails link to two SPA routes. Base = `edumy.frontend.base-url` (env `EDUMY_FRONTEND_BASE_URL`, default
+The identity mails link to two SPA routes, the co-instructor invitation mail to a third. Base = `edumy.frontend.base-url` (env `EDUMY_FRONTEND_BASE_URL`, default
 `http://localhost:5173`; a trailing `/` is ignored). `token` is the one-time code, URL-encoded (base64url, 43 chars).
 
 | Route (in the mail) | Mail | What the SPA does |
 |---|---|---|
 | `{base}/verify-email?token={code}` | "Xác thực địa chỉ email" (UC-G05 register, UC-G06 resend), valid 24 h | calls `POST /api/v1/auth/email-verification/confirm` `{"token": "<code>"}` — public, works without a session (link may be opened on another device); 204 → "email verified", 422 `ACCOUNT_TOKEN_INVALID` → "link no longer valid", offer resend after login |
 | `{base}/reset-password?token={code}` | "Đặt lại mật khẩu" (UC-G08), valid 30 min | shows the new-password form (entered twice, NFR-02 policy), then calls `POST /api/v1/auth/password/reset` `{"token": "<code>", "newPassword": "..."}`; 204 → go to login (no auto-login), 422 `ACCOUNT_TOKEN_INVALID` → offer "forgot password" again |
+
+| `{base}/instructor/invitations` | "Lời mời làm đồng giảng viên khóa học trên Edumy" (UC-I13, P06-G3); no token | after login, lists `GET /api/v1/instructor/invitations` and answers with `POST /api/v1/instructor/invitations/{id}/accept` / `…/decline` (204; 409 `INVITATION_NOT_PENDING` → "lời mời đã bị thu hồi"; 403 without an active instructor role) |
 
 The "password changed" notice (UC-G08 step 6, UC-G12) has no link. Mail sender = `edumy.mail.from`
 (env `EDUMY_MAIL_FROM`). Recommended: the SPA does not log or forward the token (analytics, Referer: e.g.
@@ -377,6 +384,32 @@ chapters/lessons go at the end (max + 1); positions always stay 1..n (a delete m
   `COURSE_LAST_LESSON_DELETE_FORBIDDEN` for the only lesson of a published / hidden course.
 - `PUT /instructor/chapters/{id}/lessons/order` `ReorderRequest {ids}` → **200** `ChapterResponse` (lessons in the new
   order); same 400 rules (a lesson of another chapter of the same course is foreign).
+
+Authoring writes (P06-G3, UC-I13…I16, I20: co-instructors). Every caller needs an active instructor role in the DB
+(BR-26 → 403 `ACCESS_DENIED`). No course status blocks these operations, `pending_review` included (UC-I13 names no
+course state; BR-05 / BR-21: invitations and their answers are independent of authoring and review; BR-33 locks the
+content). Every write locks the course row FOR UPDATE, then reads the invitation row. Transitions docs/ai/02 §2.2.
+- `POST /instructor/courses/{id}/co-instructors` `InviteCoInstructorRequest {email}` (required, email format, ≤255,
+  trimmed, case-insensitive) → **201** + `Location: /api/v1/instructor/courses/{id}/co-instructors/{userId}` + the
+  co-instructor item of the course detail `{id (= invited user id), fullName, invitationStatus: "pending", invitedAt,
+  respondedAt: null}`. Main instructor only (`@courseAccess.isMain`: co-instructor / stranger → 404, AC-05). A declined
+  or removed invitee gets the **same** row back to `pending` (D-18; inviter + `invitedAt` renewed, `respondedAt`
+  cleared), also 201. 422 `COURSE_CO_INSTRUCTOR_NOT_ELIGIBLE` (unknown email or no active instructor role, identical
+  bodies) · 422 `COURSE_CO_INSTRUCTOR_IS_MAIN` (own email, BR-02; the V5 triggers map to the same code) · 409
+  `COURSE_CO_INSTRUCTOR_ALREADY_INVITED` (pending / accepted) · 400 `VALIDATION_FAILED`. Publishes
+  `CoInstructorInvited(invitationId, courseId, instructorId, invitedBy)` → invitation mail after commit (a mail failure
+  keeps the invitation, UC-I13 E4; no resend endpoint — the main instructor can remove and invite again).
+- `POST /instructor/invitations/{id}/accept` · `…/decline` (`{id}` = invitation id of `GET /instructor/invitations`) →
+  **204**. Only the invitee (`@courseAccess.isActiveInstructor()` + scoped by `instructor_id` = caller): someone else's
+  invitation → 404 identical to an unknown id (the inviting main instructor too); not pending any more → 409
+  `INVITATION_NOT_PENDING`. Accept: co-editing from the next request (BR-04); decline: no rights, review unaffected.
+- `DELETE /instructor/courses/{id}/co-instructors/{userId}` → **204** (`pending` or `accepted` → `removed`; the user's
+  next request on the course is refused, AC-17). Main only. No pending/accepted invitation of `userId` (none, declined,
+  removed, the main instructor itself) → 404.
+- `POST /instructor/courses/{id}/leave` → **204** (`accepted` → `removed`, D-19). `@courseAccess.isInstructor`: pending /
+  declined / removed invitees and strangers → 404; the main instructor → 403 `COURSE_MAIN_INSTRUCTOR_LEAVE_FORBIDDEN`.
+- Accept, removal of an accepted co-instructor and leave on a **published / hidden** course publish
+  `CourseContentChanged(courseId, slug)` (the catalog page lists accepted co-instructors; eviction P08).
 
 ### commerce
 | Method & path | UC | P1 |

@@ -128,6 +128,12 @@ class ConstraintViolationTranslatorTest {
             assertThat(category).as(key).isEqualTo(new TranslatedViolation(Kind.UNIQUE, 1062, key,
                     ErrorCode.CATEGORY_ALREADY_EXISTS));
         }
+
+        var invitation = production.translate(new SQLException(
+                "Duplicate entry '1-2' for key 'course_co_instructors.uq_cci_course_instructor'", "23000", 1062))
+                .orElseThrow(); // UC-I13 E2, concurrent invitations of the same pair
+        assertThat(invitation).isEqualTo(new TranslatedViolation(Kind.UNIQUE, 1062, "uq_cci_course_instructor",
+                ErrorCode.COURSE_CO_INSTRUCTOR_ALREADY_INVITED));
     }
 
     /** MySQL reports only one of two overlapping CHECKs, so both names must give the same result. */
