@@ -1,0 +1,17 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.edumy.learning`
+|Spring components
+|_Services_
+
+* `c.e.l.api.EnrollmentApi` (via `c.e.l.service.EnrollmentApiImpl`)
+|Bean references
+|* `c.e.a.api.CourseAccessApi` (in 03 Authoring)
+* `c.e.a.api.CourseQueryApi` (in 03 Authoring)
+* `c.e.a.api.LessonQueryApi` (in 03 Authoring)
+* `c.e.i.api.RoleQueryApi` (in 01 Identity)
+* `c.e.i.api.UserQueryApi` (in 01 Identity)
+|Events listened to
+|* `c.e.l.api.CertificateIssued` 
+|===

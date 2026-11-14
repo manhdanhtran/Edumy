@@ -1,0 +1,12 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.edumy.catalog`
+|Events listened to
+|* `c.e.a.api.CourseApproved` 
+* `c.e.a.api.CourseHidden` 
+* `c.e.a.api.CategoryChanged` 
+* `c.e.a.api.CourseUnhidden` 
+* `c.e.l.api.ReviewChanged` 
+* `c.e.a.api.CourseContentChanged` 
+|===

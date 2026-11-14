@@ -1,0 +1,19 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.edumy.shared`
+|Spring components
+|_Configuration properties_
+
+* `c.e.s.config.EdumyProperties`
+
+_Others_
+
+* `c.e.s.config.CacheConfig`
+* `c.e.s.error.ConstraintViolationTranslator`
+* `c.e.s.error.GlobalExceptionHandler`
+* `c.e.s.error.ProblemResponder`
+* `c.e.s.validation.CoursePriceValidator`
+* `c.e.s.validation.StrongPasswordValidator`
+* `c.e.s.web.TraceIdFilter`
+|===

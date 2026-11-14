@@ -1,0 +1,44 @@
+@startuml
+title <size:24>Notification</size>
+
+set separator none
+top to bottom direction
+
+<style>
+  root {
+    BackgroundColor: #ffffff
+    FontColor: #444444
+  }
+</style>
+
+!include <C4/C4>
+!include <C4/C4_Context>
+!include <C4/C4_Component>
+
+System_Boundary("EdumyApplication_boundary", "EdumyApplication", $tags="") {
+  Container_Boundary("EdumyApplication.EdumyApplication_boundary", "EdumyApplication", $tags="") {
+    Component(EdumyApplication.EdumyApplication.Shared, "Shared", $techn="Module", $descr="", $tags="", $link="")
+    Component(EdumyApplication.EdumyApplication.01Identity, "01 Identity", $techn="Module", $descr="", $tags="", $link="")
+    Component(EdumyApplication.EdumyApplication.03Authoring, "03 Authoring", $techn="Module", $descr="", $tags="", $link="")
+    Component(EdumyApplication.EdumyApplication.05Learning, "05 Learning", $techn="Module", $descr="", $tags="", $link="")
+    Component(EdumyApplication.EdumyApplication.Notification, "Notification", $techn="Module", $descr="", $tags="", $link="")
+  }
+
+}
+
+Rel(EdumyApplication.EdumyApplication.Notification, EdumyApplication.EdumyApplication.03Authoring, "listens to", $techn="", $tags="", $link="")
+Rel(EdumyApplication.EdumyApplication.Notification, EdumyApplication.EdumyApplication.01Identity, "listens to", $techn="", $tags="", $link="")
+Rel(EdumyApplication.EdumyApplication.Notification, EdumyApplication.EdumyApplication.05Learning, "listens to", $techn="", $tags="", $link="")
+Rel(EdumyApplication.EdumyApplication.Notification, EdumyApplication.EdumyApplication.Shared, "uses", $techn="", $tags="", $link="")
+Rel(EdumyApplication.EdumyApplication.Notification, EdumyApplication.EdumyApplication.01Identity, "uses", $techn="", $tags="", $link="")
+Rel(EdumyApplication.EdumyApplication.Notification, EdumyApplication.EdumyApplication.03Authoring, "uses", $techn="", $tags="", $link="")
+Rel(EdumyApplication.EdumyApplication.03Authoring, EdumyApplication.EdumyApplication.Shared, "depends on", $techn="", $tags="", $link="")
+Rel(EdumyApplication.EdumyApplication.03Authoring, EdumyApplication.EdumyApplication.01Identity, "uses", $techn="", $tags="", $link="")
+Rel(EdumyApplication.EdumyApplication.01Identity, EdumyApplication.EdumyApplication.Shared, "uses", $techn="", $tags="", $link="")
+Rel(EdumyApplication.EdumyApplication.05Learning, EdumyApplication.EdumyApplication.Shared, "depends on", $techn="", $tags="", $link="")
+Rel(EdumyApplication.EdumyApplication.05Learning, EdumyApplication.EdumyApplication.03Authoring, "uses", $techn="", $tags="", $link="")
+Rel(EdumyApplication.EdumyApplication.05Learning, EdumyApplication.EdumyApplication.01Identity, "uses", $techn="", $tags="", $link="")
+
+SHOW_LEGEND(true)
+hide stereotypes
+@enduml

@@ -1,0 +1,12 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.edumy.identity`
+|Spring components
+|_Services_
+
+* `c.e.i.api.RoleQueryApi` (via `c.e.i.service.RoleQueryApiImpl`)
+* `c.e.i.api.UserQueryApi` (via `c.e.i.service.UserQueryApiImpl`)
+|Bean references
+|* `c.e.s.config.EdumyProperties` (in Shared)
+|===

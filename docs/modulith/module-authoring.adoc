@@ -1,0 +1,14 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.edumy.authoring`
+|Spring components
+|_Services_
+
+* `c.e.a.api.CourseAccessApi` (via `c.e.a.service.CourseAccessApiImpl`)
+* `c.e.a.api.CourseQueryApi` (via `c.e.a.service.CourseQueryApiImpl`)
+* `c.e.a.api.LessonQueryApi` (via `c.e.a.service.LessonQueryApiImpl`)
+|Bean references
+|* `c.e.i.api.RoleQueryApi` (in 01 Identity)
+* `c.e.i.api.UserQueryApi` (in 01 Identity)
+|===

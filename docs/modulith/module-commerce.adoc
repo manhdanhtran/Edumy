@@ -1,0 +1,13 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.edumy.commerce`
+|Bean references
+|* `c.e.a.api.CourseQueryApi` (in 03 Authoring)
+* `c.e.l.api.EnrollmentApi` (in 05 Learning)
+* `c.e.i.api.UserQueryApi` (in 01 Identity)
+* `c.e.a.api.CourseAccessApi` (in 03 Authoring)
+* `c.e.i.api.RoleQueryApi` (in 01 Identity)
+|Events listened to
+|* `c.e.a.api.CourseHidden` (async) 
+|===

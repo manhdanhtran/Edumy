@@ -1,0 +1,31 @@
+== EdumyApplication
+plantuml::components.puml[,,format=svg]
+
+== Shared
+plantuml::module-shared.puml[,,format=svg]
+include::module-shared.adoc[]
+
+== 01 Identity
+plantuml::module-identity.puml[,,format=svg]
+include::module-identity.adoc[]
+
+== 03 Authoring
+plantuml::module-authoring.puml[,,format=svg]
+include::module-authoring.adoc[]
+
+== 05 Learning
+plantuml::module-learning.puml[,,format=svg]
+include::module-learning.adoc[]
+
+== 02 Catalog
+plantuml::module-catalog.puml[,,format=svg]
+include::module-catalog.adoc[]
+
+== 04 Commerce
+plantuml::module-commerce.puml[,,format=svg]
+include::module-commerce.adoc[]
+
+== Notification
+plantuml::module-notification.puml[,,format=svg]
+include::module-notification.adoc[]
+

@@ -1,0 +1,19 @@
+[%autowidth.stretch, cols="h,a"]
+|===
+|Base package
+|`com.edumy.notification`
+|Bean references
+|* `c.e.s.config.EdumyProperties` (in Shared)
+* `c.e.i.api.UserQueryApi` (in 01 Identity)
+* `c.e.a.api.CourseQueryApi` (in 03 Authoring)
+|Events listened to
+|* `c.e.a.api.CourseRejected` (async) 
+* `c.e.a.api.CoInstructorInvited` (async) 
+* `c.e.a.api.CourseApproved` (async) 
+* `c.e.a.api.CourseHidden` (async) 
+* `c.e.i.api.UserRegistered` (async) 
+* `c.e.i.api.PasswordChanged` (async) 
+* `c.e.i.api.EmailVerificationRequested` (async) 
+* `c.e.i.api.PasswordResetRequested` (async) 
+* `c.e.l.api.QuestionAnsweredByInstructor` (async) 
+|===

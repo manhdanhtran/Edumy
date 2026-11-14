@@ -4,7 +4,7 @@
 |---|---|---|
 | Architecture | `ApplicationModules.of(EdumyApplication.class).verify()` in `ModularityTest`; `Documenter` writes module diagrams to `target/spring-modulith-docs` | module boundaries, cycles |
 | DB constraints | `@DataJpaTest` + `@AutoConfigureTestDatabase(replace = NONE)` + Testcontainers `mysql:8.4` (`@ServiceConnection`) | each UNIQUE, CHECK, trigger, generated-column rule from DDD §8 (rows 1–31) — one test per rule, assert the constraint name |
-| Module | `@ApplicationModuleTest` (+ `Scenario` for events) | services + events of one module, other modules mocked via their `api` |
+| Module | `@ApplicationModuleTest` (+ `Scenario` for events) — `<Module>ModuleIT`, recipe at the end of this file | services + events of one module, other modules mocked via their `api` |
 | Web slice | `@WebMvcTest` + `spring-boot-starter-webmvc-test` + `spring-security-test` | validation, status codes, ProblemDetail shape, `@PreAuthorize` |
 | Security / IDOR (NFR-01) | `@SpringBootTest` + Testcontainers + two seeded users | swap orderCode / courseId / enrollmentId / questionId between users → 404, never data |
 | Acceptance | `@SpringBootTest(webEnvironment = RANDOM_PORT)` + `RestClient` | AC-01…AC-37 Given/When/Then as they get implemented |
@@ -93,3 +93,43 @@ every test**. A test that reads a catalog endpoint, writes (API or fixture) and 
 before the measured call (a cache hit costs 0 statements). A test of an eviction listener (`CatalogCacheIT`) must NOT clear
 between the warm-up and the check. Native Caffeine access: `((CaffeineCache) cacheManager.getCache(n)).getNativeCache()`
 (`stats().hitCount()`, `policy()` for TTL / maximumSize — never sleep for a TTL; `getIfPresent` itself counts as a hit).
+
+## Module tests: `<Module>ModuleIT` (`@ApplicationModuleTest`, P09-c)
+One class per module in `src/test/java/com/edumy/<module>/<Module>ModuleIT.java` (`identity`, `catalog`, `authoring`,
+`commerce`, `learning`, `notification`). They test the SERVICE layer and the EVENT contract of one module on the shared
+MySQL container, not HTTP (HTTP, IDOR, security stay in the `*ControllerIT` / `*WriteIT` / `IdorIT` classes).
+
+Composition (copy it, do not invent a variant):
+```java
+@ApplicationModuleTest(extraIncludes = "shared")   // mode STANDALONE (default): this module + shared only
+@MySqlModuleTest                                   // support/: profile test, shared container, MutableClock, CapturingMailGateway,
+class AuthoringModuleIT {                          //           TestUsers, CourseFixtures + the two reset extensions
+    @MockitoBean RoleQueryApi roles;               // neighbours: ONLY through their api interfaces
+    @MockitoBean UserQueryApi userQuery;
+    ...
+}
+```
+- `extraIncludes = "shared"` is required: `shared` is an OPEN module but Modulith does not put its beans in a STANDALONE
+  context, and `ClockConfig` / `CacheConfig` / `AsyncConfig` / `EdumyProperties` live there (without it: "bean of type
+  EdumyProperties not found" from `SecurityConfig`). Never replace it by `@Import` of single shared classes.
+- Container: `@MySqlModuleTest` imports `TestcontainersConfiguration` = `SharedMySql.INSTANCE` (same container, database
+  `edumy`, no seed). Never declare a `MySQLContainer`. Same rules as `@MySqlSpringBootTest`: leave no committed rows
+  (`CourseFixtures.deleteAll()` before `TestUsers.deleteAll()` in `@AfterEach`; commerce also deletes its cart rows).
+- Mocking the neighbours: every `@MockitoBean` is an interface of another module's `api/` that a bean of the tested module
+  needs; list ALL of them the module's beans inject (a missing one fails the context start, not the test). Needed sets:
+  authoring `RoleQueryApi` + `UserQueryApi`; learning `CourseQueryApi`, `CourseAccessApi`, `LessonQueryApi`,
+  `UserQueryApi`, `RoleQueryApi`; commerce `CourseQueryApi`, `CourseAccessApi`, `EnrollmentApi`, `UserQueryApi`,
+  `RoleQueryApi`; notification `UserQueryApi`, `CourseQueryApi`; identity and catalog none. The other modules' own beans
+  (listeners, services) are NOT in the context, so a test can never depend on them by accident. Stub per test
+  (`given(...)`), mocks are reset after every test. A mock of a `Map`-returning batch method uses `anyCollection()`.
+- Test helpers that need a module bean are `@Import`ed by that class only (identity: `@Import(JwtTestTokens.class)` for
+  sessions). A different composition = a different cached context (~15-25 s): keep one composition per module.
+- Events: parameter `Scenario scenario` — `scenario.stimulate(() -> service.approve(...)).andWaitForEventOfType(E.class)
+  .matching(e -> ...).toArriveAndVerify(e -> assert payload)` for events a service publishes; `scenario.publish(event)
+  .andWaitForStateChange(() -> observable, predicate).andVerify(...)` to drive a listener (publish runs in a transaction, so
+  `AFTER_COMMIT` / `@Async` listeners fire). The supplier of `andWaitForStateChange` must NOT return `null` (treated as "not
+  yet": use `() -> cache.get(k) == null` with `Boolean::booleanValue`, or a list). "No event on a refused operation":
+  parameter `PublishedEvents events`, call the service, `assertThat(events.ofType(E.class)).isEmpty()`.
+- Mails: `CapturingMailGateway` (`sentTo`, `failedTo`, `failNextSendsTo`) + `OutputCaptureExtension` for the NFR-08 log line.
+- Modulith docs: `ModularityTest#writesDocumentation` writes `target/spring-modulith-docs`; a copy is committed in
+  `docs/modulith/` (see its README) and refreshed after any module / api change.
