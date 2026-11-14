@@ -82,6 +82,22 @@ public interface LessonRepository extends JpaRepository<Lesson, Long> {
             + " where l.chapter.id = :chapterId")
     int shiftSortOrders(@Param("chapterId") Long chapterId);
 
+    /** UC-I07: lessons deleted together with a chapter (D-14 "keeps at least one lesson" check). */
+    long countByChapterId(Long chapterId);
+
+    /**
+     * UC-I11: after deleting the lesson at {@code deletedSortOrder}, the following ones move up by one so positions
+     * stay 1..n. Native because of {@code ORDER BY} (uq_lessons_chapter_order is checked row by row). Callers hold
+     * the course row lock.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            UPDATE lessons SET sort_order = sort_order - 1
+            WHERE chapter_id = :chapterId AND sort_order > :deletedSortOrder
+            ORDER BY sort_order
+            """, nativeQuery = true)
+    int closeGap(@Param("chapterId") Long chapterId, @Param("deletedSortOrder") int deletedSortOrder);
+
     /** Reorder phase 2: final position of one lesson. */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("update Lesson l set l.sortOrder = :sortOrder where l.id = :id")

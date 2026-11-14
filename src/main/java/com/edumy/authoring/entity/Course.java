@@ -209,6 +209,14 @@ public class Course {
         return publishedAt == null && (status == CourseStatus.DRAFT || status == CourseStatus.REJECTED);
     }
 
+    /**
+     * Published or hidden (= published once, BR-19): content changes take effect at once without re-review and the
+     * catalog must drop its cached outline (D-14, {@code CourseContentChanged}); the course keeps at least one lesson.
+     */
+    public boolean isPublishedOrHidden() {
+        return status == CourseStatus.PUBLISHED || status == CourseStatus.HIDDEN;
+    }
+
     public boolean isEditable() {
         return status != CourseStatus.PENDING_REVIEW;
     }

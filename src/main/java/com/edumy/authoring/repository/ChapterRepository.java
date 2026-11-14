@@ -75,6 +75,19 @@ public interface ChapterRepository extends JpaRepository<Chapter, Long> {
     @Query("update Chapter ch set ch.sortOrder = :sortOrder where ch.id = :id")
     int updateSortOrder(@Param("id") Long id, @Param("sortOrder") int sortOrder);
 
+    /**
+     * UC-I07: after deleting the chapter at {@code deletedSortOrder}, the following ones move up by one so positions
+     * stay 1..n (UC-I08 "liên tục từ 1"). Native because of {@code ORDER BY}: MySQL checks uq_chapters_course_order
+     * row by row, so the rows must move in ascending order. Callers hold the course row lock.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            UPDATE chapters SET sort_order = sort_order - 1
+            WHERE course_id = :courseId AND sort_order > :deletedSortOrder
+            ORDER BY sort_order
+            """, nativeQuery = true)
+    int closeGap(@Param("courseId") Long courseId, @Param("deletedSortOrder") int deletedSortOrder);
+
     /** Row of {@link #countOutlineByCourseIdIn}. */
     interface OutlineCountView {
         Long getCourseId();

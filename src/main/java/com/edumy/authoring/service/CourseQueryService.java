@@ -92,14 +92,7 @@ public class CourseQueryService {
      */
     public InstructorCourseDetailResponse detail(Long courseId, Long callerId) {
         Course course = courses.findWithCategoryById(courseId).orElseThrow(BusinessException::notFound);
-        List<Chapter> chapterRows = chapters.findByCourseIdOrderBySortOrderAsc(courseId);
-        Map<Long, List<LessonResponse>> lessonsByChapter = lessons.findByCourseIdOrdered(courseId).stream()
-                .collect(Collectors.groupingBy(lesson -> lesson.getChapter().getId(),
-                        Collectors.mapping(lessonMapper::toResponse, Collectors.toList())));
-        List<ChapterResponse> outline = chapterRows.stream()
-                .map(chapter -> chapterMapper.toResponse(chapter,
-                        lessonsByChapter.getOrDefault(chapter.getId(), List.of())))
-                .toList();
+        List<ChapterResponse> outline = outline(courseId);
 
         List<CourseCoInstructor> coRows = coInstructors.findByCourseIdOrderByInvitedAtAscIdAsc(courseId);
         List<Long> userIds = new ArrayList<>();
@@ -112,6 +105,34 @@ public class CourseQueryService {
                 .toList();
         return courseMapper.toDetail(course, relation(course.getMainInstructorId(), callerId),
                 names.get(course.getMainInstructorId()), coList, outline);
+    }
+
+    /**
+     * Chapters of the course in order, each with its lessons (with content) in order — the editor outline of
+     * {@link #detail} and the answer of UC-I08. Two statements (chapters, lessons with their chapter).
+     */
+    public List<ChapterResponse> outline(Long courseId) {
+        List<Chapter> chapterRows = chapters.findByCourseIdOrderBySortOrderAsc(courseId);
+        Map<Long, List<LessonResponse>> lessonsByChapter = lessons.findByCourseIdOrdered(courseId).stream()
+                .collect(Collectors.groupingBy(lesson -> lesson.getChapter().getId(),
+                        Collectors.mapping(lessonMapper::toResponse, Collectors.toList())));
+        return chapterRows.stream()
+                .map(chapter -> chapterMapper.toResponse(chapter,
+                        lessonsByChapter.getOrDefault(chapter.getId(), List.of())))
+                .toList();
+    }
+
+    /** One chapter with its lessons in order (answer of UC-I05, I06, I12). Two statements. */
+    public ChapterResponse chapter(Long chapterId) {
+        Chapter chapter = chapters.findById(chapterId).orElseThrow(BusinessException::notFound);
+        return chapterMapper.toResponse(chapter, lessons.findByChapterIdOrderBySortOrderAsc(chapterId).stream()
+                .map(lessonMapper::toResponse)
+                .toList());
+    }
+
+    /** One lesson with its content (answer of UC-I09, I10). One statement. */
+    public LessonResponse lesson(Long lessonId) {
+        return lessons.findById(lessonId).map(lessonMapper::toResponse).orElseThrow(BusinessException::notFound);
     }
 
     /** UC-I18: status, last submission, last decision and the latest rejection / hiding reason. One statement. */

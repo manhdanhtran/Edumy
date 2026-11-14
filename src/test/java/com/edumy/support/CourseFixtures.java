@@ -108,15 +108,25 @@ public class CourseFixtures {
     }
 
     public long chapter(long courseId) {
-        return insert(jdbc.sql("INSERT INTO chapters (course_id, title, sort_order) VALUES (?, 'Chương 1', 1)")
-                .param(courseId));
+        return chapter(courseId, 1);
+    }
+
+    /** A chapter at position {@code sortOrder} (titled "Chương n"). */
+    public long chapter(long courseId, int sortOrder) {
+        return insert(jdbc.sql("INSERT INTO chapters (course_id, title, sort_order) VALUES (?, ?, ?)")
+                .params(courseId, "Chương " + sortOrder, sortOrder));
     }
 
     public long lesson(long chapterId) {
+        return lesson(chapterId, 1);
+    }
+
+    /** A video lesson at position {@code sortOrder} (titled "Bài n"). */
+    public long lesson(long chapterId, int sortOrder) {
         return insert(jdbc.sql("""
                         INSERT INTO lessons (chapter_id, title, content_type, video_url, sort_order)
-                        VALUES (?, 'Bài 1', 'video', 'https://cdn.edumy.vn/v.mp4', 1)""")
-                .param(chapterId));
+                        VALUES (?, ?, 'video', 'https://cdn.edumy.vn/v.mp4', ?)""")
+                .params(chapterId, "Bài " + sortOrder, sortOrder));
     }
 
     /** A free enrollment of {@code studentId} in {@code courseId}. */

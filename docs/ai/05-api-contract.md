@@ -71,6 +71,7 @@
 | `LESSON_COURSE_MISMATCH` | 422 | BR-24 / BR-37; triggers: the lesson does not belong to the enrollment's course |
 | `COURSE_CATEGORY_UNAVAILABLE` | 422 | UC-I01 E "danh mục ngừng sử dụng" / UC-I03: the chosen category does not exist or is inactive (keeping a course's current, since deactivated category is allowed) |
 | `CATEGORY_ALREADY_EXISTS` | 409 | UC-A06 / UC-A07 E "trùng tên hoặc slug": pre-check (`errors[].field` = `name` / `slug`; name compared accent/case-insensitively like the ai_ci UNIQUE) + `uq_categories_name` / `uq_categories_slug` |
+| `COURSE_LAST_LESSON_DELETE_FORBIDDEN` | 409 | D-14 / UC-I07 E "khóa đã công khai sẽ không còn bài" / UC-I11 E "khóa đã công khai chỉ còn một bài": deleting the only lesson, or a chapter holding every lesson, of a published or hidden course |
 | `AUTH_LOGIN_TEMPORARILY_BLOCKED` | 429 | NFR-03: 5 consecutive failed logins for the email → every login for it blocked 15 min (correct password too); header `Retry-After` (docs/ai/04 §4.4) |
 | `TOKEN_RESEND_TOO_SOON` | 429 | D-03: resend of the verification code within 60 s of the last one (forgot password never shows it, Q3) |
 | `RATE_LIMITED` | 429 | NFR-03: certificate verification over 30 req/min per IP; header `Retry-After` (docs/ai/04 §4.4) |
@@ -343,6 +344,39 @@ Authoring writes (P06-G1, UC-A06…A08, UC-I01, I03, I04). Bodies are JSON; PATC
 - `DELETE /instructor/courses/{id}` → **204** (chapters, lessons, invitations by ON DELETE CASCADE). Main instructor
   only. 409 `COURSE_DELETE_FORBIDDEN` when `published_at` is set whatever the status now (BR-19; the V5 trigger maps to
   the same code) · 409 `COURSE_NOT_EDITABLE` while `pending_review`.
+
+Authoring writes (P06-G2, UC-I05…I12: chapters and lessons). Main instructor **or accepted co-instructor** (BR-04)
+via `@courseAccess` / `@chapterAccess` / `@lessonAccess.canEditContent`: no active instructor role in the DB → 403
+`ACCESS_DENIED`; course/chapter/lesson unknown or not taught by the caller (pending/declined/removed invitations do not
+count) → 404 identical body; `pending_review` → 409 `COURSE_NOT_EDITABLE` (BR-33, re-checked under the course row
+lock). Every write locks the course row (`SELECT … FOR UPDATE`): it serializes all content writes of a course. New
+chapters/lessons go at the end (max + 1); positions always stay 1..n (a delete moves the following siblings up, UC-I08
+"liên tục từ 1"). Published / hidden course: changes take effect at once (D-14) and publish
+`CourseContentChanged(courseId, slug)`; draft / rejected: no event.
+- `POST /instructor/courses/{id}/chapters` `CreateChapterRequest {title}` (≤200, trimmed) → **201** + `Location:
+  /api/v1/instructor/chapters/{chapterId}` + `ChapterResponse` (lessons `[]`).
+- `PATCH /instructor/chapters/{id}` `UpdateChapterRequest {title}` (required, the only editable field) → **200**
+  `ChapterResponse` with its lessons.
+- `DELETE /instructor/chapters/{id}` → **204**; its lessons, their `lesson_progresses` (CASCADE) go, questions about them
+  become course-level (`lesson_id` SET NULL); progress % is derived (D-33). 409 `COURSE_LAST_LESSON_DELETE_FORBIDDEN`
+  when the chapter holds every lesson of a published / hidden course (an empty chapter may always go).
+- `PUT /instructor/courses/{id}/chapters/order` `ReorderRequest {ids:[…]}` → **200** `[ChapterResponse]` (whole outline,
+  new order). `ids` must list every chapter of the course exactly once; missing / foreign (other course or unknown — same
+  text) / duplicate id, empty or absent list → 400 `VALIDATION_FAILED`, `errors[].field = "ids"` (status principle:
+  the request does not describe a permutation, so it is invalid input; no new code). Two-phase update (docs/ai/03 §3.4).
+- `POST /instructor/chapters/{id}/lessons` `CreateLessonRequest {title, contentType, videoUrl?, articleContent?,
+  durationSeconds?, isPreview?}` → **201** + `Location: /api/v1/instructor/lessons/{lessonId}` + `LessonResponse`.
+  title ≤200; `contentType` `video` | `article` (exact lower case, `edumy.lesson.content-type.invalid`); videoUrl ≤500
+  `http(s)://…` (`edumy.lesson.video-url.invalid`); articleContent ≤16 383 chars; durationSeconds ≥0; isPreview default
+  `false`. Content of the other type (video + articleContent, article + videoUrl) → 400 on that field (D-22, never the
+  500 of `ck_lessons_content_match`). Content may be empty while authoring (blank = `null`); BR-07 checks it at submit.
+- `PATCH /instructor/lessons/{id}` `UpdateLessonRequest` (same fields, all optional; absent/`null` = unchanged, `""`
+  clears videoUrl / articleContent; a blank title → 400) → **200** `LessonResponse`. Changing `contentType` drops the
+  old type's content unless it is sent (then 400). `durationSeconds` cannot be reset to `null` (send `0`).
+- `DELETE /instructor/lessons/{id}` → **204**; its progress goes, its questions become course-level; 409
+  `COURSE_LAST_LESSON_DELETE_FORBIDDEN` for the only lesson of a published / hidden course.
+- `PUT /instructor/chapters/{id}/lessons/order` `ReorderRequest {ids}` → **200** `ChapterResponse` (lessons in the new
+  order); same 400 rules (a lesson of another chapter of the same course is foreign).
 
 ### commerce
 | Method & path | UC | P1 |
