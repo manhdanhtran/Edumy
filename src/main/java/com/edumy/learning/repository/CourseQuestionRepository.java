@@ -6,9 +6,11 @@ import java.util.Optional;
 
 import com.edumy.learning.entity.ContentStatus;
 import com.edumy.learning.entity.CourseQuestion;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -177,6 +179,14 @@ public interface CourseQuestionRepository extends JpaRepository<CourseQuestion, 
 
     /** UC-S19 {@code PATCH|DELETE /questions/{id}}, resolve: the question only if the student asked it (NFR-01). */
     Optional<CourseQuestion> findByIdAndEnrollmentStudentId(Long id, Long studentId);
+
+    /**
+     * UC-S19 / UC-I21 / UC-A19 writes: the question locked ({@code FOR UPDATE}), with its enrollment (asker, course), so
+     * an asker edit, a reply and an admin hide of one question are serialized.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select q from CourseQuestion q join fetch q.enrollment where q.id = :id")
+    Optional<CourseQuestion> findByIdForUpdate(@Param("id") Long id);
 
     /** {@code @qaAccess}: is {@code studentId} the asker of the question (BR-38)? */
     boolean existsByIdAndEnrollmentStudentId(Long id, Long studentId);

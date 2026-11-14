@@ -64,6 +64,24 @@ public class MailService {
                 course.title()));
     }
 
+    /**
+     * UC-I21 step 5 / D-42: "a course instructor answered your question" to the asker. Names, email and course title /
+     * slug are read now through {@code identity::api} / {@code authoring::api}; if the asker, the instructor or the
+     * course is gone nothing is sent and an {@link IllegalStateException} without personal data reaches the listener.
+     */
+    public void sendQuestionAnswered(Long courseId, Long questionId, String questionTitle, Long askerId,
+                                     Long instructorId) {
+        Map<Long, UserSummary> people = users.findSummaries(List.of(askerId, instructorId));
+        UserSummary asker = people.get(askerId);
+        UserSummary instructor = people.get(instructorId);
+        CourseSummary course = courses.findSummaries(List.of(courseId)).get(courseId);
+        if (asker == null || instructor == null || course == null) {
+            throw new IllegalStateException("Answer mail: asker, instructor or course no longer exists");
+        }
+        gateway.send(composer.questionAnswered(asker.email(), asker.fullName(), instructor.fullName(), questionTitle,
+                course.title(), course.slug(), questionId));
+    }
+
     /** UC-A10 step 5: "your course is published" to the main instructor (title, slug, main instructor read now). */
     public void sendCourseApproved(Long courseId) {
         Recipient r = mainInstructorOf(courseId);

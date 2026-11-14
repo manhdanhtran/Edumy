@@ -208,6 +208,12 @@ public class CourseFixtures {
             jdbc.sql("DELETE FROM course_questions WHERE id = ?").param(id).update();
         }
         for (Long id : enrollments) {
+            // questions (and their answers) created through the API hang on the enrollment
+            jdbc.sql("""
+                    DELETE FROM question_answers
+                    WHERE question_id IN (SELECT id FROM course_questions WHERE enrollment_id = ?)""")
+                    .param(id).update();
+            jdbc.sql("DELETE FROM course_questions WHERE enrollment_id = ?").param(id).update();
             jdbc.sql("DELETE FROM course_reviews WHERE enrollment_id = ?").param(id).update();
             jdbc.sql("DELETE FROM certificates WHERE enrollment_id = ?").param(id).update();
             jdbc.sql("DELETE FROM lesson_progresses WHERE enrollment_id = ?").param(id).update();

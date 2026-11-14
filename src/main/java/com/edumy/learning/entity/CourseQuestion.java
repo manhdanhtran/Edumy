@@ -26,8 +26,9 @@ import lombok.NoArgsConstructor;
  * same course (BR-37, V5 triggers). Title ≤ 200 and content ≤ 5000 characters of plain text, trimmed and non-blank
  * (D-44, ck_course_questions_title / _content).
  * <p>State machine (docs/ai/02 §2.2): new → visible · visible → deleted (asker, final; hides the whole thread) ·
- * visible → hidden (admin) · hidden → visible (admin, BR-35). The asker edits or resolves only a visible question
- * (BR-41: hidden by an admin → no edit). Any other transition → {@code DATA_CONFLICT}. {@code moderated_by} /
+ * visible → hidden (admin) · hidden → visible (admin, BR-35). The asker edits, resolves or deletes only a visible
+ * question (BR-41: hidden by an admin → {@code QA_CONTENT_HIDDEN_BY_ADMIN}). Any other transition →
+ * {@code DATA_CONFLICT}. {@code moderated_by} /
  * {@code moderated_at} are set together by the admin transitions and kept as history
  * (ck_course_questions_moderation_pair, ck_course_questions_hidden_moderated). Who may act (asker, admin role BR-26)
  * is a service / access-bean concern.
@@ -96,27 +97,33 @@ public class CourseQuestion {
         return question;
     }
 
-    /** UC-S19: the asker edits title and content of a visible question (deleted / hidden, BR-41 → conflict). */
+    /**
+     * UC-S19: the asker edits title and content of a visible question (hidden, BR-41 → {@code QA_CONTENT_HIDDEN_BY_ADMIN};
+     * deleted → conflict).
+     */
     public void edit(String newTitle, String newContent) {
-        requireVisible();
+        requireOpenForAuthor();
         String validTitle = requireText(newTitle, "title", TITLE_MAX_LENGTH, "Tiêu đề câu hỏi");
         String validContent = requireText(newContent, "content", CONTENT_MAX_LENGTH, "Nội dung câu hỏi");
         title = validTitle;
         content = validContent;
     }
 
-    /**
-     * {@code POST /questions/{id}/resolve}: the asker marks a visible question resolved. Idempotent. The SRS has no
-     * "reopen", so there is no way back.
-     */
+    /** {@code POST /questions/{id}/resolve}: the asker marks a visible question resolved (D-39). Idempotent. */
     public void markResolved() {
-        requireVisible();
+        requireOpenForAuthor();
         resolved = true;
     }
 
-    /** UC-S19: visible → deleted (asker; final, the whole thread disappears). */
+    /** UC-S19 "bỏ đánh dấu đã giải quyết": the asker takes the mark back. Idempotent. */
+    public void markUnresolved() {
+        requireOpenForAuthor();
+        resolved = false;
+    }
+
+    /** UC-S19: visible → deleted (asker; final, the whole thread disappears). Hidden → BR-41. */
     public void delete() {
-        requireVisible();
+        requireOpenForAuthor();
         visibilityStatus = ContentStatus.DELETED;
     }
 
@@ -155,6 +162,17 @@ public class CourseQuestion {
         if (visibilityStatus != ContentStatus.VISIBLE) {
             throw new BusinessException(ErrorCode.DATA_CONFLICT);
         }
+    }
+
+    /**
+     * What the asker (or a replier) may touch: visible only. Hidden by an admin → {@code QA_CONTENT_HIDDEN_BY_ADMIN}
+     * (BR-41); deleted → {@code DATA_CONFLICT}.
+     */
+    void requireOpenForAuthor() {
+        if (visibilityStatus == ContentStatus.HIDDEN) {
+            throw new BusinessException(ErrorCode.QA_CONTENT_HIDDEN_BY_ADMIN);
+        }
+        requireVisible();
     }
 
     /**

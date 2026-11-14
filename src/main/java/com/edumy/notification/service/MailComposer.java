@@ -31,7 +31,9 @@ import org.springframework.web.util.HtmlUtils;
  * <p>Links point to the SPA (Q5, docs/ai/05 "Front-end routes used in emails"):
  * {@code {edumy.frontend.base-url}/verify-email?token=} and {@code /reset-password?token=}, code URL-encoded;
  * {@code /instructor/invitations} (no code: the invitee logs in and answers there); review results (UC-A10…A12):
- * {@code /courses/{slug}} (public course page) and {@code /instructor/courses/{courseId}} (the instructor's course).
+ * {@code /courses/{slug}} (public course page) and {@code /instructor/courses/{courseId}} (the instructor's course);
+ * answered question (UC-I21, D-42): {@code /courses/{slug}/learn?question={id}} (the learning page of the course with
+ * the question thread open).
  */
 @Service
 public class MailComposer {
@@ -45,6 +47,7 @@ public class MailComposer {
     static final String COURSE_APPROVED = "course-approved";
     static final String COURSE_REJECTED = "course-rejected";
     static final String COURSE_HIDDEN = "course-hidden";
+    static final String QUESTION_ANSWERED = "question-answered";
     /** SPA public course page (UC-G04), docs/ai/05 "Front-end routes". */
     static final String PUBLIC_COURSE_PATH = "/courses/";
     /** SPA page of one course of the instructor (UC-I02 / UC-I03 / UC-I18), docs/ai/05 "Front-end routes". */
@@ -67,7 +70,8 @@ public class MailComposer {
                 CO_INSTRUCTOR_INVITED, load(CO_INSTRUCTOR_INVITED),
                 COURSE_APPROVED, load(COURSE_APPROVED),
                 COURSE_REJECTED, load(COURSE_REJECTED),
-                COURSE_HIDDEN, load(COURSE_HIDDEN));
+                COURSE_HIDDEN, load(COURSE_HIDDEN),
+                QUESTION_ANSWERED, load(QUESTION_ANSWERED));
     }
 
     /** UC-G05 step 6 / UC-G06: link with the 24 h email-verification code. */
@@ -130,6 +134,22 @@ public class MailComposer {
                 "courseTitle", courseTitle,
                 "reason", reason,
                 "courseUrl", instructorCourseUrl(courseId)));
+    }
+
+    /**
+     * UC-I21 step 5 (SRS §7 "Phản hồi hỏi đáp", D-42): {@code fullName} (the asker) is told that {@code instructorName}
+     * answered {@code questionTitle} of {@code courseTitle}; links to the learning page of the course with the thread
+     * ({@code slug} is {@code [a-z0-9-]} only, no encoding needed). The answer text itself stays out of the mail.
+     */
+    public MailMessage questionAnswered(String to, String fullName, String instructorName, String questionTitle,
+                                        String courseTitle, String slug, Long questionId) {
+        return compose(QUESTION_ANSWERED, to, "Giảng viên đã trả lời câu hỏi của bạn trên Edumy", Map.of(
+                "fullName", fullName,
+                "instructorName", instructorName,
+                "questionTitle", questionTitle,
+                "courseTitle", courseTitle,
+                "questionUrl", baseUrl + PUBLIC_COURSE_PATH + Objects.requireNonNull(slug, "slug") + "/learn?question="
+                        + Objects.requireNonNull(questionId, "questionId")));
     }
 
     private String instructorCourseUrl(Long courseId) {

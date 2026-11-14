@@ -90,6 +90,34 @@ class MailComposerTest {
     }
 
     @Test
+    void questionAnswered_vietnameseSubject_namesTitlesAndLearnLink_UCI21_D42() {
+        MailMessage mail = composer.questionAnswered("hv@edumy.test", "Lê Văn Hỏi", "Phạm Thị Đáp", "Lỗi cài JDK",
+                "Lập trình Java", "lap-trinh-java", 77L);
+
+        assertThat(mail.template()).isEqualTo("question-answered");
+        assertThat(mail.to()).isEqualTo("hv@edumy.test");
+        assertThat(mail.subject()).isEqualTo("Giảng viên đã trả lời câu hỏi của bạn trên Edumy");
+        assertThat(mail.htmlBody())
+                .contains("Xin chào Lê Văn Hỏi,")
+                .contains("<strong>Phạm Thị Đáp</strong>")
+                .contains("“Lỗi cài JDK”")
+                .contains("“Lập trình Java”")
+                .contains("href=\"https://app.edumy.vn/courses/lap-trinh-java/learn?question=77\"")
+                .doesNotContain("${");
+    }
+
+    @Test
+    void questionAnswered_hostileNamesAndTitles_htmlEscaped() {
+        MailMessage mail = composer.questionAnswered("a@edumy.test", "B", HOSTILE_NAME, HOSTILE_NAME, HOSTILE_NAME,
+                "k", 1L);
+
+        assertThat(mail.htmlBody())
+                .contains("<strong>" + ESCAPED_NAME + "</strong>")
+                .contains("“" + ESCAPED_NAME + "”")
+                .doesNotContain("<script>");
+    }
+
+    @Test
     void courseApproved_vietnameseSubject_titleAndPublicCourseLink_UCA10() {
         MailMessage mail = composer.courseApproved("gv@edumy.test", "Nguyễn Văn A", "Lập trình Java",
                 "lap-trinh-java");
@@ -154,7 +182,8 @@ class MailComposerTest {
                 composer.coInstructorInvited("a@edumy.test", HOSTILE_NAME, "A", "K"),
                 composer.courseApproved("a@edumy.test", HOSTILE_NAME, "K", "k"),
                 composer.courseRejected("a@edumy.test", HOSTILE_NAME, "K", 1L, "R"),
-                composer.courseHidden("a@edumy.test", HOSTILE_NAME, "K", 1L, "R")}) {
+                composer.courseHidden("a@edumy.test", HOSTILE_NAME, "K", 1L, "R"),
+                composer.questionAnswered("a@edumy.test", HOSTILE_NAME, "G", "Q", "K", "k", 1L)}) {
             assertThat(mail.htmlBody()).as(mail.template())
                     .contains("Xin chào " + ESCAPED_NAME + ",")
                     .doesNotContain("<script>")

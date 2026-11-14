@@ -64,6 +64,7 @@ public enum ErrorCode {
     ENROLLMENT_COURSE_NOT_FREE(HttpStatus.UNPROCESSABLE_CONTENT),     // UC-S15, BR-09: only free courses are enrolled directly
     ENROLLMENT_OWN_COURSE(HttpStatus.UNPROCESSABLE_CONTENT),          // UC-S15 E2, BR-32: instructors view as instructors
     REVIEW_HIDDEN_BY_ADMIN(HttpStatus.CONFLICT),
+    QA_CONTENT_HIDDEN_BY_ADMIN(HttpStatus.CONFLICT),                  // BR-41: hidden question / answer is read-only for its author
     QA_REPLY_NOT_ALLOWED(HttpStatus.FORBIDDEN);
 
     private final HttpStatus status;

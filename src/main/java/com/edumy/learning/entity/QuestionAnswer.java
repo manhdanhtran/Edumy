@@ -24,8 +24,8 @@ import lombok.NoArgsConstructor;
  * trimmed and non-blank (D-44, ck_question_answers_content). {@code author_type} is a snapshot of the author's role
  * when posting. Only a course instructor or the asker may answer (BR-38) — checked by the service / {@code @qaAccess}.
  * <p>State machine (docs/ai/02 §2.2): new → visible (only on a visible question) · visible → deleted (author, final) ·
- * visible → hidden (admin) · hidden → visible (admin, BR-35). The author edits only a visible answer (BR-41). Any other
- * transition → {@code DATA_CONFLICT}. {@code moderated_by} / {@code moderated_at} are set together by the admin
+ * visible → hidden (admin) · hidden → visible (admin, BR-35). The author edits only a visible answer (BR-41: hidden →
+ * {@code QA_CONTENT_HIDDEN_BY_ADMIN}). Any other transition → {@code DATA_CONFLICT}. {@code moderated_by} / {@code moderated_at} are set together by the admin
  * transitions (ck_question_answers_moderation_pair, ck_question_answers_hidden_moderated).
  */
 @Entity
@@ -70,8 +70,8 @@ public class QuestionAnswer {
     private Instant updatedAt;
 
     /**
-     * UC-I21 / UC-S19: new visible answer of {@code authorId} in a visible question (a deleted or hidden question
-     * takes no answer → {@code DATA_CONFLICT}).
+     * UC-I21 / UC-S19: new visible answer of {@code authorId} in a visible question (a hidden question takes no answer
+     * → {@code QA_CONTENT_HIDDEN_BY_ADMIN}, a deleted one → {@code DATA_CONFLICT}, UC-I21 E2).
      */
     public static QuestionAnswer post(CourseQuestion question, Long authorId, AuthorType authorType, String content,
                                       Instant now) {
@@ -80,9 +80,7 @@ public class QuestionAnswer {
         Objects.requireNonNull(authorType, "authorType");
         Objects.requireNonNull(now, "now");
         String validContent = requireContent(content);
-        if (!question.isVisible()) {
-            throw new BusinessException(ErrorCode.DATA_CONFLICT);
-        }
+        question.requireOpenForAuthor();
         QuestionAnswer answer = new QuestionAnswer();
         answer.question = question;
         answer.authorId = authorId;
@@ -93,15 +91,15 @@ public class QuestionAnswer {
         return answer;
     }
 
-    /** UC-I21 / UC-S19: the author edits a visible answer (deleted / hidden, BR-41 → conflict). */
+    /** UC-I21 / UC-S19: the author edits a visible answer (hidden, BR-41 → {@code QA_CONTENT_HIDDEN_BY_ADMIN}). */
     public void edit(String newContent) {
-        requireVisible();
+        requireOpenForAuthor();
         content = requireContent(newContent);
     }
 
-    /** visible → deleted (author, final). */
+    /** visible → deleted (author, final). Hidden → BR-41. */
     public void delete() {
-        requireVisible();
+        requireOpenForAuthor();
         visibilityStatus = ContentStatus.DELETED;
     }
 
@@ -139,6 +137,13 @@ public class QuestionAnswer {
         if (visibilityStatus != ContentStatus.VISIBLE) {
             throw new BusinessException(ErrorCode.DATA_CONFLICT);
         }
+    }
+
+    private void requireOpenForAuthor() {
+        if (visibilityStatus == ContentStatus.HIDDEN) {
+            throw new BusinessException(ErrorCode.QA_CONTENT_HIDDEN_BY_ADMIN);
+        }
+        requireVisible();
     }
 
     private static String requireContent(String content) {

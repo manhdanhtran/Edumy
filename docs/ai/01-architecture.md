@@ -315,7 +315,7 @@ Consequences:
 | `CoInstructorInvited` (invitationId, courseId, instructorId, invitedBy) | authoring (UC-I13 invite and D-18 re-invite, P06-G3) | notification (`AuthoringMailListener` → invitation mail; names, email, course title read through `identity::api` / `authoring::api` by `MailService`) | async, after commit |
 | `OrderPaid` | commerce | notification (BR-20) | async — mail failure never touches the order |
 | `ReviewChanged` (courseId, slug) | learning (UC-S12…S14, A15, A17, P06-G7: create, re-rate, edit, withdraw, hide, restore) | catalog (`catalog.rating` by courseId + `catalog.course-detail` by slug, P08) | after commit |
-| `QuestionAnsweredByInstructor` | learning | notification (D-42) | async |
+| `QuestionAnsweredByInstructor` (questionId, answerId, courseId, askerId, instructorId, questionTitle) | learning (UC-I21, P06-G8: instructor-type answers only) | notification (`LearningMailListener` → mail to the asker; names, email, course title / slug read through `identity::api` / `authoring::api` by `MailService`) | async, after commit — mail failure never touches the answer |
 | `CertificateIssued` (certificateId, enrollmentId, studentId, courseId) | learning (UC-S10, P06-G6) | logging (NFR-08, `learning.listener.CertificateIssuedListener`: ids only) | after commit |
 
 ## 1.11 Transactions

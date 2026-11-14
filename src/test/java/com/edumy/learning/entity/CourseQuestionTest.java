@@ -114,7 +114,7 @@ class CourseQuestionTest {
     void edit_deletedOrHidden_rejected_conflict_BR41(ContentStatus status) {
         CourseQuestion question = questionIn(status);
 
-        assertConflict(() -> question.edit("Mới", "Mới"));
+        assertRejected(status, () -> question.edit("Mới", "Mới"));
         assertThat(question.getTitle()).isEqualTo("Lỗi cài đặt");
     }
 
@@ -141,12 +141,31 @@ class CourseQuestionTest {
         assertThat(question.getVisibilityStatus()).isEqualTo(ContentStatus.VISIBLE);
     }
 
+    @Test
+    void markUnresolved_resolved_reopened_idempotent_UCS19() {
+        CourseQuestion question = newQuestion();
+        question.markResolved();
+
+        question.markUnresolved();
+        question.markUnresolved();
+
+        assertThat(question.isResolved()).isFalse();
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ContentStatus.class, names = "VISIBLE", mode = EnumSource.Mode.EXCLUDE)
+    void markUnresolved_deletedOrHidden_rejected(ContentStatus status) {
+        CourseQuestion question = questionIn(status);
+
+        assertRejected(status, question::markUnresolved);
+    }
+
     @ParameterizedTest
     @EnumSource(value = ContentStatus.class, names = "VISIBLE", mode = EnumSource.Mode.EXCLUDE)
     void markResolved_deletedOrHidden_rejected_conflict(ContentStatus status) {
         CourseQuestion question = questionIn(status);
 
-        assertConflict(question::markResolved);
+        assertRejected(status, question::markResolved);
         assertThat(question.isResolved()).isFalse();
     }
 
@@ -168,7 +187,7 @@ class CourseQuestionTest {
     void delete_deletedOrHidden_rejected_conflict(ContentStatus status) {
         CourseQuestion question = questionIn(status);
 
-        assertConflict(question::delete);
+        assertRejected(status, question::delete);
         assertThat(question.getVisibilityStatus()).isEqualTo(status);
     }
 
@@ -236,6 +255,12 @@ class CourseQuestionTest {
     }
 
     // ------------------------------------------------------------------------------------------------------ helpers
+
+    /** What the asker gets on a question that is not visible: hidden → BR-41 code, deleted → conflict. */
+    static void assertRejected(ContentStatus status, ThrowingCallable call) {
+        assertCode(call, status == ContentStatus.HIDDEN ? ErrorCode.QA_CONTENT_HIDDEN_BY_ADMIN
+                : ErrorCode.DATA_CONFLICT);
+    }
 
     static void assertConflict(ThrowingCallable call) {
         assertCode(call, ErrorCode.DATA_CONFLICT);

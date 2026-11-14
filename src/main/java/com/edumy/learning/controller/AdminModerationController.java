@@ -1,6 +1,8 @@
 package com.edumy.learning.controller;
 
 import com.edumy.learning.dto.request.ModerationRequest;
+import com.edumy.learning.dto.response.AnswerResponse;
+import com.edumy.learning.dto.response.QuestionThreadResponse;
 import com.edumy.learning.dto.response.ReviewResponse;
 import com.edumy.learning.service.ModerationService;
 import com.edumy.shared.security.CurrentUserId;
@@ -15,7 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * Admin moderation of learning content (UC-A15, A17; questions and answers UC-A19 join here). Admin only: route rule
+ * Admin moderation of learning content (UC-A15, A17 reviews; UC-A19 questions and answers). Admin only: route rule
  * {@code /api/v1/admin/**} plus the method-level check (docs/ai/04 §4.3); the service re-checks the admin role in the
  * database (BR-26). The body is optional ({@link ModerationRequest}); unknown id → 404; wrong state → 409.
  */
@@ -45,6 +47,38 @@ public class AdminModerationController {
     public ReviewResponse restoreReview(@PathVariable Long id, @CurrentUserId Long adminId,
                                         @Valid @RequestBody(required = false) ModerationRequest request) {
         return moderation.restoreReview(adminId, id, note(request));
+    }
+
+    /** 200 + the thread as {@code hidden}; only its asker and admins see it from now on (BR-41). */
+    @PostMapping("/questions/{id}/hide")
+    @Operation(summary = "UC-A19 Ẩn câu hỏi vi phạm")
+    public QuestionThreadResponse hideQuestion(@PathVariable Long id, @CurrentUserId Long adminId,
+                                               @Valid @RequestBody(required = false) ModerationRequest request) {
+        return moderation.hideQuestion(adminId, id, note(request));
+    }
+
+    /** 200 + the thread as {@code visible} again (only an admin, BR-41). */
+    @PostMapping("/questions/{id}/restore")
+    @Operation(summary = "UC-A19 Khôi phục câu hỏi đã ẩn")
+    public QuestionThreadResponse restoreQuestion(@PathVariable Long id, @CurrentUserId Long adminId,
+                                                  @Valid @RequestBody(required = false) ModerationRequest request) {
+        return moderation.restoreQuestion(adminId, id, note(request));
+    }
+
+    /** 200 + the answer as {@code hidden}; its author can no longer edit it (BR-41). */
+    @PostMapping("/answers/{id}/hide")
+    @Operation(summary = "UC-A19 Ẩn phản hồi vi phạm")
+    public AnswerResponse hideAnswer(@PathVariable Long id, @CurrentUserId Long adminId,
+                                     @Valid @RequestBody(required = false) ModerationRequest request) {
+        return moderation.hideAnswer(adminId, id, note(request));
+    }
+
+    /** 200 + the answer as {@code visible} again (only an admin, BR-41). */
+    @PostMapping("/answers/{id}/restore")
+    @Operation(summary = "UC-A19 Khôi phục phản hồi đã ẩn")
+    public AnswerResponse restoreAnswer(@PathVariable Long id, @CurrentUserId Long adminId,
+                                        @Valid @RequestBody(required = false) ModerationRequest request) {
+        return moderation.restoreAnswer(adminId, id, note(request));
     }
 
     private static String note(ModerationRequest request) {

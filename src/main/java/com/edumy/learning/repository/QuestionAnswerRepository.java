@@ -4,7 +4,9 @@ import java.util.List;
 import java.util.Optional;
 
 import com.edumy.learning.entity.QuestionAnswer;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -24,6 +26,14 @@ public interface QuestionAnswerRepository extends JpaRepository<QuestionAnswer, 
             """)
     List<QuestionAnswer> findThread(@Param("questionId") Long questionId,
                                     @Param("includeHidden") boolean includeHidden);
+
+    /**
+     * {@code PATCH|DELETE /answers/{id}} and UC-A19: the answer locked ({@code FOR UPDATE}) with its question and the
+     * question's enrollment (course id), so an author edit and an admin hide are serialized.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select a from QuestionAnswer a join fetch a.question q join fetch q.enrollment where a.id = :id")
+    Optional<QuestionAnswer> findByIdForUpdate(@Param("id") Long id);
 
     /** {@code PATCH|DELETE /answers/{id}}: the answer only if {@code authorId} wrote it (NFR-01). */
     Optional<QuestionAnswer> findByIdAndAuthorId(Long id, Long authorId);

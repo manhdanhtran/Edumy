@@ -65,7 +65,8 @@ class QuestionAnswerTest {
     void post_deletedOrHiddenQuestion_rejected_conflict(ContentStatus status) {
         CourseQuestion question = questionIn(status);
 
-        assertConflict(() -> QuestionAnswer.post(question, INSTRUCTOR, AuthorType.INSTRUCTOR, "Trả lời", NOW));
+        CourseQuestionTest.assertRejected(status,
+                () -> QuestionAnswer.post(question, INSTRUCTOR, AuthorType.INSTRUCTOR, "Trả lời", NOW));
     }
 
     @ParameterizedTest
@@ -116,7 +117,7 @@ class QuestionAnswerTest {
     void edit_deletedOrHidden_rejected_conflict_BR41(ContentStatus status) {
         QuestionAnswer answer = answerIn(status);
 
-        assertConflict(() -> answer.edit("Sửa"));
+        CourseQuestionTest.assertRejected(status, () -> answer.edit("Sửa"));
         assertThat(answer.getContent()).isEqualTo("Cài JDK 21 nhé");
     }
 
@@ -145,7 +146,7 @@ class QuestionAnswerTest {
     void delete_deletedOrHidden_rejected_conflict(ContentStatus status) {
         QuestionAnswer answer = answerIn(status);
 
-        assertConflict(answer::delete);
+        CourseQuestionTest.assertRejected(status, answer::delete);
         assertThat(answer.getVisibilityStatus()).isEqualTo(status);
     }
 
