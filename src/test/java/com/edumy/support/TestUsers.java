@@ -101,8 +101,11 @@ public class TestUsers {
                     .ifPresent(created::add);
         }
         trackedEmails.clear();
+        // every role row first: a row of one test user may name another one as assigned_by (admin grant, UC-A04)
         for (Long id : created) {
             jdbc.sql("DELETE FROM user_roles WHERE user_id = ?").param(id).update();
+        }
+        for (Long id : created) {
             jdbc.sql("DELETE FROM users WHERE id = ?").param(id).update();
         }
         created.clear();

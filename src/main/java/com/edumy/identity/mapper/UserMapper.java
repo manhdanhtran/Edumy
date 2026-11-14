@@ -21,6 +21,9 @@ public interface UserMapper {
     /** UC-A01 row; {@code roles}: active role codes of this user, fetched for the whole page in one query. */
     AdminUserResponse toAdminUserResponse(AdminUserView user, List<RoleCode> roles);
 
+    /** UC-A02…A05 answer: the changed account; {@code roles} = its active role codes read after the change. */
+    AdminUserResponse toAdminUserResponse(User user, List<RoleCode> roles);
+
     /** {@code identity::api.UserQueryApi} record. */
     UserSummary toUserSummary(UserSummaryView user);
 

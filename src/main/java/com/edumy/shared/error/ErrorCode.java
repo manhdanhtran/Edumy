@@ -32,6 +32,11 @@ public enum ErrorCode {
     PASSWORD_SAME_AS_OLD(HttpStatus.UNPROCESSABLE_CONTENT),          // UC-G12: new = current
     INSTRUCTOR_ROLE_REVOKED(HttpStatus.FORBIDDEN),                   // UC-G13 E2, D-04
     ADMIN_LAST_ACTIVE(HttpStatus.CONFLICT),
+    ADMIN_LOCK_FORBIDDEN(HttpStatus.FORBIDDEN),                      // UC-A02, BR-36: target is the caller or an admin
+    ACCOUNT_ALREADY_LOCKED(HttpStatus.CONFLICT),                     // UC-A02: target not active
+    ACCOUNT_NOT_LOCKED(HttpStatus.CONFLICT),                         // UC-A03: target not locked
+    INSTRUCTOR_ROLE_ALREADY_ACTIVE(HttpStatus.CONFLICT),             // UC-A04 E1
+    INSTRUCTOR_ROLE_NOT_ACTIVE(HttpStatus.CONFLICT),                 // UC-A05 E1
 
     // authoring
     COURSE_NOT_EDITABLE(HttpStatus.CONFLICT),

@@ -56,7 +56,12 @@
 | `CART_ITEM_DUPLICATE` | 409 | BR-11; `uq_cart_items_cart_course` |
 | `COURSE_DELETE_FORBIDDEN` | 409 | BR-19; trigger: the course was published once |
 | `REVIEW_HIDDEN_BY_ADMIN` | 409 | BR-35 |
-| `ADMIN_LAST_ACTIVE` | 409 | BR-36 |
+| `ADMIN_LAST_ACTIVE` | 409 | BR-36 "at least one active admin"; reserved — unreachable through UC-A02, because no admin can ever be locked (`ADMIN_LOCK_FORBIDDEN`) and admin roles are never granted/revoked through the API (D-01) |
+| `ADMIN_LOCK_FORBIDDEN` | 403 | BR-36 / AC-37: UC-A02 target is the caller or holds an active admin role |
+| `ACCOUNT_ALREADY_LOCKED` | 409 | UC-A02 precondition "tài khoản đích đang hoạt động": target already locked |
+| `ACCOUNT_NOT_LOCKED` | 409 | UC-A03 precondition "tài khoản bị khóa": target is active |
+| `INSTRUCTOR_ROLE_ALREADY_ACTIVE` | 409 | UC-A04 E1: target already holds an active instructor role |
+| `INSTRUCTOR_ROLE_NOT_ACTIVE` | 409 | UC-A05 E1: target holds no active instructor role (none, or already revoked) |
 | `ACCOUNT_TOKEN_INVALID` | 422 | UC-G06 / UC-G08 E1: emailed code unknown, wrong type, used or expired — never says which (BR-34); also reset of a locked account |
 | `PASSWORD_INCORRECT` | 422 | UC-G12: wrong current password |
 | `PASSWORD_SAME_AS_OLD` | 422 | UC-G12: new password = current password |
@@ -179,6 +184,25 @@ Admin user list (P05):
   `role` keeps users holding that role actively. Blank parameter = no filter; an unknown `status`/`role` → 400
   `VALIDATION_FAILED` (`errors[].field` = `status`/`role`). Order fixed: newest account first (`createdAt` desc, `id`
   desc); `sort` is ignored. `size` default 20, values above 100 are clamped to 100 (every paged endpoint, §5.1).
+
+Admin user writes (P06-G0, UC-A02…A05). No request body. Every answer **200** `AdminUserResponse` of the changed
+account (same shape as a UC-A01 row; `roles` read from the database after the change). Common errors: 401 · 403
+`ACCESS_DENIED` (not an admin — JWT claim at the route, **and** active admin role re-checked in the database, BR-26) ·
+404 `RESOURCE_NOT_FOUND` (unknown user id). The target `users` row is locked (`SELECT … FOR UPDATE`) for the whole
+transaction. Preconditions that do not hold are refused with 409 and change nothing (no silent no-op). No mail (SRS §7).
+- `POST /admin/users/{id}/lock` (UC-A02) → `status: locked`; every session of the user ends **at once** (D-05): all
+  refresh-token families revoked `account_locked`, `identity.session-status` + `identity.user-status` evicted after
+  commit → the user's live access tokens get 401 on their next request, refresh gets 401, login gets 403
+  `AUTH_ACCOUNT_LOCKED`. Errors: 403 `ADMIN_LOCK_FORBIDDEN` (self or an admin, BR-36) · 409 `ACCOUNT_ALREADY_LOCKED`.
+- `POST /admin/users/{id}/unlock` (UC-A03) → `status: active`; `identity.user-status` evicted; the ended sessions stay
+  ended (the user logs in again). Error: 409 `ACCOUNT_NOT_LOCKED`.
+- `PUT /admin/users/{id}/roles/instructor` (UC-A04) → instructor role active: a new `user_roles` row or the revoked row
+  reactivated (never a duplicate), `assigned_by` = the admin, `assigned_at` = now; `identity.active-roles` evicted.
+  No email-verified / account-status precondition (none in the SRS). Error: 409 `INSTRUCTOR_ROLE_ALREADY_ACTIVE` (E1).
+- `DELETE /admin/users/{id}/roles/instructor` (UC-A05) → row set `is_active = false` (kept, BR-28);
+  `identity.active-roles` evicted → instructor actions refused (403) on the next request (D-07); sessions, published
+  courses and enrollments untouched. Error: 409 `INSTRUCTOR_ROLE_NOT_ACTIVE` (E1). The SRS step 1 "impact preview"
+  (number of main / co-taught / published courses) has no endpoint in this contract.
 
 ### Front-end routes used in emails (contract for the SPA team, Q5)
 The identity mails link to two SPA routes. Base = `edumy.frontend.base-url` (env `EDUMY_FRONTEND_BASE_URL`, default
