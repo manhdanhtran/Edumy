@@ -6,10 +6,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.edumy.support.CatalogCaches;
 import com.edumy.support.MySqlSeedSpringBootTest;
 import com.edumy.support.SqlStatementCounter;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.CacheManager;
 import org.springframework.test.web.servlet.MockMvc;
 
 /** UC-G03 {@code GET /api/v1/catalog/categories} on the dev seed: categories 1–7 active, 8 (Nhiếp ảnh) inactive. */
@@ -18,6 +20,8 @@ class CatalogCategoryControllerIT {
 
     static final String CATEGORIES = "/api/v1/catalog/categories";
 
+    @Autowired
+    CacheManager cacheManager;
     @Autowired
     MockMvc mvc;
     @Autowired
@@ -37,6 +41,7 @@ class CatalogCategoryControllerIT {
     @Test
     void list_oneStatement() throws Exception {
         mvc.perform(get(CATEGORIES)).andExpect(status().isOk());
+        CatalogCaches.clear(cacheManager); // uncached statement count (the cached call: CatalogCacheIT)
         sql.reset();
         mvc.perform(get(CATEGORIES)).andExpect(status().isOk());
         assertThat(sql.count()).as(sql.statements().toString()).isEqualTo(1);

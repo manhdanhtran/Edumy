@@ -19,7 +19,8 @@ import org.springframework.test.context.ActiveProfiles;
  * every test by {@link MutableClockResetExtension}), and the {@link CapturingMailGateway} as the application
  * {@code MailGateway} (records sent mails; cleared after every test by {@link CapturingMailGatewayResetExtension}),
  * and the test-only {@link AccessProbeController} ({@code /api/v1/test-probe/**}, one endpoint per access bean),
- * and the {@link SqlStatementCounter} (JDBC statements per thread, for the no-N+1 tests of list endpoints).
+ * and the {@link SqlStatementCounter} (JDBC statements per thread, for the no-N+1 tests of list endpoints),
+ * and {@link CatalogCaches} (empties the four {@code catalog.*} caches before every test).
  * All tests with this annotation share one cached Spring context:
  * never add {@code @MockitoBean}, {@code @TestPropertySource}, {@code @DirtiesContext} or {@code @Import} to a test
  * class.
@@ -33,6 +34,6 @@ import org.springframework.test.context.ActiveProfiles;
 @ActiveProfiles("test")
 @Import({TestcontainersConfiguration.class, TestUsers.class, JwtTestTokens.class, MutableClock.class,
         CapturingMailGateway.class, AccessProbeController.class, SqlStatementCounter.class})
-@ExtendWith({MutableClockResetExtension.class, CapturingMailGatewayResetExtension.class})
+@ExtendWith({MutableClockResetExtension.class, CapturingMailGatewayResetExtension.class, CatalogCaches.class})
 public @interface MySqlSpringBootTest {
 }

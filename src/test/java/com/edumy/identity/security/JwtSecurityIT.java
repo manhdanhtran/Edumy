@@ -196,6 +196,26 @@ class JwtSecurityIT {
     @Test
     void actuatorOtherThanHealthInfo_noToken_401() throws Exception {
         mvc.perform(get("/actuator/caches")).andExpect(status().isUnauthorized());
+        mvc.perform(get("/actuator/metrics")).andExpect(status().isUnauthorized());
+    }
+
+    /** P08 / docs/ai/04 §4.5: caches and metrics (exposed in dev only) are for the admin, never for another role. */
+    @Test
+    void actuatorOtherThanHealthInfo_nonAdmin_403_admin_passesSecurity() throws Exception {
+        Session student = tokens.newUserSession(RoleCode.STUDENT);
+        Session instructor = tokens.newUserSession(RoleCode.STUDENT, RoleCode.INSTRUCTOR);
+        Session admin = tokens.newUserSession(RoleCode.ADMIN);
+
+        for (String path : List.of("/actuator/caches", "/actuator/metrics")) {
+            mvc.perform(get(path).header(HttpHeaders.AUTHORIZATION, student.bearer()))
+                    .andExpect(status().isForbidden());
+            mvc.perform(get(path).header(HttpHeaders.AUTHORIZATION, instructor.bearer()))
+                    .andExpect(status().isForbidden());
+            // the endpoint is not exposed in the test profile (exposure: ActuatorExposureTest), so past security: 404
+            mvc.perform(get(path).header(HttpHeaders.AUTHORIZATION, admin.bearer()))
+                    .andExpect(status().is(not(401)))
+                    .andExpect(status().is(not(403)));
+        }
     }
 
     // ------------------------------------------------------------------------------------------------- invalid tokens

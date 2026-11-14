@@ -46,6 +46,13 @@ public record CourseDetailResponse(
                 totalDurationSeconds, publishedAt, updatedAt, chapters, viewerContext);
     }
 
+    /** The same page with the rating of the visible reviews (D-10; {@code average} {@code null} = none). */
+    public CourseDetailResponse withRating(Double average, long count) {
+        return new CourseDetailResponse(id, slug, title, description, thumbnailUrl, price, isFree, status, categoryId,
+                categoryName, mainInstructor, coInstructors, average, count, totalLessons, totalDurationSeconds,
+                publishedAt, updatedAt, chapters, viewer);
+    }
+
     /** A main or co-instructor shown on the page. */
     public record Instructor(Long id, String fullName) {
     }

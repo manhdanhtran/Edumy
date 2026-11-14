@@ -91,6 +91,8 @@ public class SecurityConfig {
                         .requestMatchers("/v3/api-docs", "/v3/api-docs/**", "/swagger-ui.html", "/swagger-ui/**")
                         .permitAll()
                         .requestMatchers("/error").permitAll()
+                        // docs/ai/04 §4.5: caches/metrics/modulith (dev only) are for the admin, never for any caller
+                        .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 // §4.5: Origin check of the cookie endpoints, before any token is read

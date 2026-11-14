@@ -84,3 +84,12 @@ async work of other tests never interferes); `count()`, `statements()` (SQL text
 filter and access beans read 30–60 s Caffeine caches that cost a statement when cold, so: send the request once to warm
 up, then `reset()`, then measure. Every list endpoint gets a test asserting the same (small, exact) count for two page
 sizes, both pages full (Spring Data skips the count query when the first page is not full).
+
+### Catalog caches in tests: `support/CatalogCaches` (P08)
+The four `catalog.*` caches (docs/ai/05 §5.3) live in the shared Spring context and `catalog.course-list` has no eviction (60 s
+TTL), so `CatalogCaches` (a JUnit extension inside `@MySqlSpringBootTest` and `@MySqlSeedSpringBootTest`) empties them **before
+every test**. A test that reads a catalog endpoint, writes (API or fixture) and then asserts a fresh list/page calls
+`CatalogCaches.clear(cacheManager)` after the write (`@Autowired CacheManager`). A statement-count test of a catalog read clears
+before the measured call (a cache hit costs 0 statements). A test of an eviction listener (`CatalogCacheIT`) must NOT clear
+between the warm-up and the check. Native Caffeine access: `((CaffeineCache) cacheManager.getCache(n)).getNativeCache()`
+(`stats().hitCount()`, `policy()` for TTL / maximumSize — never sleep for a TTL; `getIfPresent` itself counts as a hit).

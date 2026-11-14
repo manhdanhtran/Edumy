@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.edumy.support.CatalogCaches;
 import com.edumy.support.IdorAssertions;
 import com.edumy.support.MySqlSeedSpringBootTest;
 import com.edumy.support.SeedUserTokens;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.CacheManager;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -43,6 +45,8 @@ class CatalogCourseDetailIT {
     static final String REJECTED = "photoshop-can-ban-cho-nguoi-moi";
     static final String UNKNOWN = "khoa-hoc-khong-ton-tai";
 
+    @Autowired
+    CacheManager cacheManager;
     @Autowired
     MockMvc mvc;
     @Autowired
@@ -194,22 +198,25 @@ class CatalogCourseDetailIT {
         detail(null, JAVA).andExpect(status().isOk()); // warm-up
         detail(SeedUserTokens.STUDENT, JAVA).andExpect(status().isOk());
 
+        CatalogCaches.clear(cacheManager); // uncached statement counts (the cached page: CatalogCacheIT)
         sql.reset();
         detail(null, JAVA).andExpect(status().isOk());
         int nineLessons = sql.count();
         String statements = sql.statements().toString();
 
+        CatalogCaches.clear(cacheManager);
         sql.reset();
         detail(null, HTML).andExpect(status().isOk());
         int fourLessons = sql.count();
 
-        // course (+ category, instructor, rating), co-instructors, outline
-        assertThat(nineLessons).as(statements).isEqualTo(3);
+        // course (+ category, instructor), co-instructors, outline, rating (P08: own statement, cache catalog.rating)
+        assertThat(nineLessons).as(statements).isEqualTo(4);
         assertThat(fourLessons).as(sql.statements().toString()).isEqualTo(nineLessons);
 
+        CatalogCaches.clear(cacheManager);
         sql.reset();
         detail(SeedUserTokens.STUDENT, JAVA).andExpect(status().isOk());
-        assertThat(sql.count()).as("+ viewer context " + sql.statements()).isEqualTo(4);
+        assertThat(sql.count()).as("+ viewer context " + sql.statements()).isEqualTo(5);
     }
 
     // ------------------------------------------------------------------------------------------ UC-G04 reviews

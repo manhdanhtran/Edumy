@@ -132,4 +132,4 @@ limitations".
 - CSRF: disabled for bearer-token endpoints; `/auth/refresh` and `/auth/logout` rely on `SameSite=Strict` cookie +
   `Origin` header check against the CORS allow-list.
 - Stateless: `SessionCreationPolicy.STATELESS`. HTTPS is terminated in front of the app in production.
-- Actuator: only `health` and `info` exposed publicly.
+- Actuator: only `health` and `info` exposed (`application.yml`) and public. `caches` / `metrics` (Caffeine statistics) are exposed in the `dev` profile only, and `/actuator/**` other than health/info needs the admin role (401 without token, 403 for any other role; P08).

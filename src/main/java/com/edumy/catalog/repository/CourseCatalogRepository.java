@@ -19,6 +19,8 @@ import com.edumy.catalog.dto.response.CourseDetailResponse.Instructor;
 import com.edumy.catalog.dto.response.CourseDetailResponse.Lesson;
 import com.edumy.catalog.dto.response.LessonPreviewResponse;
 import com.edumy.catalog.dto.response.ReviewItemResponse;
+import com.edumy.shared.config.CacheConfig;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
@@ -65,6 +67,13 @@ public class CourseCatalogRepository {
     public record CourseCriteria(String keyword, Long categoryId, PriceFilter price) {
     }
 
+    /**
+     * Average of the <b>visible</b> reviews (one decimal, {@code null} when there is none) and their number: the
+     * immutable value of cache {@code catalog.rating} (key = course id).
+     */
+    public record RatingSummary(Double average, long count) {
+    }
+
     /** A course page found by slug: id and whether it is {@code hidden} (otherwise {@code published}). */
     public record CourseRef(Long id, boolean hidden) {
     }
@@ -85,17 +94,26 @@ public class CourseCatalogRepository {
                        GROUP BY e.course_id) rt ON rt.course_id = c.id
             """;
 
-    private static final String CARD_COLUMNS = """
+    private static final String CARD_COLUMNS_BASE = """
             c.id, c.slug, c.title, c.thumbnail_url, c.price, c.category_id, cat.name AS category_name,
-            u.id AS instructor_id, u.full_name AS instructor_name, rt.avg_rating,
-            COALESCE(rt.rating_count, 0) AS rating_count, c.published_at
+            u.id AS instructor_id, u.full_name AS instructor_name,""";
+
+    private static final String CARD_COLUMNS = CARD_COLUMNS_BASE + """
+             rt.avg_rating, COALESCE(rt.rating_count, 0) AS rating_count, c.published_at
             """;
 
-    private static final String CARD_FROM = """
+    /** The page by slug takes its rating from {@link #findRating} (cache {@code catalog.rating}), not from a join. */
+    private static final String DETAIL_COLUMNS = CARD_COLUMNS_BASE + """
+             NULL AS avg_rating, 0 AS rating_count, c.published_at
+            """;
+
+    private static final String CARD_FROM_BASE = """
             FROM courses c
             JOIN categories cat ON cat.id = c.category_id
             JOIN users u ON u.id = c.main_instructor_id
-            """ + RATINGS;
+            """;
+
+    private static final String CARD_FROM = CARD_FROM_BASE + RATINGS;
 
     private static final String ACTIVE_INSTRUCTOR_ROLE = """
             EXISTS (SELECT 1 FROM user_roles ur JOIN roles ro ON ro.id = ur.role_id
@@ -155,13 +173,16 @@ public class CourseCatalogRepository {
     // -------------------------------------------------------------------------------------------------- detail
 
     /**
-     * UC-G04: the course page by slug without the viewer context ({@code viewer = null}), when the course is
-     * {@code published} or {@code hidden}; three statements (course, co-instructors, outline).
+     * UC-G04: the course page by slug without the viewer context ({@code viewer = null}) and <b>without rating</b>
+     * ({@code averageRating = null}, {@code ratingCount = 0}: merge {@link #findRating} with
+     * {@link CourseDetailResponse#withRating}), when the course is {@code published} or {@code hidden}; three
+     * statements (course, co-instructors, outline). Not cached here ({@code CachedCourseQueryService} caches the
+     * composed page; an {@code Optional} is never cached).
      */
     public Optional<CourseDetailResponse> findDetail(String slug) {
-        Optional<Header> header = jdbc.sql("SELECT " + CARD_COLUMNS + """
+        Optional<Header> header = jdbc.sql("SELECT " + DETAIL_COLUMNS + """
                         , c.description, c.status, c.updated_at
-                        """ + CARD_FROM + " WHERE c.slug = :slug AND c.status IN ('published', 'hidden')")
+                        """ + CARD_FROM_BASE + " WHERE c.slug = :slug AND c.status IN ('published', 'hidden')")
                 .param("slug", slug)
                 .query((rs, n) -> new Header(card(rs), rs.getLong("instructor_id"), rs.getString("description"),
                         rs.getString("status"), instant(rs, "updated_at")))
@@ -178,6 +199,26 @@ public class CourseCatalogRepository {
                     new Instructor(h.mainInstructorId(), card.instructorName()), coInstructors, card.averageRating(),
                     card.ratingCount(), totalLessons, totalSeconds, card.publishedAt(), h.updatedAt(), chapters, null);
         });
+    }
+
+    /**
+     * Average and count of the visible reviews of {@code courseId}, one statement (always one row: a course without a
+     * visible review gives {@code (null, 0)}). Cached 10 min by course id ({@code catalog.rating}); evicted by
+     * {@code ReviewChanged}. Called through the Spring proxy from {@code CachedCourseQueryService}.
+     */
+    @Cacheable(cacheNames = CacheConfig.CATALOG_RATING, key = "#courseId")
+    public RatingSummary findRating(Long courseId) {
+        return jdbc.sql("""
+                        SELECT ROUND(AVG(r.rating), 1) AS avg_rating, COUNT(*) AS rating_count
+                        FROM course_reviews r
+                        JOIN enrollments e ON e.id = r.enrollment_id
+                        WHERE e.course_id = :courseId AND r.visibility_status = 'visible'""")
+                .param("courseId", courseId)
+                .query((rs, n) -> {
+                    BigDecimal average = rs.getBigDecimal("avg_rating");
+                    return new RatingSummary(average == null ? null : average.doubleValue(), rs.getLong("rating_count"));
+                })
+                .single();
     }
 
     /**

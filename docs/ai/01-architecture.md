@@ -152,7 +152,8 @@ catalog/
 ├── dto/request/  CourseSearchRequest (q, categoryId, price, sort — bound from query params)
 ├── dto/response/ CourseCardResponse, CourseDetailResponse, LessonPreviewResponse, CategoryResponse,
 │                 ReviewItemResponse, CertificateVerificationResponse
-├── service/      CourseCatalogQueryService, CategoryCatalogQueryService, CertificateVerificationService
+├── service/      CourseCatalogQueryService, CategoryCatalogQueryService, CertificateVerificationService,
+│                 CachedCourseQueryService (list + page-by-slug caches), CatalogCacheEvictor (@CacheEvict, called by the listener)
 ├── repository/   CourseCatalogRepository, CategoryCatalogRepository, CertificateLookupRepository   # JdbcClient, SELECT only
 └── listener/     CatalogCacheEvictionListener         # reacts to authoring/learning events
 ```

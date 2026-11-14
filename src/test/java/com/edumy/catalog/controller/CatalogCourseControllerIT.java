@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import java.util.Arrays;
 
+import com.edumy.support.CatalogCaches;
 import com.edumy.support.MySqlSeedSpringBootTest;
 import com.edumy.support.SeedUserTokens;
 import com.edumy.support.SqlStatementCounter;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.CacheManager;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
@@ -36,6 +38,8 @@ class CatalogCourseControllerIT {
     static final String COURSES = "/api/v1/catalog/courses";
     static final Integer[] NEWEST = {9, 8, 7, 4, 3, 6, 5, 2, 1};
 
+    @Autowired
+    CacheManager cacheManager;
     @Autowired
     MockMvc mvc;
     @Autowired
@@ -228,11 +232,13 @@ class CatalogCourseControllerIT {
     void list_statementCount_independentOfPageSize_noNPlusOne() throws Exception {
         list("?size=5").andExpect(status().isOk()); // warm-up
 
+        CatalogCaches.clear(cacheManager); // the list cache would answer without a statement (CatalogCacheIT)
         sql.reset();
         list("?size=5").andExpect(status().isOk()).andExpect(jsonPath("$.content", hasSize(5)));
         int small = sql.count();
         String smallStatements = sql.statements().toString();
 
+        CatalogCaches.clear(cacheManager);
         sql.reset();
         list("?size=20&sort=rating").andExpect(status().isOk()).andExpect(jsonPath("$.content", hasSize(9)));
         int large = sql.count();
@@ -241,10 +247,12 @@ class CatalogCourseControllerIT {
         assertThat(small).as(smallStatements).isEqualTo(1);
         assertThat(large).as(sql.statements().toString()).isEqualTo(small);
 
+        CatalogCaches.clear(cacheManager);
         sql.reset();
         list("?q=khong-ton-tai").andExpect(status().isOk());
         assertThat(sql.count()).as("empty search: page + suggestions " + sql.statements()).isEqualTo(2);
 
+        CatalogCaches.clear(cacheManager);
         sql.reset();
         list("?page=7&size=5").andExpect(status().isOk());
         assertThat(sql.count()).as("empty page past the end: page + count " + sql.statements()).isEqualTo(2);

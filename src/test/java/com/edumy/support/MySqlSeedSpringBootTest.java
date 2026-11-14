@@ -41,6 +41,6 @@ import org.springframework.test.context.TestPropertySource;
 @Import({SeedMySqlConfiguration.class, MutableClock.class, CapturingMailGateway.class, SqlStatementCounter.class,
         SeedUserTokens.class})
 @TestPropertySource(properties = "spring.flyway.locations=classpath:db/migration,classpath:db/seed")
-@ExtendWith({MutableClockResetExtension.class, CapturingMailGatewayResetExtension.class})
+@ExtendWith({MutableClockResetExtension.class, CapturingMailGatewayResetExtension.class, CatalogCaches.class})
 public @interface MySqlSeedSpringBootTest {
 }

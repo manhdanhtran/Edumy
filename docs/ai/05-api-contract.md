@@ -162,6 +162,13 @@ Rules: cache only immutable DTO records, never entities, never `Optional`. Evict
 Configure per-cache specs with a `CacheManagerCustomizer<CaffeineCacheManager>`; enable `recordStats()` and expose
 via Actuator `caches`/metrics in dev.
 
+P08 implementation notes (what is cached, how):
+- `catalog.categories` — `CategoryCatalogQueryService.activeCategories()` (`List.copyOf`, key `'active'`). `catalog.course-list` — `CachedCourseQueryService.search(SearchKey)`; the key is the record `(normalized q, categoryId, price, sort, page, size)` (value equals, no hash collision; `lap trinh` and `lập trình` share an entry). `catalog.course-detail` — `CachedCourseQueryService.publishedDetail(slug)`: the page **without** viewer context (the viewer part — owned / inCart / isInstructor — is read live on every call and added with `withViewer`), only for a `published` course; a not-found (`null`, never `Optional`) and a `hidden` page are never stored (`unless`). `catalog.rating` — `CourseCatalogRepository.findRating(courseId)` (`RatingSummary(average, count)`); the page by slug takes its rating from it (`findDetail` no longer joins the ratings: 4 statements uncached = course, co-instructors, outline, rating).
+- Eviction: `catalog.listener.CatalogCacheEvictionListener` (`@TransactionalEventListener(AFTER_COMMIT)`, synchronous) → `CatalogCacheEvictor` (`@CacheEvict`): `CategoryChanged` → categories; `CourseContentChanged`, `CourseApproved`, `CourseHidden`, `CourseUnhidden` → detail[slug]; `ReviewChanged` → rating[courseId] + detail[slug]. `CourseRejected` evicts nothing (a rejected course was never published). `course-list` is TTL only.
+- Accepted staleness beyond §5.3 (TTL-bounded): a category rename shows the old `categoryName` on a cached course page for up to 10 min (`CategoryChanged` carries no slug); main-instructor name change, instructor role revoke (co-instructor list) likewise.
+- Never cached: anything in commerce, carts, orders, progress, Q&A, per-user learning data (test: the set of cache names is exactly the 7 documented ones).
+- `caches` / `metrics` actuator endpoints: dev profile only, admin only (docs/ai/04 §4.5).
+
 ## 5.4 Endpoint catalog (R = real in phase 1, S = stub `STUB-P1`)
 ### identity
 | Method & path | UC | P1 |

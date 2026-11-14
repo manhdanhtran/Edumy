@@ -20,6 +20,7 @@ import com.edumy.authoring.api.CourseHidden;
 import com.edumy.authoring.api.CourseRejected;
 import com.edumy.authoring.api.CourseUnhidden;
 import com.edumy.shared.security.RoleCode;
+import com.edumy.support.CatalogCaches;
 import com.edumy.support.CourseFixtures;
 import com.edumy.support.JwtTestTokens;
 import com.edumy.support.JwtTestTokens.Session;
@@ -33,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.CacheManager;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -56,6 +58,8 @@ class AdminCourseReviewWriteIT {
     static final String CATALOG = "/api/v1/catalog/courses";
     static final List<String> ACTIONS = List.of("approve", "reject", "hide", "unhide");
 
+    @Autowired
+    CacheManager cacheManager;
     @Autowired
     MockMvc mvc;
     @Autowired
@@ -121,6 +125,7 @@ class AdminCourseReviewWriteIT {
                 .andExpect(jsonPath("$.publishedAt").value(startsWith("2026-11-14T04:00:")));
 
         // UC-A10 step 4: in the catalog at once (live SQL, no cache yet)
+        CatalogCaches.clear(cacheManager); // the list read before the approval is cached (60 s, no eviction)
         mvc.perform(get(CATALOG).param("categoryId", String.valueOf(category)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[*].id", contains(Math.toIntExact(course))));
@@ -358,12 +363,14 @@ class AdminCourseReviewWriteIT {
     }
 
     private void catalogHas(long courseId) throws Exception {
+        CatalogCaches.clear(cacheManager); // the list cache (60 s, no eviction) may hold the state before the write
         mvc.perform(get(CATALOG).param("categoryId", String.valueOf(category)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[*].id", contains(Math.toIntExact(courseId))));
     }
 
     private void catalogHasNot(long courseId) throws Exception {
+        CatalogCaches.clear(cacheManager);
         assertThat(courseId).isPositive();
         mvc.perform(get(CATALOG).param("categoryId", String.valueOf(category)))
                 .andExpect(status().isOk())
