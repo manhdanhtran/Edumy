@@ -118,7 +118,8 @@ shared/
 ├── security/    CurrentUser, @CurrentUserId, CurrentUserIdArgumentResolver, RoleCode
 ├── jpa/         CodeEnum, CodeEnumConverter
 ├── text/        VietnameseNormalizer, SlugGenerator
-├── validation/  StrongPassword (+ validator): password policy NFR-02, texts in ValidationMessages.properties
+├── validation/  StrongPassword (+ validator): password policy NFR-02; CoursePrice (+ validator): BR-07 price rule;
+│                texts in ValidationMessages.properties
 └── web/         StubSupport (X-Edumy-Stub), PageResponses
 ```
 
@@ -162,7 +163,8 @@ No `entity/`, no `mapper/` (SQL maps straight into response records).
 authoring/
 ├── package-info.java                 # allowedDependencies = {"shared", "identity :: api"}
 ├── api/          CourseQueryApi, CourseAccessApi, LessonQueryApi, SellableCourse, LessonRef,
-│                 CourseApproved, CourseRejected, CourseHidden, CourseUnhidden, CourseContentChanged, CoInstructorInvited
+│                 CourseApproved, CourseRejected, CourseHidden, CourseUnhidden, CourseContentChanged, CoInstructorInvited,
+│                 CategoryChanged
 ├── controller/   InstructorCourseController, ChapterController, LessonController, CoInstructorController,
 │                 InvitationController, AdminCategoryController, AdminCourseReviewController
 ├── dto/request/  CreateCourseRequest, UpdateCourseRequest, CreateChapterRequest, UpdateChapterRequest, ReorderRequest,
@@ -306,6 +308,8 @@ Consequences:
 |---|---|---|---|
 | `UserRegistered`, `EmailVerificationRequested`, `PasswordResetRequested`, `PasswordChanged` | identity | notification | `@ApplicationModuleListener` (async, after commit) |
 | `CourseApproved`, `CourseRejected`, `CourseHidden`, `CourseUnhidden`, `CourseContentChanged` | authoring | notification, catalog (cache), commerce (`CourseHidden`) | after commit |
+|  ↳ `CourseContentChanged` (courseId, slug) | published only for a **published or hidden** course (D-14 edit without re-review; P06-G1: UC-I03) | catalog (`catalog.course-detail` by slug, P08) | after commit |
+| `CategoryChanged` (categoryId) | authoring (UC-A06…A08: create, update, deactivate, delete) | catalog (`catalog.categories` eviction, P08) | after commit |
 | `CoInstructorInvited` | authoring | notification | async |
 | `OrderPaid` | commerce | notification (BR-20) | async — mail failure never touches the order |
 | `ReviewChanged` | learning | catalog (rating cache) | after commit |

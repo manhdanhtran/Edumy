@@ -68,6 +68,14 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     /** Slug pre-check at creation (uq_courses_slug still decides under concurrency). */
     boolean existsBySlug(String slug);
 
+    /**
+     * UC-I01 "slug trùng → tự thêm hậu tố": every slug equal to {@code base} or starting with {@code base-}, so the
+     * service can pick the lowest free numeric suffix in one statement. {@code base} matches the slug CHECK (only
+     * {@code a-z0-9-}), so it holds no LIKE wildcard.
+     */
+    @Query("select c.slug from Course c where c.slug = :base or c.slug like concat(:base, '-%')")
+    List<String> findSlugsWithBase(@Param("base") String base);
+
     /** D-21 / UC-A08: a used category is deactivated instead of deleted. */
     boolean existsByCategoryId(Long categoryId);
 

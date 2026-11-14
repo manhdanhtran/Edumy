@@ -63,6 +63,8 @@ public class ConstraintViolationTranslator {
             Map.entry("BR-37", ErrorCode.LESSON_COURSE_MISMATCH),
             Map.entry("uq_cart_items_cart_course", ErrorCode.CART_ITEM_DUPLICATE),
             Map.entry("uq_users_email", ErrorCode.EMAIL_ALREADY_REGISTERED), // concurrent registrations (UC-G05 E1)
+            Map.entry("uq_categories_name", ErrorCode.CATEGORY_ALREADY_EXISTS), // UC-A06/A07 E, concurrent writes
+            Map.entry("uq_categories_slug", ErrorCode.CATEGORY_ALREADY_EXISTS),
             // overlapping CHECK pairs (see above)
             Map.entry("ck_lessons_type", ErrorCode.INTERNAL_ERROR),
             Map.entry("ck_lessons_content_match", ErrorCode.INTERNAL_ERROR),

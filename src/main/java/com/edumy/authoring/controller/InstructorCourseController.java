@@ -1,18 +1,31 @@
 package com.edumy.authoring.controller;
 
+import java.net.URI;
+
+import com.edumy.authoring.dto.request.CreateCourseRequest;
+import com.edumy.authoring.dto.request.UpdateCourseRequest;
 import com.edumy.authoring.dto.response.InstructorCourseDetailResponse;
 import com.edumy.authoring.dto.response.InstructorCourseSummaryResponse;
 import com.edumy.authoring.dto.response.ReviewStatusResponse;
 import com.edumy.authoring.service.CourseQueryService;
+import com.edumy.authoring.service.CourseService;
+import com.edumy.authoring.service.CreateCourseCommand;
+import com.edumy.authoring.service.UpdateCourseCommand;
 import com.edumy.shared.security.CurrentUserId;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PagedModel;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -27,9 +40,25 @@ import org.springframework.web.bind.annotation.RestController;
 public class InstructorCourseController {
 
     private final CourseQueryService queries;
+    private final CourseService courses;
 
-    public InstructorCourseController(CourseQueryService queries) {
+    public InstructorCourseController(CourseQueryService queries, CourseService courses) {
         this.queries = queries;
+        this.courses = courses;
+    }
+
+    /**
+     * 201 + the new {@code draft} course (caller = main instructor, unique slug from the title). 422
+     * {@code COURSE_CATEGORY_UNAVAILABLE} (category unknown or inactive); 400 {@code VALIDATION_FAILED} (BR-07 price…).
+     */
+    @PostMapping
+    @PreAuthorize("@courseAccess.isActiveInstructor()")
+    @Operation(summary = "UC-I01 Tạo khóa học (bản nháp, người tạo là giảng viên chính)")
+    public ResponseEntity<InstructorCourseDetailResponse> create(@CurrentUserId Long userId,
+                                                                 @Valid @RequestBody CreateCourseRequest request) {
+        Long id = courses.create(userId, new CreateCourseCommand(request.title(), request.description(),
+                request.thumbnailUrl(), request.categoryId(), request.price()));
+        return ResponseEntity.created(URI.create("/api/v1/instructor/courses/" + id)).body(queries.detail(id, userId));
     }
 
     /** {@code page} (0-based), {@code size} (default 20, max 100); newest course first ({@code sort} is ignored). */
@@ -47,6 +76,33 @@ public class InstructorCourseController {
     @Operation(summary = "UC-I02 UC-I03 Xem chi tiết khóa học phụ trách (thông tin, chương, bài và nội dung, đồng GV)")
     public InstructorCourseDetailResponse detail(@PathVariable Long id, @CurrentUserId Long userId) {
         return queries.detail(id, userId);
+    }
+
+    /**
+     * Main instructor only (BR-06; co-instructor or stranger → 404). Only the fields sent change; the slug never does.
+     * 200 + the course · 409 {@code COURSE_NOT_EDITABLE} (pending_review, BR-33) · 422
+     * {@code COURSE_CATEGORY_UNAVAILABLE} · 400 {@code VALIDATION_FAILED}. Published / hidden: effective at once (D-14).
+     */
+    @PatchMapping("/{id}")
+    @PreAuthorize("@courseAccess.isMain(#id)")
+    @Operation(summary = "UC-I03 Cập nhật thông tin khóa học (tên, mô tả, ảnh, danh mục, giá)")
+    public InstructorCourseDetailResponse update(@PathVariable Long id, @CurrentUserId Long userId,
+                                                 @Valid @RequestBody UpdateCourseRequest request) {
+        courses.update(id, new UpdateCourseCommand(request.title(), request.description(), request.thumbnailUrl(),
+                request.categoryId(), request.price()));
+        return queries.detail(id, userId);
+    }
+
+    /**
+     * Main instructor only. 204 = deleted with its chapters, lessons and invitations · 409
+     * {@code COURSE_DELETE_FORBIDDEN} (published once, BR-19) · 409 {@code COURSE_NOT_EDITABLE} (pending_review).
+     */
+    @DeleteMapping("/{id}")
+    @PreAuthorize("@courseAccess.isMain(#id)")
+    @Operation(summary = "UC-I04 Xóa khóa học chưa từng công khai")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        courses.delete(id);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/{id}/review-status")

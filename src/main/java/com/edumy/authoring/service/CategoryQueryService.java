@@ -5,6 +5,7 @@ import java.util.List;
 import com.edumy.authoring.dto.response.AdminCategoryResponse;
 import com.edumy.authoring.mapper.CategoryMapper;
 import com.edumy.authoring.repository.CategoryRepository;
+import com.edumy.shared.error.BusinessException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,5 +25,11 @@ public class CategoryQueryService {
     /** Every category, active and inactive, by name, with the number of courses using it (D-21). One statement. */
     public List<AdminCategoryResponse> listAll() {
         return categories.findAllWithCourseCount().stream().map(mapper::toAdminResponse).toList();
+    }
+
+    /** One category as in {@link #listAll()} (answer of the UC-A06…A08 writes); unknown id → 404. One statement. */
+    public AdminCategoryResponse get(Long categoryId) {
+        return categories.findWithCourseCountById(categoryId).map(mapper::toAdminResponse)
+                .orElseThrow(BusinessException::notFound);
     }
 }

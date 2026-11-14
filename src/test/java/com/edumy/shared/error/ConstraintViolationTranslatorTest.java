@@ -121,6 +121,13 @@ class ConstraintViolationTranslatorTest {
                 "Duplicate entry 'a@b.vn' for key 'users.uq_users_email'", "23000", 1062)).orElseThrow();
         assertThat(email).isEqualTo(new TranslatedViolation(Kind.UNIQUE, 1062, "uq_users_email",
                 ErrorCode.EMAIL_ALREADY_REGISTERED));
+
+        for (String key : List.of("uq_categories_name", "uq_categories_slug")) { // UC-A06/A07 E, concurrent writes
+            var category = production.translate(new SQLException(
+                    "Duplicate entry 'x' for key 'categories." + key + "'", "23000", 1062)).orElseThrow();
+            assertThat(category).as(key).isEqualTo(new TranslatedViolation(Kind.UNIQUE, 1062, key,
+                    ErrorCode.CATEGORY_ALREADY_EXISTS));
+        }
     }
 
     /** MySQL reports only one of two overlapping CHECKs, so both names must give the same result. */

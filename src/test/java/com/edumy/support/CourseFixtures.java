@@ -10,9 +10,11 @@ import org.springframework.jdbc.support.KeyHolder;
 
 /**
  * Committed authoring / learning rows for {@link MySqlSpringBootTest} tests that go through HTTP (the request runs in
- * its own transaction, so the data must be committed). Plain SQL, no entity. Courses stay draft or pending_review,
- * never published, so the BR-19 trigger lets {@link #deleteAll()} remove them. Call {@link #deleteAll()} in
- * {@code @AfterEach} <b>before</b> {@code TestUsers.deleteAll()} (these rows reference the users).
+ * its own transaction, so the data must be committed). Plain SQL, no entity. A course marked published / hidden
+ * ({@code published_at} set) is reset to draft by {@link #deleteAll()} first, so the BR-19 trigger lets it go. Rows
+ * created through the API are removed too once {@link #trackCourse} / {@link #trackCategory} was called. Call
+ * {@link #deleteAll()} in {@code @AfterEach} <b>before</b> {@code TestUsers.deleteAll()} (these rows reference the
+ * users).
  */
 public class CourseFixtures {
 
@@ -38,6 +40,53 @@ public class CourseFixtures {
                 .params(mainInstructorId, category, "Khóa học " + suffix, "khoa hoc " + suffix, "khoa-hoc-" + suffix));
         courses.add(course);
         return course;
+    }
+
+    /** A new category ({@code active} or not), deleted by {@link #deleteAll()}. */
+    public long category(boolean active) {
+        String suffix = UUID.randomUUID().toString();
+        long category = insert(jdbc.sql("INSERT INTO categories (name, slug, is_active) VALUES (?, ?, ?)")
+                .params("Danh mục " + suffix, "danh-muc-" + suffix, active));
+        categories.add(category);
+        return category;
+    }
+
+    /** A draft free course of {@code mainInstructorId} in an existing category. */
+    public long draftCourse(long mainInstructorId, long categoryId) {
+        String suffix = UUID.randomUUID().toString();
+        long course = insert(jdbc.sql("""
+                        INSERT INTO courses (main_instructor_id, category_id, title, title_normalized, slug)
+                        VALUES (?, ?, ?, ?, ?)""")
+                .params(mainInstructorId, categoryId, "Khóa học " + suffix, "khoa hoc " + suffix,
+                        "khoa-hoc-" + suffix));
+        courses.add(course);
+        return course;
+    }
+
+    /** A course created through the API: {@link #deleteAll()} removes it (no-op if the test deleted it). */
+    public void trackCourse(long courseId) {
+        courses.add(courseId);
+    }
+
+    /** A category created through the API: {@link #deleteAll()} removes it (no-op if the test deleted it). */
+    public void trackCategory(long categoryId) {
+        categories.add(categoryId);
+    }
+
+    /**
+     * Sets {@code status} with the columns its CHECKs need, bypassing the state machine: {@code published} (and
+     * {@code published_at}), {@code hidden} / {@code rejected} (+ {@code review_note}); {@code publishedOnce} also sets
+     * {@code published_at} on a rejected course (a state the machine never produces, for BR-19 checks).
+     */
+    public void setStatus(long courseId, String status, boolean publishedOnce) {
+        jdbc.sql("""
+                        UPDATE courses SET status = ?, review_note = CASE WHEN ? IN ('rejected', 'hidden') THEN 'Lý do' END,
+                               published_at = CASE WHEN ? THEN CURRENT_TIMESTAMP(6) END,
+                               submitted_at = CASE WHEN ? = 'pending_review' THEN CURRENT_TIMESTAMP(6) END
+                        WHERE id = ?""")
+                .params(status, status, publishedOnce || "published".equals(status) || "hidden".equals(status),
+                        status, courseId)
+                .update();
     }
 
     /** draft → pending_review (with the submitted_at that ck_courses_submitted_at requires). */
@@ -115,6 +164,8 @@ public class CourseFixtures {
             jdbc.sql("DELETE FROM enrollments WHERE id = ?").param(id).update();
         }
         for (Long id : courses) {
+            // BR-19 trigger: a course with published_at cannot be deleted, so reset it to a never-published draft
+            jdbc.sql("UPDATE courses SET status = 'draft', published_at = NULL WHERE id = ?").param(id).update();
             jdbc.sql("DELETE FROM courses WHERE id = ?").param(id).update();
         }
         for (Long id : categories) {

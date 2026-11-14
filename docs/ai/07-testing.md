@@ -31,8 +31,8 @@ Rules
   the `@Import` of `@MySqlSpringBootTest`, `@TestComponent` + `@Profile("test")`) exposes `GET /api/v1/test-probe/...`
   guarded by each access bean. `support/IdorAssertions.assertSameNotFound(mvc, othersResource, missing)` asserts both
   are 404 `RESOURCE_NOT_FOUND` with bodies equal except `traceId` / `instance`. `support/CourseFixtures` inserts committed
-  course / chapter / lesson / enrollment / question / answer rows (draft courses, so BR-19 lets `deleteAll()` remove
-  them; call it before `TestUsers.deleteAll()`). Unit tests of access beans set the caller with
+  course / chapter / lesson / enrollment / question / answer rows (a course marked published/hidden with `setStatus` is reset to a never-published draft by `deleteAll()` so the
+  BR-19 trigger lets it go; API-created rows via `trackCourse` / `trackCategory`; call it before `TestUsers.deleteAll()`). Unit tests of access beans set the caller with
   `support/TestSecurityContext.authenticate(userId, jwtRoles...)` and mock `RoleQueryApi` for the database roles.
 - `*IT` classes run via surefire in `./mvnw test` (decision in V1); if the suite gets too slow they move to failsafe/`verify`.
 - Never delete or `@Disabled` a failing test to finish a task; report it.

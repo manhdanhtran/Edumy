@@ -69,6 +69,8 @@
 | `CART_OWN_COURSE` | 422 | BR-32 |
 | `COURSE_CO_INSTRUCTOR_IS_MAIN` | 422 | BR-02; trigger: the invited instructor is the course's main instructor |
 | `LESSON_COURSE_MISMATCH` | 422 | BR-24 / BR-37; triggers: the lesson does not belong to the enrollment's course |
+| `COURSE_CATEGORY_UNAVAILABLE` | 422 | UC-I01 E "danh mục ngừng sử dụng" / UC-I03: the chosen category does not exist or is inactive (keeping a course's current, since deactivated category is allowed) |
+| `CATEGORY_ALREADY_EXISTS` | 409 | UC-A06 / UC-A07 E "trùng tên hoặc slug": pre-check (`errors[].field` = `name` / `slug`; name compared accent/case-insensitively like the ai_ci UNIQUE) + `uq_categories_name` / `uq_categories_slug` |
 | `AUTH_LOGIN_TEMPORARILY_BLOCKED` | 429 | NFR-03: 5 consecutive failed logins for the email → every login for it blocked 15 min (correct password too); header `Retry-After` (docs/ai/04 §4.4) |
 | `TOKEN_RESEND_TOO_SOON` | 429 | D-03: resend of the verification code within 60 s of the last one (forgot password never shows it, Q3) |
 | `RATE_LIMITED` | 429 | NFR-03: certificate verification over 30 req/min per IP; header `Retry-After` (docs/ai/04 §4.4) |
@@ -94,6 +96,7 @@
   | `BR-24`, `BR-37` | `LESSON_COURSE_MISMATCH` | 422 |
   | `uq_cart_items_cart_course` | `CART_ITEM_DUPLICATE` | 409 |
   | `uq_users_email` | `EMAIL_ALREADY_REGISTERED` | 409 |
+  | `uq_categories_name`, `uq_categories_slug` | `CATEGORY_ALREADY_EXISTS` | 409 |
   | `ck_lessons_type` + `ck_lessons_content_match`; `ck_orders_status` + `ck_orders_state`; `ck_enrollments_source` + `ck_enrollments_source_order` | `INTERNAL_ERROR` | 500 |
 
   An unknown value in these columns breaks two overlapping CHECKs and MySQL reports only one of them, so **both names of
@@ -135,7 +138,7 @@ Bean Validation texts are separate from the error-code texts above (they come fr
 ## 5.3 Caching (Spring Cache + Caffeine)
 | Cache | Key | TTL | Evicted by |
 |---|---|---|---|
-| `catalog.categories` | `'active'` | 1 h | category create/update/deactivate |
+| `catalog.categories` | `'active'` | 1 h | `CategoryChanged` (category create/update/deactivate/delete) |
 | `catalog.course-detail` | slug | 10 min | `CourseContentChanged`, `CourseApproved/Hidden/Unhidden`, `ReviewChanged` |
 | `catalog.course-list` | hash of (q, categoryId, price, sort, page, size) | 60 s | TTL only (short, accepted staleness) |
 | `catalog.rating` | courseId | 10 min | `ReviewChanged` |
@@ -308,6 +311,38 @@ Authoring reads (P05):
   (`sort` ignored). 3 statements per full page. UC-A10 step 1 (admin reads the whole content before deciding) uses
   `GET /learn/courses/{courseId}` + `GET /learn/lessons/{lessonId}` (D-32: admin views content without enrollment, any
   course status) — no authoring endpoint for it.
+
+Authoring writes (P06-G1, UC-A06…A08, UC-I01, I03, I04). Bodies are JSON; PATCH = only the fields sent change
+(absent or `null` = unchanged).
+- `POST /admin/categories` `CategoryRequest {name, slug?, active?}` → **201** + `Location` + `AdminCategoryResponse`.
+  `name` required (trimmed, ≤100); `slug` optional (≤120, `^[a-z0-9]+(-[a-z0-9]+)*$`), generated from the name by
+  `shared.text.SlugGenerator` when absent (a name without any letter/digit and no slug → 400 on `slug`); `active`
+  defaults to `true`. 409 `CATEGORY_ALREADY_EXISTS` (name or slug taken, `errors[].field` says which).
+- `PATCH /admin/categories/{id}` `CategoryRequest` → **200** `AdminCategoryResponse`. A rename keeps the slug (it
+  changes only when `slug` is sent); `active:false` / `true` deactivates / reactivates (same value = no-op). 409
+  `CATEGORY_ALREADY_EXISTS` · 404 unknown id.
+- `DELETE /admin/categories/{id}` (D-21) → **204** deleted (no course of any status uses it) · **200**
+  `AdminCategoryResponse` with `active:false` when courses use it (only deactivated, they keep it) · 409
+  `DATA_CONFLICT` used and already inactive · 404 unknown id.
+- Every category change publishes `CategoryChanged(categoryId)` (catalog cache, P08). Admin only (route rule +
+  `hasRole('ADMIN')`): 401 without token, 403 `ACCESS_DENIED` for other roles.
+- `POST /instructor/courses` `CreateCourseRequest {title, description?, thumbnailUrl?, categoryId, price}` → **201** +
+  `Location` + `InstructorCourseDetailResponse` (status `draft`, caller = main instructor). title ≤200 (trimmed,
+  `title_normalized` computed), description ≤16 383 chars (TEXT column), thumbnailUrl ≤500 `http(s)://…`, price BR-07
+  (`edumy.course.price.invalid`, 400). Slug = `SlugGenerator(title)` (≤200 chars, `khoa-hoc` when the title has no
+  letter/digit); taken → lowest free numeric suffix `-2`, `-3`… (UC-I01 "slug trùng → tự thêm hậu tố"); a concurrent
+  create of the same slug → 409 `DATA_CONFLICT` (`uq_courses_slug`). 422 `COURSE_CATEGORY_UNAVAILABLE` (unknown or
+  inactive category) · 403 without an active instructor role in the DB (BR-26).
+- `PATCH /instructor/courses/{id}` `UpdateCourseRequest {title?, description?, thumbnailUrl?, categoryId?, price?}` →
+  **200** detail. `@courseAccess.isMain` (BR-06: co-instructor / stranger → 404, revoked role → 403); 409
+  `COURSE_NOT_EDITABLE` while `pending_review` (BR-33, also for `{}`); `""` clears description / thumbnail; the slug
+  never changes (SRS UC-I03 lists name, description, image, category, price); a **new** category must be active (422),
+  the current one may stay even if deactivated since. Published / hidden courses change at once without review (D-14,
+  the new price applies to later orders) and publish `CourseContentChanged(courseId, slug)`; a rejected course stays
+  rejected.
+- `DELETE /instructor/courses/{id}` → **204** (chapters, lessons, invitations by ON DELETE CASCADE). Main instructor
+  only. 409 `COURSE_DELETE_FORBIDDEN` when `published_at` is set whatever the status now (BR-19; the V5 trigger maps to
+  the same code) · 409 `COURSE_NOT_EDITABLE` while `pending_review`.
 
 ### commerce
 | Method & path | UC | P1 |
