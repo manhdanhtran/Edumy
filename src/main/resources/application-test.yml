@@ -4,6 +4,8 @@ spring:
     locations: classpath:db/migration   # no dev seed in tests
 
 edumy:
+  scheduler:
+    enabled: false   # tests call the services directly (P11-e); SchedulerBeansTest covers the switch
   security:
     jwt:
       secret: bSLDLXBtujvgr0zpYoZNZGbn9pMzRaa4W358RrPR83M=   # TEST ONLY

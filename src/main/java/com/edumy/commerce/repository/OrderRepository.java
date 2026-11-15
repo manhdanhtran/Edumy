@@ -69,6 +69,33 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("select o from Order o where o.id = :id")
     Optional<Order> findByIdForUpdate(@Param("id") Long id);
 
+    /**
+     * Scheduler claim (NFR-09, ADR-011): one pending order whose pending attempt's QR expired at {@code now}, oldest
+     * expiry first (ix_payment_pending_expiry), locked {@code FOR UPDATE OF o SKIP LOCKED} — a row another instance (or a
+     * student request) holds is skipped, never waited for. Only the {@code orders} row is locked here (the attempt is
+     * locked next, after it: lock order). {@code seen} = ids already handled in this run; never empty (sentinel
+     * {@code -1}), so no {@code IN ()} is generated.
+     */
+    @Query(nativeQuery = true, value = """
+            SELECT o.id FROM orders o JOIN payment_transactions p ON p.order_id = o.id
+            WHERE p.status = 'pending' AND p.qr_expires_at <= :now AND o.status = 'pending' AND o.id NOT IN (:seen)
+            ORDER BY p.qr_expires_at, o.id
+            LIMIT 1
+            FOR UPDATE OF o SKIP LOCKED""")
+    Optional<Long> claimOrderWithExpiredQr(@Param("now") Instant now, @Param("seen") java.util.Collection<Long> seen);
+
+    /**
+     * Scheduler claim (BR-29, AC-22): one pending order created at or before {@code cutoff} (now − 24 h), oldest first
+     * (ix_orders_pending_created), {@code FOR UPDATE SKIP LOCKED}; {@code seen} as above (never empty).
+     */
+    @Query(nativeQuery = true, value = """
+            SELECT o.id FROM orders o
+            WHERE o.status = 'pending' AND o.created_at <= :cutoff AND o.id NOT IN (:seen)
+            ORDER BY o.created_at, o.id
+            LIMIT 1
+            FOR UPDATE SKIP LOCKED""")
+    Optional<Long> claimOverdueOrder(@Param("cutoff") Instant cutoff, @Param("seen") java.util.Collection<Long> seen);
+
     /** Order-code generation: pre-check (uq_orders_order_code still decides under concurrency). */
     boolean existsByOrderCode(String orderCode);
 

@@ -34,7 +34,7 @@ public record EdumyProperties(
     public record Cors(@DefaultValue List<String> allowedOrigins) {
     }
 
-    /** Phase 1: every scheduler is disabled (ADR-005). */
+    /** {@code edumy.scheduler.enabled}: timers on (P11-e, NFR-09); {@code false} in tests. Interval / initial delay are read by {@code @Scheduled}. */
     public record Scheduler(@DefaultValue("false") boolean enabled) {
     }
 

@@ -39,6 +39,15 @@ public interface UserTokenRepository extends JpaRepository<UserToken, Long> {
             """)
     int invalidateUnused(@Param("userId") Long userId, @Param("type") TokenType type, @Param("now") Instant now);
 
+    /**
+     * Cleanup timer (SRS §6 "chỉ được xóa vật lý … mã xác thực đã hết hạn quá 30 ngày", P11-e): deletes at most
+     * {@code limit} codes that expired before {@code cutoff}; returns the number deleted (call again until it is below
+     * {@code limit}). Idempotent, so two instances running it at once only delete each row once.
+     */
+    @Modifying
+    @Query(nativeQuery = true, value = "DELETE FROM user_tokens WHERE expires_at < :cutoff LIMIT :limit")
+    int deleteExpiredBefore(@Param("cutoff") Instant cutoff, @Param("limit") int limit);
+
     /** Creation time of the latest code of the user + type: resend cooldown 60 s (BR-34, D-03, docs/ai/04 §4.4). */
     @Query("select max(t.createdAt) from UserToken t where t.user.id = :userId and t.tokenType = :type")
     Optional<Instant> findLatestCreatedAt(@Param("userId") Long userId, @Param("type") TokenType type);

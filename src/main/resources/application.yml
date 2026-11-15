@@ -56,7 +56,9 @@ edumy:
   cors:
     allowed-origins: []
   scheduler:
-    enabled: false   # phase 1: all schedulers are stubs (ADR-005)
+    enabled: true    # P11-e (NFR-09): QR expiry, 24 h order expiry, code cleanup; false in application-test.yml
+    interval: PT5M
+    initial-delay: PT1M
   payment:
     provider: fake
   frontend:
