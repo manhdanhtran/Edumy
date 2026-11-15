@@ -24,7 +24,7 @@ edumy:
   frontend:
     base-url: http://localhost:5173
   mail:
-    from: no-reply@edumy.local
+    from: no-reply@edumy.test
   cors:
     allowed-origins:
       - http://localhost:5173

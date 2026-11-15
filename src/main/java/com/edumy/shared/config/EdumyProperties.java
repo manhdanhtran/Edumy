@@ -49,6 +49,6 @@ public record EdumyProperties(
     }
 
     /** Sender address of every email ({@code From:}). */
-    public record Mail(@DefaultValue("no-reply@edumy.local") String from) {
+    public record Mail(@DefaultValue("no-reply@edumy.test") String from) {
     }
 }

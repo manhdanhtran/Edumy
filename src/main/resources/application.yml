@@ -64,4 +64,4 @@ edumy:
   frontend:
     base-url: ${EDUMY_FRONTEND_BASE_URL:http://localhost:5173}   # SPA origin for links in emails (Q5)
   mail:
-    from: ${EDUMY_MAIL_FROM:no-reply@edumy.local}
+    from: ${EDUMY_MAIL_FROM:no-reply@edumy.test}

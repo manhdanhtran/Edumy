@@ -113,6 +113,6 @@ class JwtIssuerTest {
                 new EdumyProperties.Scheduler(false),
                 new EdumyProperties.Payment("fake"),
                 new EdumyProperties.Frontend("http://localhost:5173"),
-                new EdumyProperties.Mail("no-reply@edumy.local"));
+                new EdumyProperties.Mail("no-reply@edumy.test"));
     }
 }
