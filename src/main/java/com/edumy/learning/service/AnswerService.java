@@ -113,12 +113,27 @@ public class AnswerService {
         log.info("Answer deleted: answerId={}, userId={}", answerId, userId);
     }
 
-    /** The answer locked, only if the caller wrote it and its question is not deleted (otherwise 404, NFR-01). */
+    /**
+     * The answer locked, only if the caller wrote it and its question is not deleted (otherwise 404, NFR-01). P10
+     * (business review): a question hidden by an admin freezes its thread for the authors too → 409
+     * {@code QA_CONTENT_HIDDEN_BY_ADMIN} (BR-41, UC-I21 E2); an <b>instructor-type</b> answer may only be changed while
+     * its author still instructs the course with an active role — removed, left or revoked → 403
+     * {@code QA_REPLY_NOT_ALLOWED} (UC-I21 E1 covers A1; UC-I16 post-condition, UC-A05 step 4; D-43 "phản hồi cũ giữ
+     * nguyên").
+     */
     private QuestionAnswer own(Long userId, Long answerId) {
         QuestionAnswer answer = answers.findByIdForUpdate(answerId).orElseThrow(BusinessException::notFound);
+        CourseQuestion question = answer.getQuestion();
         if (!answer.isAuthoredBy(userId) || answer.getVisibilityStatus() == ContentStatus.DELETED
-                || answer.getQuestion().getVisibilityStatus() == ContentStatus.DELETED) {
+                || question.getVisibilityStatus() == ContentStatus.DELETED) {
             throw BusinessException.notFound();
+        }
+        if (question.getVisibilityStatus() == ContentStatus.HIDDEN) {
+            throw new BusinessException(ErrorCode.QA_CONTENT_HIDDEN_BY_ADMIN);
+        }
+        if (answer.getAuthorType() == AuthorType.INSTRUCTOR
+                && !courseAccess.isCourseInstructor(userId, question.getEnrollment().getCourseId())) {
+            throw new BusinessException(ErrorCode.QA_REPLY_NOT_ALLOWED);
         }
         return answer;
     }

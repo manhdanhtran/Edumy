@@ -134,14 +134,14 @@ class LearningModuleIT {
     }
 
     @Test
-    void createReview_refused_publishesNothing_BR18(PublishedEvents events) {
+    void createReview_twiceUpdatesTheSameRow_refusedPublishesNothing_BR18_AC14(PublishedEvents events) {
         TestUser stranger = users.create(RoleCode.STUDENT);
         reviews.create(student.id(), course, 5, "Lần một");
 
-        assertCode(() -> reviews.create(student.id(), course, 4, "Lần hai"), ErrorCode.DATA_CONFLICT); // BR-18
+        assertThat(reviews.create(student.id(), course, 4, "Lần hai").created()).isFalse(); // AC-14: same row
         assertCode(() -> reviews.create(stranger.id(), course, 4, "Chưa ghi danh"), ErrorCode.ENROLLMENT_REQUIRED);
 
-        assertThat(events.ofType(ReviewChanged.class)).hasSize(1);
+        assertThat(events.ofType(ReviewChanged.class)).hasSize(2); // create + update, nothing for the refusal
         assertThat(jdbc.sql("SELECT COUNT(*) FROM course_reviews WHERE enrollment_id = ?").param(enrollment)
                 .query(Long.class).single()).isEqualTo(1L);
     }

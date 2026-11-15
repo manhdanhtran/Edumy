@@ -34,13 +34,15 @@ public class QuestionService {
     private final EnrollmentRepository enrollments;
     private final LessonQueryApi lessons;
     private final QaQueryService queries;
+    private final OwnCourseGuard ownCourse;
     private final Clock clock;
 
     @PersistenceContext
     private EntityManager em;
 
     public QuestionService(CourseQuestionRepository questions, EnrollmentRepository enrollments,
-                           LessonQueryApi lessons, QaQueryService queries, Clock clock) {
+                           LessonQueryApi lessons, QaQueryService queries, OwnCourseGuard ownCourse, Clock clock) {
+        this.ownCourse = ownCourse;
         this.questions = questions;
         this.enrollments = enrollments;
         this.lessons = lessons;
@@ -51,12 +53,14 @@ public class QuestionService {
     /**
      * UC-S17: a new visible, unresolved question of the caller's enrollment. No enrollment → 404 (E1, same as an
      * unknown course); a lesson that is not a lesson of this course (or does not exist) → 422
-     * {@code LESSON_COURSE_MISMATCH} (BR-37; trigger {@code trg_course_questions_lesson_course} is the backstop).
+     * {@code LESSON_COURSE_MISMATCH} (BR-37; trigger {@code trg_course_questions_lesson_course} is the backstop). An
+     * instructor of the course who is also enrolled answers, not asks → 422 {@code ENROLLMENT_OWN_COURSE} (BR-32, P10).
      */
     @Transactional
     public QuestionThreadResponse ask(Long studentId, Long courseId, Long lessonId, String title, String content) {
         Enrollment enrollment = enrollments.findByStudentIdAndCourseId(studentId, courseId)
                 .orElseThrow(BusinessException::notFound);
+        ownCourse.requireNotInstructor(studentId, courseId); // BR-32 / RBAC §3.3
         if (lessonId != null && !courseId.equals(lessons.findCourseId(lessonId).orElse(null))) {
             throw new BusinessException(ErrorCode.LESSON_COURSE_MISMATCH);
         }

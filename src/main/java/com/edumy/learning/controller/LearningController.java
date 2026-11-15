@@ -62,7 +62,7 @@ public class LearningController {
     /** 204. Students: the lesson's last-accessed time moves ("Học tiếp"). Instructor / admin: no enrollment, no-op (D-32). */
     @PostMapping("/lessons/{lessonId}/visit")
     @PreAuthorize("@enrollmentAccess.canViewLesson(#lessonId)")
-    @Operation(summary = "D-34 Ghi nhận thời điểm truy cập bài học (Học tiếp); GV / Admin không có tiến độ")
+    @Operation(summary = "UC-S09 D-34 Ghi nhận thời điểm truy cập bài học (Học tiếp); GV / Admin không có tiến độ")
     public ResponseEntity<Void> visit(@PathVariable Long lessonId, @CurrentUserId Long userId) {
         progress.visit(userId, lessonId);
         return ResponseEntity.noContent().build();

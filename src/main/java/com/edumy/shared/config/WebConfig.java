@@ -3,6 +3,8 @@ package com.edumy.shared.config;
 import java.util.List;
 
 import com.edumy.shared.security.CurrentUserIdArgumentResolver;
+import com.edumy.shared.web.StubSupport;
+import com.edumy.shared.web.TraceIdFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.data.web.config.EnableSpringDataWebSupport;
@@ -40,7 +42,10 @@ class WebConfig implements WebMvcConfigurer {
                 .allowedOrigins(origins.toArray(String[]::new))
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowCredentials(true) // refresh cookie edumy_rt
-                .exposedHeaders(HttpHeaders.RETRY_AFTER) // 429 of the abuse limiters (docs/ai/04 §4.4)
+                // readable by the SPA on another origin (P10 SC-M3): 429 Retry-After (docs/ai/04 §4.4), Location of
+                // every 201, the certificate PDF file name, the trace id and the phase-1 stub marker
+                .exposedHeaders(HttpHeaders.RETRY_AFTER, HttpHeaders.LOCATION, HttpHeaders.CONTENT_DISPOSITION,
+                        TraceIdFilter.HEADER, StubSupport.HEADER)
                 .maxAge(3600);
     }
 

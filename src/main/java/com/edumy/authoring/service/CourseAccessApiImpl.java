@@ -34,6 +34,11 @@ class CourseAccessApiImpl implements CourseAccessApi {
     }
 
     @Override
+    public boolean hasInstructorRelation(Long userId, Long courseId) {
+        return userId != null && courseId != null && courses.isCourseInstructor(courseId, userId); // no role check
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public java.util.Set<Long> findInstructedCourseIds(Long userId) {
         if (userId == null || !roles.hasActiveRole(userId, RoleCode.INSTRUCTOR)) { // BR-26, D-07

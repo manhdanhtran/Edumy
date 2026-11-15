@@ -17,6 +17,13 @@ public interface CourseAccessApi {
     boolean isCourseInstructor(Long userId, Long courseId);
 
     /**
+     * BR-32 relation, <b>whatever the role state</b>: {@code userId} is the main instructor of {@code courseId} or a
+     * co-instructor with an {@code accepted} invitation — also after the instructor role was revoked (P10: a former
+     * instructor still may not buy, enroll in, review or earn a certificate of a course they built; RBAC §3.3).
+     */
+    boolean hasInstructorRelation(Long userId, Long courseId);
+
+    /**
      * Ids of every course {@code userId} instructs (main or accepted co-instructor), one query; empty without an active
      * instructor role (BR-26). The set is immutable.
      */

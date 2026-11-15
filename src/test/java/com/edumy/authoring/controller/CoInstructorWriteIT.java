@@ -27,6 +27,7 @@ import com.edumy.support.CapturingMailGateway;
 import com.edumy.support.CourseFixtures;
 import com.edumy.support.IdorAssertions;
 import com.edumy.support.JwtTestTokens;
+import com.edumy.support.LockWaits;
 import com.edumy.support.JwtTestTokens.Session;
 import com.edumy.support.MutableClock;
 import com.edumy.support.MySqlSpringBootTest;
@@ -48,6 +49,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.transaction.PlatformTransactionManager;
 
 /**
  * Co-instructor invitations through the real filter chain and MySQL: UC-I13 invite (E1 not eligible, E2 already
@@ -78,6 +80,8 @@ class CoInstructorWriteIT {
     ConstraintViolationTranslator translator;
     @Autowired
     MutableClock clock;
+    @Autowired
+    PlatformTransactionManager txManager;
     @Autowired
     CapturingMailGateway mails;
 
@@ -231,6 +235,26 @@ class CoInstructorWriteIT {
         assertThat(withoutTraceAndInstance(lockedAccount)).isEqualTo(withoutTraceAndInstance(unknown));
         assertThat(rows(course)).isZero();
         assertThat(events.stream(CoInstructorInvited.class)).isEmpty();
+    }
+
+    /**
+     * P10 DT-B1 (lost update): the invitee accepts while the main instructor's removal holds the course lock. The
+     * accept must read the invitation as committed after the lock (READ COMMITTED, ADR-010) — 409, still removed —
+     * never the stale "pending" of a snapshot taken before the lock, which would resurrect the co-instructor.
+     */
+    @Test
+    void accept_racingARemoveThatHoldsTheCourseLock_409NotPending_staysRemoved_noLostUpdate() throws Exception {
+        long id = fixtures.coInstructor(course, invitee.userId(), main.userId(), "pending");
+
+        MvcResult result = LockWaits.whileLockedThenCommit(txManager, jdbc, db -> {
+            db.sql("SELECT id FROM courses WHERE id = ? FOR UPDATE").param(course).query(Long.class).single();
+            db.sql("UPDATE course_co_instructors SET invitation_status = 'removed' WHERE id = ?").param(id).update();
+        }, () -> mvc.perform(post(INVITATIONS + "/" + id + "/accept")
+                .header(HttpHeaders.AUTHORIZATION, invitee.bearer())).andReturn());
+
+        jsonPath("$.code").value("INVITATION_NOT_PENDING").match(result);
+        assertThat(result.getResponse().getStatus()).isEqualTo(409);
+        assertThat(row(course, invitee.userId()).get("invitation_status")).isEqualTo("removed");
     }
 
     // -------------------------------------------------------------------------------- UC-I13 E4 resend (P10)

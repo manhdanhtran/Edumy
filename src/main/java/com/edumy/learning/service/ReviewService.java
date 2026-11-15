@@ -45,6 +45,7 @@ public class ReviewService {
     private final EnrollmentRepository enrollments;
     private final CourseQueryApi courses;
     private final ReviewMapper mapper;
+    private final OwnCourseGuard ownCourse;
     private final ApplicationEventPublisher events;
     private final Clock clock;
 
@@ -52,7 +53,9 @@ public class ReviewService {
     private EntityManager em;
 
     public ReviewService(CourseReviewRepository reviews, EnrollmentRepository enrollments, CourseQueryApi courses,
-                         ReviewMapper mapper, ApplicationEventPublisher events, Clock clock) {
+                         ReviewMapper mapper, OwnCourseGuard ownCourse, ApplicationEventPublisher events,
+                         Clock clock) {
+        this.ownCourse = ownCourse;
         this.reviews = reviews;
         this.enrollments = enrollments;
         this.courses = courses;
@@ -66,9 +69,10 @@ public class ReviewService {
      * for a <b>published</b> course only (its id is public, so the SPA sends the caller to the course page, UC-S09) —
      * a draft / pending / rejected / hidden course without enrollment answers the 404 of an unknown id (NFR-01, P10
      * 403/404 principle; enrolled students still review hidden courses, BR-31);
+     * an instructor of the course (enrolled before being invited) → 422 {@code ENROLLMENT_OWN_COURSE} (BR-32, P10);
      * no review yet → new visible review; withdrawn → the same row is re-rated and visible again (step 3); visible →
-     * 409 {@code DATA_CONFLICT} (step 3 sends the student to UC-S13, BR-18); hidden by an admin → 409
-     * {@code REVIEW_HIDDEN_BY_ADMIN} (E2, BR-35).
+     * the same row is updated as by UC-S13 (AC-14 "Bản ghi hiện có được cập nhật; không có bản ghi thứ hai", BR-18,
+     * P10 — was 409 before); hidden by an admin → 409 {@code REVIEW_HIDDEN_BY_ADMIN} (E2, BR-35).
      */
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Result create(Long studentId, Long courseId, int rating, String comment) {
@@ -79,14 +83,14 @@ public class ReviewService {
         Enrollment enrollment = enrollments.findByStudentIdAndCourseIdForUpdate(studentId, courseId)
                 .orElseThrow(() -> course.published() ? new BusinessException(ErrorCode.ENROLLMENT_REQUIRED)
                         : BusinessException.notFound());
+        ownCourse.requireNotInstructor(studentId, courseId); // BR-32: no rating of a course one teaches
         CourseReview review = reviews.findByEnrollmentId(enrollment.getId()).orElse(null);
         boolean created = review == null;
         if (created) {
             review = reviews.save(CourseReview.create(enrollment, rating, comment, clock.instant()));
+        } else if (review.isVisible()) {
+            review.edit(rating, comment); // AC-14 / BR-18: the existing review is updated, never a second one
         } else {
-            if (review.isVisible()) {
-                throw new BusinessException(ErrorCode.DATA_CONFLICT); // BR-18: one review per enrollment, use UC-S13
-            }
             review.update(rating, comment); // hidden → REVIEW_HIDDEN_BY_ADMIN (BR-35); withdrawn → visible
         }
         ReviewResponse response = flushAndRead(review);
@@ -100,6 +104,7 @@ public class ReviewService {
     @Transactional
     public ReviewResponse update(Long studentId, Long reviewId, int rating, String comment) {
         CourseReview review = reviews.findOwnForUpdate(reviewId, studentId).orElseThrow(BusinessException::notFound);
+        ownCourse.requireNotInstructor(studentId, review.getEnrollment().getCourseId()); // BR-32
         review.edit(rating, comment);
         ReviewResponse response = flushAndRead(review);
         publish(review);

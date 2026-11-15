@@ -375,6 +375,42 @@ class AnswerWriteIT {
 
     // ---------------------------------------------------------------------------------------------------- helpers
 
+    /**
+     * P10 business review BC-M2 (UC-I21 E1 covers A1; UC-I16 post-condition; UC-A05 step 4; D-43): a removed
+     * co-instructor and a revoked instructor can no longer edit or delete their old instructor answers — 403
+     * {@code QA_REPLY_NOT_ALLOWED}, the answer stays as it was ("phản hồi cũ giữ nguyên").
+     */
+    @Test
+    void editOrDelete_instructorAnswer_afterRemovalOrRoleRevoke_403_answerUnchanged_UCI21E1() throws Exception {
+        long coAnswer = fixtures.answer(question, coInstructor.userId(), "instructor");
+        long mainAnswer = fixtures.answer(question, instructor.userId(), "instructor");
+        jdbc.sql("UPDATE course_co_instructors SET invitation_status = 'removed' WHERE course_id = ? AND instructor_id = ?")
+                .params(course, coInstructor.userId()).update();
+        users.revokeRole(instructor.userId(), RoleCode.INSTRUCTOR); // no earlier request: no cached role either
+
+        for (long[] pair : new long[][] {{coAnswer, 0}, {mainAnswer, 1}}) {
+            Session author = pair[1] == 0 ? coInstructor : instructor;
+            expectProblem(mvc.perform(edit(author, pair[0], "{\"content\": \"Sửa sau khi mất quyền\"}")), 403,
+                    "QA_REPLY_NOT_ALLOWED");
+            expectProblem(mvc.perform(remove(author, pair[0])), 403, "QA_REPLY_NOT_ALLOWED");
+        }
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM question_answers WHERE question_id = ? AND visibility_status = "
+                + "'visible' AND content LIKE 'Sửa sau%'").param(question).query(Long.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM question_answers WHERE question_id = ? AND visibility_status = "
+                + "'visible'").param(question).query(Long.class).single()).isEqualTo(2);
+    }
+
+    /** P10 BC-m3 (BR-41, UC-I21 E2): a question hidden by an admin freezes its thread — answer authors get 409 too. */
+    @Test
+    void editOrDelete_ownAnswer_ofHiddenQuestion_409QaContentHiddenByAdmin_BR41() throws Exception {
+        long followUp = fixtures.answer(question, student.userId(), "student");
+        fixtures.questionVisibility(question, "hidden", admin.userId());
+
+        expectProblem(mvc.perform(edit(student, followUp, "{\"content\": \"Sửa\"}")), 409, "QA_CONTENT_HIDDEN_BY_ADMIN");
+        expectProblem(mvc.perform(remove(student, followUp)), 409, "QA_CONTENT_HIDDEN_BY_ADMIN");
+        assertThat(onlyAnswer().get("visibility_status")).isEqualTo("visible");
+    }
+
     private List<QuestionAnsweredByInstructor> answered() {
         return events.stream(QuestionAnsweredByInstructor.class).toList();
     }

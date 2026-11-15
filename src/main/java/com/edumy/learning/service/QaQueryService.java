@@ -6,8 +6,6 @@ import com.edumy.authoring.api.CourseSummary;
 import com.edumy.identity.api.RoleQueryApi;
 import com.edumy.identity.api.UserQueryApi;
 import com.edumy.identity.api.UserSummary;
-import com.edumy.learning.dto.request.CourseQuestionSearchRequest;
-import com.edumy.learning.dto.request.InstructorQuestionSearchRequest;
 import com.edumy.learning.dto.response.AnswerResponse;
 import com.edumy.learning.dto.response.QuestionSummaryResponse;
 import com.edumy.learning.dto.response.QuestionThreadResponse;
@@ -64,13 +62,16 @@ public class QaQueryService {
         this.mapper = mapper;
     }
 
-    /** UC-S18: questions of a course, newest first; the caller may view the course content. */
-    public Page<QuestionSummaryResponse> listForCourse(Long userId, Long courseId, CourseQuestionSearchRequest filter,
-                                                       Pageable pageable) {
+    /**
+     * UC-S18: questions of a course, newest first; the caller may view the course content. Filters (all optional):
+     * one lesson, the caller's own questions, no visible instructor answer, {@code keyword} (trimmed, null = none).
+     * Primitives, not the HTTP query record (docs/ai/01 §1.4, P10 SC-M4).
+     */
+    public Page<QuestionSummaryResponse> listForCourse(Long userId, Long courseId, Long lessonId, boolean mineOnly,
+                                                       boolean unansweredOnly, String keyword, Pageable pageable) {
         boolean admin = roles.hasActiveRole(userId, RoleCode.ADMIN);
-        Page<QuestionSummaryView> page = questions.search(courseId, filter.lessonId(),
-                filter.mineOnly() ? userId : null, userId, admin, filter.unansweredOnly(), likePattern(filter.q()),
-                unsorted(pageable));
+        Page<QuestionSummaryView> page = questions.search(courseId, lessonId, mineOnly ? userId : null, userId, admin,
+                unansweredOnly, likePattern(keyword), unsorted(pageable));
         if (page.isEmpty()) {
             return page.map(q -> null);
         }
@@ -104,20 +105,20 @@ public class QaQueryService {
      * "cũ nhất trước", P10 Q-b); default filter "no visible instructor answer yet" ({@code status=all} lifts it);
      * optionally one course. UC-S18 (the course's own list) stays newest first.
      */
-    public Page<QuestionSummaryResponse> listForInstructor(Long userId, InstructorQuestionSearchRequest filter,
+    public Page<QuestionSummaryResponse> listForInstructor(Long userId, Long courseId, boolean unansweredOnly,
                                                            Pageable pageable) {
         Set<Long> courseIds = courseAccess.findInstructedCourseIds(userId);
-        if (filter.courseId() != null) {
-            if (!courseIds.contains(filter.courseId())) {
+        if (courseId != null) {
+            if (!courseIds.contains(courseId)) {
                 throw BusinessException.notFound(); // NFR-01: not instructed = unknown
             }
-            courseIds = Set.of(filter.courseId());
+            courseIds = Set.of(courseId);
         }
         Pageable fixed = unsorted(pageable);
         if (courseIds.isEmpty()) {
             return Page.empty(fixed);
         }
-        Page<QuestionSummaryView> page = questions.findForInstructor(courseIds, filter.unansweredOnly(), fixed);
+        Page<QuestionSummaryView> page = questions.findForInstructor(courseIds, unansweredOnly, fixed);
         if (page.isEmpty()) {
             return page.map(q -> null);
         }

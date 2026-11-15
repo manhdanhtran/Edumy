@@ -275,6 +275,14 @@ class CatalogCourseControllerIT {
                 .andExpect(jsonPath("$.errors[0].message").isNotEmpty());
     }
 
+    /** P10 SC-M2: a value that cannot be converted gets a Vietnamese message, never Spring's English text. */
+    @Test
+    void list_typeMismatch_vietnameseMessage_noJavaClassNames() throws Exception {
+        list("?categoryId=abc")
+                .andExpect(jsonPath("$.errors[0].field").value("categoryId"))
+                .andExpect(jsonPath("$.errors[0].message").value("Giá trị không đúng định dạng"));
+    }
+
     // ------------------------------------------------------------------------------------- optional token
 
     @Test

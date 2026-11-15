@@ -38,16 +38,18 @@ public class ProgressService {
     private final CertificateService certificateService;
     private final LessonQueryApi lessons;
     private final EnrollmentMapper mapper;
+    private final OwnCourseGuard ownCourse;
     private final Clock clock;
 
     public ProgressService(EnrollmentRepository enrollments, LessonProgressRepository progresses,
                            CertificateRepository certificates, CertificateService certificateService,
-                           LessonQueryApi lessons, EnrollmentMapper mapper, Clock clock) {
+                           LessonQueryApi lessons, EnrollmentMapper mapper, OwnCourseGuard ownCourse, Clock clock) {
         this.enrollments = enrollments;
         this.progresses = progresses;
         this.certificates = certificates;
         this.certificateService = certificateService;
         this.lessons = lessons;
+        this.ownCourse = ownCourse;
         this.mapper = mapper;
         this.clock = clock;
     }
@@ -63,6 +65,7 @@ public class ProgressService {
         Long courseId = courseIdOf(lessonId);
         Enrollment enrollment = enrollments.findByStudentIdAndCourseIdForUpdate(studentId, courseId)
                 .orElseThrow(BusinessException::notFound);
+        ownCourse.requireNotInstructor(studentId, courseId); // BR-32 / D-32: an instructor of the course has no progress
         Instant now = clock.instant();
         LessonProgress progress = progresses.findByEnrollmentIdAndLessonId(enrollment.getId(), lessonId).orElse(null);
         if (completed) {
@@ -98,8 +101,8 @@ public class ProgressService {
     public void visit(Long studentId, Long lessonId) {
         Long courseId = courseIdOf(lessonId);
         Optional<Enrollment> enrollment = enrollments.findByStudentIdAndCourseIdForUpdate(studentId, courseId);
-        if (enrollment.isEmpty()) {
-            return;
+        if (enrollment.isEmpty() || ownCourse.isInstructor(studentId, courseId)) {
+            return; // D-32: instructors (also an enrolled one, BR-32) and admins read without progress
         }
         Instant now = clock.instant();
         LessonProgress progress = progresses.findByEnrollmentIdAndLessonId(enrollment.get().getId(), lessonId)

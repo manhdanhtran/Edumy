@@ -474,7 +474,7 @@ class ProgressWriteIT {
             go.countDown();
             List<String> results = new ArrayList<>();
             for (Future<String> future : futures) {
-                results.add(future.get());
+                results.add(future.get(30, java.util.concurrent.TimeUnit.SECONDS)); // P10 DT-m4: never hang
             }
             return results;
         } finally {

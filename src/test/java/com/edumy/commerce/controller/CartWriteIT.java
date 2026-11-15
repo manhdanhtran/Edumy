@@ -456,7 +456,7 @@ class CartWriteIT {
             go.countDown();
             List<Integer> results = new ArrayList<>();
             for (Future<Integer> future : futures) {
-                results.add(future.get());
+                results.add(future.get(30, java.util.concurrent.TimeUnit.SECONDS)); // P10 DT-m4: never hang
             }
             return results;
         } finally {

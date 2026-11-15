@@ -185,17 +185,23 @@ class ReviewWriteIT {
         mvc.perform(create(student, course, "{\"rating\": 5}")).andExpect(status().isCreated());
     }
 
+    /** AC-14 (P10, business review BC-M1): a second create updates the visible review — 200, same row, no second. */
     @Test
-    void create_secondTime_visible_409_oneRowUnchanged_BR18() throws Exception {
-        mvc.perform(create(student, course, "{\"rating\": 4, \"comment\": \"Một\"}")).andExpect(status().isCreated());
+    void create_secondTime_visible_updatesTheSameRow_200_AC14_BR18() throws Exception {
+        long id = ((Number) com.jayway.jsonpath.JsonPath.read(mvc.perform(create(student, course,
+                        "{\"rating\": 4, \"comment\": \"Một\"}")).andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString(), "$.id")).longValue();
 
-        expectProblem(mvc.perform(create(student, course, "{\"rating\": 1, \"comment\": \"Hai\"}")), 409,
-                "DATA_CONFLICT");
+        mvc.perform(create(student, course, "{\"rating\": 1, \"comment\": \"Hai\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id))
+                .andExpect(jsonPath("$.rating").value(1))
+                .andExpect(jsonPath("$.status").value("visible"));
 
         Map<String, Object> row = onlyReview();
-        assertThat(((Number) row.get("rating")).intValue()).isEqualTo(4);
-        assertThat(row.get("comment")).isEqualTo("Một");
-        assertThat(changed()).hasSize(1);
+        assertThat(((Number) row.get("rating")).intValue()).isEqualTo(1);
+        assertThat(row.get("comment")).isEqualTo("Hai");
+        assertThat(changed()).hasSize(2);
     }
 
     @Test
@@ -253,12 +259,12 @@ class ReviewWriteIT {
     }
 
     @Test
-    void create_concurrentDoublePost_oneRow_oneCreated_oneConflict_BR18() throws Exception {
+    void create_concurrentDoublePost_oneRow_oneCreatedOneUpdated_BR18_AC14() throws Exception {
         List<Integer> statuses = parallel(
                 () -> statusOf(create(student, course, "{\"rating\": 5, \"comment\": \"A\"}")),
                 () -> statusOf(create(student, course, "{\"rating\": 4, \"comment\": \"B\"}")));
 
-        assertThat(statuses).containsExactlyInAnyOrder(201, 409);
+        assertThat(statuses).containsExactlyInAnyOrder(201, 200); // serialized by the enrollment row lock
         assertThat(reviewCount()).isOne();
     }
 
@@ -621,7 +627,7 @@ class ReviewWriteIT {
             go.countDown();
             List<Integer> results = new ArrayList<>();
             for (Future<Integer> future : futures) {
-                results.add(future.get());
+                results.add(future.get(30, java.util.concurrent.TimeUnit.SECONDS)); // P10 DT-m4: never hang
             }
             return results;
         } finally {

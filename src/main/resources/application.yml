@@ -6,6 +6,12 @@ spring:
     url: jdbc:mysql://localhost:3306/edumy?connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true
     username: edumy
     password: ${MYSQL_PASSWORD:}
+    hikari:
+      # ADR-010 (P10 DT-B1): READ COMMITTED for every transaction. Writes lock a row (course, enrollment, user …)
+      # and then read related rows; under MySQL's default REPEATABLE READ those reads came from the snapshot taken by
+      # the first plain read of the transaction (before the lock wait), so a writer could overwrite a change
+      # committed while it waited (lost update).
+      transaction-isolation: TRANSACTION_READ_COMMITTED
   jpa:
     open-in-view: false
     hibernate:

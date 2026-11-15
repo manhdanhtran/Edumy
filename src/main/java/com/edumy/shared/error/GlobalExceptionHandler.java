@@ -101,11 +101,22 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             MethodArgumentNotValidException ex, HttpHeaders headers, HttpStatusCode status, WebRequest request) {
         List<FieldViolation> errors = new ArrayList<>();
         ex.getBindingResult().getFieldErrors()
-                .forEach(fe -> errors.add(new FieldViolation(fe.getField(), fe.getDefaultMessage())));
+                .forEach(fe -> errors.add(new FieldViolation(fe.getField(), fieldMessage(fe))));
         ex.getBindingResult().getGlobalErrors()
                 .forEach(ge -> errors.add(new FieldViolation(ge.getObjectName(), ge.getDefaultMessage())));
         return build(ErrorCode.VALIDATION_FAILED, ErrorCode.VALIDATION_FAILED.status(), NO_ARGS, errors, request,
                 traceId());
+    }
+
+    /**
+     * A type-mismatch binding failure ({@code ?categoryId=abc}, a malformed date) carries Spring's English conversion
+     * text with Java class names as default message: replace it by the Vietnamese {@code validation.type-mismatch}
+     * text (P10, structure review SC-M2). Bean Validation messages are already Vietnamese (ValidationMessages).
+     */
+    private String fieldMessage(org.springframework.validation.FieldError fe) {
+        return fe.isBindingFailure()
+                ? messages.getMessage("validation.type-mismatch", null, "Giá trị không đúng định dạng", VI)
+                : fe.getDefaultMessage();
     }
 
     @Override

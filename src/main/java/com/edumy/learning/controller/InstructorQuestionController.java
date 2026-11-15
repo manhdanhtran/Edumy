@@ -38,6 +38,6 @@ public class InstructorQuestionController {
     public PagedModel<QuestionSummaryResponse> list(
             @Valid @ParameterObject @ModelAttribute InstructorQuestionSearchRequest filter,
             @ParameterObject Pageable pageable, @CurrentUserId Long userId) {
-        return new PagedModel<>(queries.listForInstructor(userId, filter, pageable));
+        return new PagedModel<>(queries.listForInstructor(userId, filter.courseId(), filter.unansweredOnly(), pageable));
     }
 }

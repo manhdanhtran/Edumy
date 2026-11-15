@@ -51,11 +51,16 @@ public final class SharedMySql {
         return container;
     }
 
-    /** Testcontainers' default user owns only {@code edumy}; create the second database as root and grant it. */
+    /**
+     * Testcontainers' default user owns only {@code edumy}; create the second database as root and grant it. Also
+     * grants {@code PROCESS} (test only): concurrency tests read {@code information_schema.innodb_trx} to wait until a
+     * request really blocks on a row lock ({@code support/LockWaits}), instead of sleeping.
+     */
     private static void createSeedDatabase(MySQLContainer container) {
         String sql = "CREATE DATABASE IF NOT EXISTS " + SEED_DATABASE
                 + " CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
-                + " GRANT ALL PRIVILEGES ON " + SEED_DATABASE + ".* TO '" + container.getUsername() + "'@'%';";
+                + " GRANT ALL PRIVILEGES ON " + SEED_DATABASE + ".* TO '" + container.getUsername() + "'@'%';"
+                + " GRANT PROCESS ON *.* TO '" + container.getUsername() + "'@'%';";
         try {
             var result = container.execInContainer("mysql", "-uroot", "-p" + container.getPassword(), "-e", sql);
             if (result.getExitCode() != 0) {

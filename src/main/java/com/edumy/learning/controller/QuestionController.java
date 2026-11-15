@@ -57,7 +57,8 @@ public class QuestionController {
                                                     CourseQuestionSearchRequest filter,
                                                     @ParameterObject Pageable pageable,
                                                     @CurrentUserId Long userId) {
-        return new PagedModel<>(queries.listForCourse(userId, courseId, filter, pageable));
+        return new PagedModel<>(queries.listForCourse(userId, courseId, filter.lessonId(), filter.mineOnly(),
+                filter.unansweredOnly(), filter.q(), pageable));
     }
 
     @GetMapping("/questions/{id}")

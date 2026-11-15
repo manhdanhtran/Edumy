@@ -22,6 +22,7 @@ import com.edumy.support.CourseFixtures;
 import com.edumy.support.IdorAssertions;
 import com.edumy.support.JwtTestTokens;
 import com.edumy.support.JwtTestTokens.Session;
+import com.edumy.support.LockWaits;
 import com.edumy.support.MySqlSpringBootTest;
 import com.edumy.support.SqlStatementCounter;
 import com.edumy.support.TestUsers;
@@ -37,6 +38,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.test.context.event.RecordApplicationEvents;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
@@ -66,6 +68,8 @@ class LessonWriteIT {
     JdbcClient jdbc;
     @Autowired
     ApplicationEvents events;
+    @Autowired
+    PlatformTransactionManager txManager;
     @Autowired
     SqlStatementCounter sql;
 
@@ -143,6 +147,24 @@ class LessonWriteIT {
                         + "\"videoUrl\": \"  \"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.videoUrl").value(nullValue()));
+    }
+
+    /**
+     * P10 DT-B1 (lost update): a PATCH waiting for the course lock held by another committed edit must apply its own
+     * field on top of that edit (READ COMMITTED, ADR-010), never write back the lesson as it was before the wait.
+     */
+    @Test
+    void patch_racingAnotherEditThatHoldsTheCourseLock_keepsTheOtherEdit_noLostUpdate() throws Exception {
+        long a = fixtures.lesson(chapter, 1);
+
+        MvcResult result = LockWaits.whileLockedThenCommit(txManager, jdbc, db -> {
+            db.sql("SELECT id FROM courses WHERE id = ? FOR UPDATE").param(course).query(Long.class).single();
+            db.sql("UPDATE lessons SET title = 'Sửa bởi đồng giảng viên' WHERE id = ?").param(a).update();
+        }, () -> mvc.perform(json(patch(BASE + "/lessons/" + a), instructor, "{\"isPreview\": true}")).andReturn());
+
+        assertThat(result.getResponse().getStatus()).as(result.getResponse().getContentAsString()).isEqualTo(200);
+        assertThat(jdbc.sql("SELECT CONCAT(title, '|', is_preview) FROM lessons WHERE id = ?").param(a)
+                .query(String.class).single()).isEqualTo("Sửa bởi đồng giảng viên|1");
     }
 
     /** P10 Q-h: a published / hidden course changes at once (D-14), so its lessons always have content (BR-07). */
