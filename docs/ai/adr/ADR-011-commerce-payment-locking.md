@@ -17,23 +17,39 @@ never the order code. `FakeQrPaymentGateway` (every profile but `payos`) is the 
 be a new bean under the profile `payos` plus its own webhook controller calling `PaymentService.receiveWebhook`, with
 no service change. Real adapters must use `edumy.payment.connect-timeout` / `read-timeout` (≤ 5 s).
 
-### Lock order (every flow, never reversed)
+### Lock order (every flow, never reversed) — per-student lock since P11-fix-a
 `carts` row of the student → `orders` row → `payment_transactions` row → writes to `enrollments` (`INSERT IGNORE`
-through `EnrollmentApi.grantForPaidOrder`, `MANDATORY`, ADR-004) and deletes of `cart_items`. T2 never locks `carts`
-(it resolves the cart id with a plain read and deletes the lines by `cart_id` + `course_id`), so T1 (cart → order) and
-T2 (order → attempt → cart lines) cannot deadlock. No "SELECT says absent → INSERT" relies on a read alone: each insert
-is covered by a parent row lock **and** a UNIQUE key (`uq_orders_one_pending`, `uq_payment_one_pending`,
-`uq_payment_ref`, `uq_enrollments_student_course`).
+through `EnrollmentApi.grantForPaidOrder`, `MANDATORY`, ADR-004) and deletes of `cart_items`.
+
+**Rule (P11-fix-a, review P11-R-02 / R-04):** every flow that may apply a payment result or grant enrollments locks the
+student's `carts` row **first** (`StudentPaymentLock`: `INSERT … ON DUPLICATE KEY UPDATE` on `uq_carts_student` when the
+student has no cart — BR-22 allows an empty cart — then `SELECT id … FOR UPDATE`): T2 (webhook), UC-S16 cancel, UC-S05
+create QR, UC-A18 and T1 (which locks the cart entity). So two flows of one student are serialised **even on two
+different orders**, and "which courses does the student own" (BR-30, Q3) is always read after the other flow
+committed: the race "late result of P0 ‖ on-time result of P1, same course" can no longer make both orders `paid`
+without a `needs_review` (proved by `PaymentRaceIT`). T1 reads ownership after the cart lock, which now excludes any
+concurrent grant for that student (R-04). Unknown / foreign ids are rejected by a scalar read **before** the cart is
+touched, so nobody gets a cart row for someone else's order.
+
+**Timers:** the claim transaction locks only the order (`SKIP LOCKED`) and must not wait for a cart (a request holding
+the cart may be waiting for that order). It therefore only looks the attempt up: not paid → `expired`, failed →
+`failed`, 24 h job → order cancelled (nothing granted, no cart lock needed). **Paid** → the claim transaction ends
+without a change and T2 runs in a **new** transaction in the standard order (`PaymentService.applyProviderResult`);
+T2 is idempotent, so a webhook or another instance applying the same result meanwhile is harmless
+(`PaymentRaceIT#timerFindsPaid_whileTheStudentsCreateOrderHoldsTheCart_noDeadlock_paidOnce`).
+
+No "SELECT says absent → INSERT" relies on a read alone: each insert is covered by a parent row lock **and** a UNIQUE
+key (`uq_orders_one_pending`, `uq_payment_one_pending`, `uq_payment_ref`, `uq_enrollments_student_course`,
+`uq_carts_student`).
 
 | Flow | Locks | Backstop |
 |---|---|---|
 | T1 create order (UC-S04) | cart `FOR UPDATE` → pending order `FOR UPDATE` → its pending attempt | `uq_orders_one_pending` |
-| Create QR (UC-S05) | order `FOR UPDATE` → pending attempt `FOR UPDATE` | `uq_payment_one_pending`, `uq_payment_ref` |
-| T2 result (webhook / lookups) | scalar order id → order `FOR UPDATE` → attempt `FOR UPDATE` | `uq_payment_ref`, `uq_enrollments_student_course` |
-| Cancel (UC-S16) | order `FOR UPDATE` → pending attempt `FOR UPDATE` | — |
-| Reconciliation (UC-A18) | scalar order id → order `FOR UPDATE` → attempt `FOR UPDATE` | handled_* CHECKs |
-| Schedulers (NFR-09) | claim one order `FOR UPDATE [OF o] SKIP LOCKED`, one transaction per order | as above |
-
+| Create QR (UC-S05) | scalar order id → cart → order `FOR UPDATE` → pending attempt `FOR UPDATE` | `uq_payment_one_pending`, `uq_payment_ref` |
+| T2 result (webhook, timers' "paid") | scalar order id + buyer → cart → order `FOR UPDATE` → attempt `FOR UPDATE` | `uq_payment_ref`, `uq_enrollments_student_course` |
+| Cancel (UC-S16) | scalar order id → cart → order `FOR UPDATE` → pending attempt `FOR UPDATE` | — |
+| Reconciliation (UC-A18) | scalar order id + buyer → cart → order `FOR UPDATE` → attempt `FOR UPDATE` | handled_* CHECKs |
+| Timers (NFR-09) | claim one order `FOR UPDATE [OF o] SKIP LOCKED` → attempt; "paid" → T2 in a new transaction | as above |
 ### R1 — no stale entity under a lock
 A flow that must read before it locks reads a **scalar** (`findOrderIdByTransactionRef`, `findOrderIdById`), never an
 entity: `SELECT … FOR UPDATE` (or `find` with `PESSIMISTIC_WRITE`) on an entity that is already in the persistence
@@ -75,7 +91,8 @@ finds the payment already made records it (T2) and **commits first**, then the r
   between), the student paid twice for those courses. Logged WARN with orderCode and course ids; refund is manual
   (out of scope v1: automatic refund). Create QR refuses to show a QR for such an order (R3 b), which narrows the window
   to QRs shown before the ownership changed.
-- A provider call holds one student's order (and cart) lock for at most `tx-timeout`; other students are unaffected.
+- A provider call holds one student's cart / order lock for at most `tx-timeout`; other students are unaffected (for
+  the timers since P11-fix-b, see the claim query below).
 - `SKIP LOCKED` makes two scheduler instances skip each other's orders; a lookup that failed may be retried by the other
   instance in the same cycle (harmless, nothing changes on failure).
 - The fake provider keeps its state in memory (dev/test only).

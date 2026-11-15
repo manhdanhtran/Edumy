@@ -87,6 +87,7 @@ P10 review + P10-fix-a (security minors + Q-g identity) · P10-fix-b (authoring:
 | P11-d commerce + notification: real UC-A18, GET /admin/payments/{id} (Q4), purchase and reconciliation mails | done | 9992890 | 2345 tests green (+5 net: ReconciliationIT 8, CommerceMailListenerIT 3, MailComposerTest +3, IdorIT +1; CommerceStubsIT 7 + ReconciliationServiceTest 4 removed), suite 8 min 13 s; see `### P11-d` |
 | P11-e timers: QR expiry, 24 h order expiry, code cleanup (NFR-09, SKIP LOCKED) | done | 85d652c | 2359 tests green (+14: CommerceExpiryIT 9, TokenCleanupIT 1, SchedulerBeansTest 4), suite 8 min 09 s; see `### P11-e` |
 | P11-f cleanup: STUB-P1 down to 4 lines (P12/P13), docs 01/06/07/10/triage, mail sender on edumy.test | done | 614f1e0 | 2359 tests green (no test change), suite 16 min 05 s (same tests as P11-e at 8 min 09 s: machine load, see report); see `### P11-f` |
+| P11-fix-a R-02 + R-04 per-student cart lock; timers apply 'paid' in a new transaction; R-07 log hygiene | done | 83aaa2c | 2363 tests green (+4: PaymentRaceIT), suite 10 min 01 s; see `### P11-fix-a` |
 
 ## P11 — commerce (plan approved 2026-11-15 with Q1–Q5 + R1–R3; ADR-011)
 Units P11-a … P11-f. Plan: lock order cart → order → attempt → enrollments / cart lines; scalar-first reads (R1);
@@ -188,6 +189,24 @@ Commerce is real: T1 (P11-b), create QR (P11-c), webhook + T2 (P11-a), cancel (P
 `TransactionTemplate`, commit-then-409 for "found paid": ADR-011. New codes: `ORDER_CART_CHANGED` 409,
 `ORDER_ALREADY_PAID` 409, `PAYMENT_PROVIDER_UNAVAILABLE` 503. Additive contract: `CreateOrderRequest.expectedTotalAmount`
 / `expectedCourseIds`, POST /orders 200 for the identical pending order, `GET /admin/payments/{id}`.
+
+## P11-fix (brief 2026-11-16; review docs/ai/reviews/p11-payment.md: 0 BLOCKER, 3 MAJOR, 4 MINOR)
+- Note: the footer of commit `f951350` (P11-b) lists AC-22 by mistake; AC-22 is covered in P11-e (`85d652c`).
+
+### P11-fix-a — R-02 + R-04: per-student lock on the carts row
+- `StudentPaymentLock` (commerce service): upsert the student's cart (`createIfAbsent`, `uq_carts_student`) then
+  `SELECT id FROM carts … FOR UPDATE` (`CartRepository.lockIdByStudentId`). Taken first by T2 (webhook), UC-S16, UC-S05
+  create QR and UC-A18; T1 already locked the cart entity first. Scalars before the locks: `findOwnerByTransactionRef` /
+  `findOwnerById` (order id + buyer); the old order-id-only queries were removed.
+- Timers: `PendingPaymentSettler.settleUnlessPaid` (claim transaction: expire / fail / cancel, never grants); a "paid"
+  answer is applied afterwards by `PaymentService.applyProviderResult` in a new transaction (cart → order → attempt).
+- R-07 done on the way (the timers' logs had to change anyway): `PaymentGatewayException(code)` + `describe(e)`
+  (type + sanitised code, never the message); timer errors logged with the stack trace.
+- Test hooks: `FakeQrPaymentGateway.holdNextQuery()` / `holdNextCreateQr()` and `PaymentTestHooks.holdNextOrderPaid()`
+  stop a real flow inside its transaction; `support/Interleave` (second flow must show `LOCK WAIT` / must finish while
+  the first is held).
+- Tests: `PaymentRaceIT` (4: late P0 then on-time P1 → needs_review (Q3); on-time first then late → needs_review
+  (AC-24); partial → paid + WARN (SRS step 7); timer finds paid while T1 holds the cart → no deadlock, one effect).
 
 ## P09 summary
 - **P09-a** constraint coverage: `docs/ai/09-constraint-coverage.md` maps DDD §8 rows 1-31 (+ one valid-row test per table) to the existing `*SchemaIT` tests; only gap (row 5 NOT NULL) closed with 2 tests. No separate `ConstraintsIT`.
