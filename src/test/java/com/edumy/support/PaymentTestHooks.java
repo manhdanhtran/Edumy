@@ -4,6 +4,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.edumy.commerce.api.OrderPaid;
+import com.edumy.commerce.integration.FakeQrPaymentGateway;
 import org.springframework.boot.test.context.TestComponent;
 import org.springframework.context.event.EventListener;
 
@@ -19,13 +20,26 @@ public class PaymentTestHooks {
 
     private final AtomicBoolean failNext = new AtomicBoolean();
     private final CopyOnWriteArrayList<OrderPaid> published = new CopyOnWriteArrayList<>();
+    private final java.util.concurrent.atomic.AtomicReference<FakeQrPaymentGateway.Hold> hold =
+            new java.util.concurrent.atomic.AtomicReference<>();
 
     @EventListener
     void on(OrderPaid event) {
         published.add(event);
+        FakeQrPaymentGateway.Hold.pass(hold.getAndSet(null)); // T2 stops here holding cart, order and attempt locks
         if (failNext.getAndSet(false)) {
             throw new IllegalStateException("injected failure after the enrollments were granted (NFR-04 probe)");
         }
+    }
+
+    /**
+     * The next T2 that pays an order stops at its {@link OrderPaid} (end of the transaction, every lock still held) until
+     * the hold is released (review P11-R-03: real interleavings of application flows).
+     */
+    public FakeQrPaymentGateway.Hold holdNextOrderPaid() {
+        FakeQrPaymentGateway.Hold next = new FakeQrPaymentGateway.Hold();
+        hold.set(next);
+        return next;
     }
 
     /** The next {@link OrderPaid} throws inside the publishing transaction. */
@@ -40,6 +54,7 @@ public class PaymentTestHooks {
 
     public void reset() {
         failNext.set(false);
+        hold.set(null);
         published.clear();
     }
 }

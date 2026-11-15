@@ -49,13 +49,15 @@ public class PaymentService {
     private final PendingPaymentSettler settler;
     private final EnrollmentApi enrollments;
     private final CommerceCodeGenerator codes;
+    private final StudentPaymentLock studentLock;
     private final TransactionTemplate tx;
     private final Clock clock;
 
     public PaymentService(OrderRepository orders, PaymentTransactionRepository payments, PaymentMapper mapper,
                           PaymentProperties properties, PaymentGateway gateway, PaymentResultApplier applier,
                           PendingPaymentSettler settler, EnrollmentApi enrollments, CommerceCodeGenerator codes,
-                          PlatformTransactionManager transactionManager, Clock clock) {
+                          StudentPaymentLock studentLock, PlatformTransactionManager transactionManager,
+                          Clock clock) {
         this.orders = orders;
         this.payments = payments;
         this.mapper = mapper;
@@ -65,6 +67,7 @@ public class PaymentService {
         this.settler = settler;
         this.enrollments = enrollments;
         this.codes = codes;
+        this.studentLock = studentLock;
         this.tx = new TransactionTemplate(transactionManager);
         this.tx.setTimeout(properties.txTimeoutSeconds());
         this.clock = clock;
@@ -106,6 +109,7 @@ public class PaymentService {
     private QrStep createQrLocked(Long studentId, String orderCode) {
         Long orderId = orders.findIdByOrderCodeAndStudentId(orderCode, studentId)
                 .orElseThrow(BusinessException::notFound);
+        studentLock.lock(studentId); // ADR-011: the student's cart row first (P11-fix-a)
         Order order = orders.findByIdForUpdate(orderId).orElseThrow(BusinessException::notFound);
         if (!order.isPending()) {
             throw new BusinessException(ErrorCode.DATA_CONFLICT);
@@ -156,7 +160,7 @@ public class PaymentService {
             return gateway.createQr(reference, order.getTotalAmount(), expiresAt);
         } catch (PaymentGatewayException e) {
             log.warn("QR not created, payment provider unavailable: orderCode={}, error={}", order.getOrderCode(),
-                    e.getMessage());
+                    PaymentGatewayException.describe(e));
             throw new BusinessException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE); // UC-S05 E1: rollback
         }
     }
@@ -165,7 +169,7 @@ public class PaymentService {
         try {
             return settler.settle(order);
         } catch (PaymentGatewayException e) {
-            log.warn("Payment provider unavailable: orderCode={}, error={}", order.getOrderCode(), e.getMessage());
+            log.warn("Payment provider unavailable: orderCode={}, error={}", order.getOrderCode(), PaymentGatewayException.describe(e));
             throw new BusinessException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE);
         }
     }
@@ -198,17 +202,28 @@ public class PaymentService {
     }
 
     /**
-     * T2 lock order (ADR-011): the order id is read as a scalar (no entity before the wait, R1), the order row is
-     * locked, then the attempt is loaded under its own lock.
+     * T2 for a result found by a timer's lookup (P11-fix-a): runs in its own transaction with the standard lock order
+     * (buyer's cart → order → attempt), after the claim transaction released the order. Idempotent like the webhook:
+     * if a webhook or another instance applied the result meanwhile, nothing changes.
+     */
+    public void applyProviderResult(PaymentResult result) {
+        tx.executeWithoutResult(status -> applyResult(result));
+    }
+
+    /**
+     * T2 lock order (ADR-011): the order id and the buyer are read as scalars (no entity before the wait, R1), the
+     * buyer's cart row is locked (P11-fix-a), then the order row, then the attempt is loaded under its own lock.
      */
     private void applyResult(PaymentResult result) {
-        Optional<Long> orderId = payments.findOrderIdByTransactionRef(result.reference());
-        if (orderId.isEmpty()) {
+        Optional<PaymentTransactionRepository.PaymentOwner> owner =
+                payments.findOwnerByTransactionRef(result.reference());
+        if (owner.isEmpty()) {
             log.warn("Payment result for an unknown reference ignored: transactionRef={}",
                     LogSanitizer.clean(result.reference()));
             return;
         }
-        Order order = orders.findByIdForUpdate(orderId.get())
+        studentLock.lock(owner.get().getStudentId()); // ADR-011: cart row → order → attempt (P11-fix-a)
+        Order order = orders.findByIdForUpdate(owner.get().getOrderId())
                 .orElseThrow(() -> new IllegalStateException("order of a payment vanished"));
         PaymentTransaction payment = payments.findByTransactionRefForUpdate(result.reference())
                 .orElseThrow(() -> new IllegalStateException("payment vanished under the order lock"));

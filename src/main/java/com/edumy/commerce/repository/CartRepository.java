@@ -21,9 +21,17 @@ public interface CartRepository extends JpaRepository<Cart, Long> {
     @EntityGraph(attributePaths = "items")
     Optional<Cart> findWithItemsByStudentId(Long studentId);
 
-    /** T2: id of the student's cart, plain read, no lock and no entity (ADR-011 lock order: T2 never locks carts). */
+    /** Id of the student's cart, plain read (the caller already holds the cart row lock, ADR-011). */
     @Query("select c.id from Cart c where c.studentId = :studentId")
     Optional<Long> findIdByStudentId(@Param("studentId") Long studentId);
+
+    /**
+     * ADR-011 (P11-fix-a): the per-student lock — {@code SELECT id … FOR UPDATE} of the cart row, scalar (no entity).
+     * Taken first by every flow that may apply a payment result or grant enrollments; the row is created beforehand by
+     * {@link #createIfAbsent} when the student has no cart (BR-22: a cart may be empty).
+     */
+    @Query(value = "SELECT id FROM carts WHERE student_id = :studentId FOR UPDATE", nativeQuery = true)
+    Optional<Long> lockIdByStudentId(@Param("studentId") Long studentId);
 
     /**
      * T1 step "lock the cart" (UC-S04): {@code SELECT … FOR UPDATE} of the cart row, so two concurrent "create order"

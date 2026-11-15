@@ -9,15 +9,14 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Consumer;
 import java.util.function.Function;
 
 import com.edumy.commerce.config.PaymentProperties;
 import com.edumy.commerce.entity.CancelReason;
 import com.edumy.commerce.entity.Order;
 import com.edumy.commerce.integration.PaymentGatewayException;
+import com.edumy.commerce.integration.PaymentResult;
 import com.edumy.commerce.repository.OrderRepository;
-import com.edumy.commerce.service.PendingPaymentSettler.Settlement;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -26,15 +25,19 @@ import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * The two commerce timers of SRS §3.x "Bộ hẹn giờ" (NFR-09: every 5 minutes, safe with several instances, no external
- * lock library — ADR-011): close expired QR attempts after a lookup (UC-S05 A1) and cancel pending orders older than
- * 24 h after a lookup (UC-S16 by the timer, BR-29, AC-22).
- * <p>Each order is handled in its <b>own</b> transaction: claim one row {@code FOR UPDATE SKIP LOCKED} (another
- * instance, a student request or a webhook holding it → skipped, never waited for), settle its pending attempt through
- * {@link PendingPaymentSettler} (same rules as UC-S16), commit. A provider failure or any other error rolls that one
- * order back, is logged, and the run continues; the order is retried at the next run (UC-S16 E2). Ids handled in this
- * run are excluded from the next claims (sentinel {@code -1} keeps the list non-empty), so a failing order is not
- * retried in a loop. At most {@link #BATCH} orders per run.
+ * The two commerce timers (NFR-09: every 5 minutes, safe with several instances, no external lock library — ADR-011):
+ * close expired QR attempts after a lookup (UC-S05 A1) and cancel pending orders older than 24 h after a lookup
+ * (UC-S16 by the timer, BR-29, AC-22).
+ * <p>Each order is handled in its <b>own</b> claim transaction: one row {@code FOR UPDATE SKIP LOCKED} (held elsewhere →
+ * skipped, never waited for), then the lookup of its pending attempt ({@link PendingPaymentSettler#settleUnlessPaid}):
+ * not paid → {@code expired}, failed → {@code failed}, and for the 24 h job the order is cancelled — all inside the claim
+ * transaction, which grants nothing and so needs no cart lock. <b>Paid</b> → the claim transaction ends without a change
+ * and T2 runs in a new transaction with the standard lock order (buyer's cart → order → attempt,
+ * {@link PaymentService#applyProviderResult}, P11-fix-a); T2 is idempotent, so a webhook or another instance applying
+ * the same result meanwhile is harmless.
+ * <p>A provider failure or any other error rolls back that one order (logged with its stack trace), the run continues,
+ * and the order is retried at the next run (UC-S16 E2). Ids handled in this run are excluded from the next claims
+ * (sentinel {@code -1} keeps the list non-empty). At most {@link #BATCH} orders per run.
  */
 @Service
 public class CommerceExpiryService {
@@ -47,21 +50,23 @@ public class CommerceExpiryService {
     public record RunResult(int processed, int failed) {
     }
 
-    private enum Step { DONE, FAILED }
-
-    private record Claimed(Long orderId, Step step) {
+    /** One claimed order: done or failed, and the paid result to apply after the claim transaction. */
+    private record Claimed(Long orderId, boolean done, PaymentResult paid) {
     }
 
     private final OrderRepository orders;
     private final PendingPaymentSettler settler;
+    private final PaymentService payments;
     private final PaymentProperties properties;
     private final TransactionTemplate tx;
     private final Clock clock;
 
-    public CommerceExpiryService(OrderRepository orders, PendingPaymentSettler settler, PaymentProperties properties,
-                                 PlatformTransactionManager transactionManager, Clock clock) {
+    public CommerceExpiryService(OrderRepository orders, PendingPaymentSettler settler, PaymentService payments,
+                                 PaymentProperties properties, PlatformTransactionManager transactionManager,
+                                 Clock clock) {
         this.orders = orders;
         this.settler = settler;
+        this.payments = payments;
         this.properties = properties;
         this.tx = new TransactionTemplate(transactionManager);
         this.tx.setTimeout(properties.txTimeoutSeconds());
@@ -70,37 +75,31 @@ public class CommerceExpiryService {
 
     /**
      * UC-S05 A1: every pending attempt whose QR expired is looked up — not paid → {@code expired}, failed →
-     * {@code failed}, paid → T2 (order paid, enrollments; or needs_review). The order itself stays as it is.
+     * {@code failed}, paid → T2 afterwards (order paid + enrollments, or needs_review).
      */
     public RunResult expireQrAttempts() {
         Instant now = clock.instant();
-        return run("QR expiry", seen -> orders.claimOrderWithExpiredQr(now, seen), order -> {
-            Settlement settlement = settler.settle(order);
-            log.info("QR expiry: orderCode={}, settlement={}", order.getOrderCode(), settlement);
-        });
+        return run("QR expiry", seen -> orders.claimOrderWithExpiredQr(now, seen), settler::settleUnlessPaid);
     }
 
     /**
      * BR-29 / AC-22 / UC-S16 (timer): every pending order created 24 h ago or earlier — its pending attempt is looked
-     * up first; paid → the order is paid instead of cancelled; otherwise the order is cancelled as {@code expired}.
+     * up first; paid → T2 afterwards (the order becomes paid, not cancelled); otherwise cancelled as {@code expired}.
      */
     public RunResult cancelOverdueOrders() {
-        Instant now = clock.instant();
-        Instant cutoff = now.minus(properties.orderTtl());
+        Instant cutoff = clock.instant().minus(properties.orderTtl());
         return run("Overdue orders", seen -> orders.claimOverdueOrder(cutoff, seen), order -> {
-            Settlement settlement = settler.settle(order);
-            if (settlement == Settlement.PAID) {
-                log.info("Overdue order not cancelled, the lookup found it paid: orderCode={}", order.getOrderCode());
-                return;
+            PaymentResult paid = settler.settleUnlessPaid(order);
+            if (paid == null) {
+                order.cancel(CancelReason.EXPIRED, clock.instant());
+                log.info("Order cancelled as expired (24 h): orderCode={}", order.getOrderCode());
             }
-            order.cancel(CancelReason.EXPIRED, clock.instant());
-            log.info("Order cancelled as expired (24 h): orderCode={}, settlement={}", order.getOrderCode(),
-                    settlement);
+            return paid;
         });
     }
 
     private RunResult run(String job, Function<Collection<Long>, Optional<Long>> claim,
-                          Consumer<Order> work) {
+                          Function<Order, PaymentResult> work) {
         Set<Long> seen = new LinkedHashSet<>();
         int processed = 0;
         int failed = 0;
@@ -113,15 +112,15 @@ public class CommerceExpiryService {
                 if (current.get() == null) {
                     throw e;
                 }
-                log.error("{}: order not committed, retried next run: orderId={}, error={}", job, current.get(),
-                        e.getClass().getName());
-                claimed = new Claimed(current.get(), Step.FAILED);
+                log.error("{}: order not committed, retried next run: orderId={}", job, current.get(), e);
+                claimed = new Claimed(current.get(), false, null);
             }
             if (claimed == null) {
                 break;
             }
             seen.add(claimed.orderId());
-            if (claimed.step() == Step.DONE) {
+            boolean done = claimed.done() && applyPaid(job, claimed);
+            if (done) {
                 processed++;
             } else {
                 failed++;
@@ -133,9 +132,10 @@ public class CommerceExpiryService {
         return new RunResult(processed, failed);
     }
 
-    /** One order in one transaction; {@code null} when nothing is left to claim. */
-    private Claimed claimAndWork(String job, Function<Collection<Long>, Optional<Long>> claim, Consumer<Order> work,
-                                 Set<Long> seen, AtomicReference<Long> current, TransactionStatus status) {
+    /** One order in one claim transaction; {@code null} when nothing is left to claim. */
+    private Claimed claimAndWork(String job, Function<Collection<Long>, Optional<Long>> claim,
+                                 Function<Order, PaymentResult> work, Set<Long> seen, AtomicReference<Long> current,
+                                 TransactionStatus status) {
         Optional<Long> id = claim.apply(seenOrSentinel(seen));
         if (id.isEmpty()) {
             return null;
@@ -144,18 +144,30 @@ public class CommerceExpiryService {
         try {
             Order order = orders.findByIdForUpdate(id.get())
                     .orElseThrow(() -> new IllegalStateException("claimed order vanished"));
-            work.accept(order);
-            return new Claimed(id.get(), Step.DONE);
+            return new Claimed(id.get(), true, work.apply(order));
         } catch (PaymentGatewayException e) {
             status.setRollbackOnly();
             log.warn("{}: provider unavailable, retried next run: orderId={}, error={}", job, id.get(),
-                    e.getMessage());
-            return new Claimed(id.get(), Step.FAILED);
+                    PaymentGatewayException.describe(e));
+            return new Claimed(id.get(), false, null);
         } catch (RuntimeException e) {
             status.setRollbackOnly();
-            log.error("{}: order not processed, retried next run: orderId={}, error={}", job, id.get(),
-                    e.getClass().getName());
-            return new Claimed(id.get(), Step.FAILED);
+            log.error("{}: order not processed, retried next run: orderId={}", job, id.get(), e);
+            return new Claimed(id.get(), false, null);
+        }
+    }
+
+    /** "Found paid": T2 in a new transaction, standard lock order (P11-fix-a). */
+    private boolean applyPaid(String job, Claimed claimed) {
+        if (claimed.paid() == null) {
+            return true;
+        }
+        try {
+            payments.applyProviderResult(claimed.paid());
+            return true;
+        } catch (RuntimeException e) {
+            log.error("{}: paid result not applied, retried next run: orderId={}", job, claimed.orderId(), e);
+            return false;
         }
     }
 

@@ -50,16 +50,25 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     boolean existsByTransactionRef(String transactionRef);
 
     /**
-     * T2 step 1 (ADR-011, R1): order id of the attempt named by a provider result — a scalar, so no
-     * {@link PaymentTransaction} enters the persistence context before the order row is locked (an entity loaded
-     * before the lock wait would keep its stale fields: {@code FOR UPDATE} on a managed entity does not reload it).
+     * T2 step 1 (ADR-011, R1 + P11-fix-a): order id and buyer of the attempt named by a provider result, scalars only —
+     * no {@link PaymentTransaction} enters the persistence context before the locks (an entity loaded before a lock wait
+     * keeps its stale fields: {@code FOR UPDATE} on a managed entity does not reload it). The buyer's cart row is locked
+     * next, then the order, then the attempt.
      */
-    @Query("select p.order.id from PaymentTransaction p where p.transactionRef = :transactionRef")
-    Optional<Long> findOrderIdByTransactionRef(@Param("transactionRef") String transactionRef);
+    @Query("select p.order.id as orderId, p.order.studentId as studentId from PaymentTransaction p "
+            + "where p.transactionRef = :transactionRef")
+    Optional<PaymentOwner> findOwnerByTransactionRef(@Param("transactionRef") String transactionRef);
 
-    /** UC-A18 step 1 of the lock order (ADR-011, R1): order id of an attempt, scalar (see above). */
-    @Query("select p.order.id from PaymentTransaction p where p.id = :id")
-    Optional<Long> findOrderIdById(@Param("id") Long id);
+    /** UC-A18 step 1 (ADR-011, P11-fix-a): order id and buyer of an attempt, scalars only. */
+    @Query("select p.order.id as orderId, p.order.studentId as studentId from PaymentTransaction p where p.id = :id")
+    Optional<PaymentOwner> findOwnerById(@Param("id") Long id);
+
+    /** Order and buyer of an attempt (scalar projection). */
+    interface PaymentOwner {
+        Long getOrderId();
+
+        Long getStudentId();
+    }
 
     /**
      * T2 (NFR-04): {@code SELECT … FOR UPDATE} of the attempt named by the provider result, taken AFTER the order row

@@ -53,13 +53,15 @@ public class OrderService {
     private final EnrollmentApi enrollments;
     private final PendingPaymentSettler settler;
     private final CommerceCodeGenerator codes;
+    private final StudentPaymentLock studentLock;
     private final OrderQueryService queries;
     private final TransactionTemplate tx;
     private final Clock clock;
 
     public OrderService(UserQueryApi users, CartRepository carts, OrderRepository orders, CourseQueryApi courses,
                         CourseAccessApi courseAccess, EnrollmentApi enrollments, PendingPaymentSettler settler,
-                        CommerceCodeGenerator codes, OrderQueryService queries, PaymentProperties properties,
+                        CommerceCodeGenerator codes, StudentPaymentLock studentLock, OrderQueryService queries,
+                        PaymentProperties properties,
                         PlatformTransactionManager transactionManager, Clock clock) {
         this.users = users;
         this.carts = carts;
@@ -69,6 +71,7 @@ public class OrderService {
         this.enrollments = enrollments;
         this.settler = settler;
         this.codes = codes;
+        this.studentLock = studentLock;
         this.queries = queries;
         this.tx = new TransactionTemplate(transactionManager);
         this.tx.setTimeout(properties.txTimeoutSeconds());
@@ -251,6 +254,7 @@ public class OrderService {
     private boolean cancelLocked(Long studentId, String orderCode) {
         Long orderId = orders.findIdByOrderCodeAndStudentId(orderCode, studentId)
                 .orElseThrow(BusinessException::notFound);
+        studentLock.lock(studentId); // ADR-011: the student's cart row first (P11-fix-a)
         Order order = orders.findByIdForUpdate(orderId).orElseThrow(BusinessException::notFound);
         if (!order.isPending()) {
             throw new BusinessException(ErrorCode.DATA_CONFLICT);
@@ -269,7 +273,7 @@ public class OrderService {
         try {
             return settler.settle(order);
         } catch (PaymentGatewayException e) {
-            log.warn("Payment provider unavailable: orderCode={}, error={}", order.getOrderCode(), e.getMessage());
+            log.warn("Payment provider unavailable: orderCode={}, error={}", order.getOrderCode(), PaymentGatewayException.describe(e));
             throw new BusinessException(ErrorCode.PAYMENT_PROVIDER_UNAVAILABLE);
         }
     }

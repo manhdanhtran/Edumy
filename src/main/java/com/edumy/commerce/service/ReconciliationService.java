@@ -38,13 +38,15 @@ public class ReconciliationService {
     private final RoleQueryApi roles;
     private final EnrollmentApi enrollments;
     private final PaymentResultApplier applier;
+    private final StudentPaymentLock studentLock;
     private final PaymentQueryService queries;
     private final ApplicationEventPublisher events;
     private final TransactionTemplate tx;
     private final Clock clock;
 
     public ReconciliationService(OrderRepository orders, PaymentTransactionRepository payments, RoleQueryApi roles,
-                                 EnrollmentApi enrollments, PaymentResultApplier applier, PaymentQueryService queries,
+                                 EnrollmentApi enrollments, PaymentResultApplier applier, StudentPaymentLock studentLock,
+                                 PaymentQueryService queries,
                                  ApplicationEventPublisher events, PlatformTransactionManager transactionManager,
                                  Clock clock) {
         this.orders = orders;
@@ -52,6 +54,7 @@ public class ReconciliationService {
         this.roles = roles;
         this.enrollments = enrollments;
         this.applier = applier;
+        this.studentLock = studentLock;
         this.queries = queries;
         this.events = events;
         this.tx = new TransactionTemplate(transactionManager);
@@ -59,8 +62,8 @@ public class ReconciliationService {
     }
 
     /**
-     * UC-A18. The admin role is re-checked in the database (BR-26 → 403 {@code ACCESS_DENIED}). The order id is read as
-     * a scalar, then the order and the attempt are locked in that order (R1, ADR-011), so two admins (or a late
+     * UC-A18. The admin role is re-checked in the database (BR-26 → 403 {@code ACCESS_DENIED}). The order id and the buyer
+     * are read as scalars, then the buyer's cart row, the order and the attempt are locked in that order (R1, ADR-011), so two admins (or a late
      * provider result) never handle one attempt twice: the second sees it handled → 409 {@code DATA_CONFLICT} (E1).
      * Unknown id → 404; not an unhandled {@code needs_review} → 409 (E1).
      * <ul>
@@ -84,8 +87,10 @@ public class ReconciliationService {
     }
 
     private void resolveLocked(ResolvePaymentCommand command, HandledAction action) {
-        Long orderId = payments.findOrderIdById(command.paymentId()).orElseThrow(BusinessException::notFound);
-        Order order = orders.findByIdForUpdate(orderId).orElseThrow(BusinessException::notFound);
+        PaymentTransactionRepository.PaymentOwner owner = payments.findOwnerById(command.paymentId())
+                .orElseThrow(BusinessException::notFound);
+        studentLock.lock(owner.getStudentId()); // ADR-011: the buyer's cart row first (P11-fix-a)
+        Order order = orders.findByIdForUpdate(owner.getOrderId()).orElseThrow(BusinessException::notFound);
         PaymentTransaction payment = payments.findByIdForUpdate(command.paymentId())
                 .orElseThrow(BusinessException::notFound);
         if (!payment.isAwaitingReview()) {

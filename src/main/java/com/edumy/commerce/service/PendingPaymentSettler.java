@@ -54,26 +54,57 @@ class PendingPaymentSettler {
         this.clock = clock;
     }
 
-    /** {@code order} must be locked by the caller's transaction. */
+    /**
+     * Request flows (T1, UC-S16, UC-S05): {@code order} locked by the caller's transaction, which also holds the
+     * student's cart lock ({@link StudentPaymentLock}), so a "paid" answer is applied here (T2).
+     */
     @Transactional(propagation = Propagation.MANDATORY)
     Settlement settle(Order order) {
-        Optional<PaymentTransaction> pending = payments.findPendingByOrderIdForUpdate(order.getId());
-        if (pending.isEmpty()) {
-            return Settlement.NONE;
+        Lookup lookup = lookUp(order);
+        if (lookup.paid() == null) {
+            return lookup.settlement();
         }
-        PaymentTransaction payment = pending.get();
-        PaymentLookup lookup = gateway.query(payment.getTransactionRef());
-        log.info("Payment lookup: transactionRef={}, orderCode={}, answer={}", payment.getTransactionRef(),
-                order.getOrderCode(), lookup.getClass().getSimpleName());
-        PaymentResult result = PaymentResult.fromLookup(payment.getTransactionRef(), lookup);
-        if (result == null) {
-            payment.expire(clock.instant());
-            return Settlement.CLOSED;
-        }
-        return switch (applier.apply(order, payment, result)) {
+        return switch (applier.apply(order, lookup.payment(), lookup.paid())) {
             case PAID -> Settlement.PAID;
             case NEEDS_REVIEW -> Settlement.NEEDS_REVIEW;
             case FAILED, IGNORED -> Settlement.CLOSED;
         };
+    }
+
+    /**
+     * Timers (P11-fix-a): the claim transaction holds only the order row, not the cart lock, so it must not grant
+     * anything. Not paid → {@code expired}, failed → {@code failed} (no grant, safe here); paid → nothing changed, the
+     * result is returned and the caller applies it afterwards in a new transaction that takes the locks in the standard
+     * order (carts → orders → attempt). {@code null} when there was nothing to apply.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    PaymentResult settleUnlessPaid(Order order) {
+        Lookup lookup = lookUp(order);
+        return lookup.paid();
+    }
+
+    /** What one lookup found: the settlement, and the attempt + result when the provider reports it paid. */
+    private record Lookup(Settlement settlement, PaymentTransaction payment, PaymentResult paid) {
+    }
+
+    private Lookup lookUp(Order order) {
+        Optional<PaymentTransaction> pending = payments.findPendingByOrderIdForUpdate(order.getId());
+        if (pending.isEmpty()) {
+            return new Lookup(Settlement.NONE, null, null);
+        }
+        PaymentTransaction payment = pending.get();
+        PaymentLookup answer = gateway.query(payment.getTransactionRef());
+        log.info("Payment lookup: transactionRef={}, orderCode={}, answer={}", payment.getTransactionRef(),
+                order.getOrderCode(), answer.getClass().getSimpleName());
+        PaymentResult result = PaymentResult.fromLookup(payment.getTransactionRef(), answer);
+        if (result == null) {
+            payment.expire(clock.instant());
+            return new Lookup(Settlement.CLOSED, payment, null);
+        }
+        if (!result.success()) {
+            applier.apply(order, payment, result); // pending → failed, grants nothing
+            return new Lookup(Settlement.CLOSED, payment, null);
+        }
+        return new Lookup(Settlement.PAID, payment, result);
     }
 }

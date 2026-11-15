@@ -47,6 +47,8 @@ public class FakeQrPaymentGateway implements PaymentGateway {
     private final Map<String, PaymentLookup> outcomes = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> queries = new ConcurrentHashMap<>();
     private volatile boolean unavailable;
+    private final java.util.concurrent.atomic.AtomicReference<Hold> queryHold = new java.util.concurrent.atomic.AtomicReference<>();
+    private final java.util.concurrent.atomic.AtomicReference<Hold> createQrHold = new java.util.concurrent.atomic.AtomicReference<>();
 
     public FakeQrPaymentGateway(WebhookSignatureVerifier verifier, JsonMapper json, Validator validator, Clock clock) {
         this.verifier = verifier;
@@ -57,8 +59,9 @@ public class FakeQrPaymentGateway implements PaymentGateway {
 
     @Override
     public QrCode createQr(String reference, long amount, Instant expiresAt) {
+        Hold.pass(createQrHold.getAndSet(null));
         if (unavailable) {
-            throw new PaymentGatewayException("fake provider unavailable (createQr)");
+            throw new PaymentGatewayException("fake_unavailable");
         }
         return new QrCode("FAKEQR|EDUMY|" + reference + "|" + amount);
     }
@@ -66,8 +69,9 @@ public class FakeQrPaymentGateway implements PaymentGateway {
     @Override
     public PaymentLookup query(String reference) {
         queries.computeIfAbsent(reference, r -> new AtomicInteger()).incrementAndGet();
+        Hold.pass(queryHold.getAndSet(null));
         if (unavailable) {
-            throw new PaymentGatewayException("fake provider unavailable (query)");
+            throw new PaymentGatewayException("fake_unavailable");
         }
         return outcomes.getOrDefault(reference, new PaymentLookup.NotPaid());
     }
@@ -132,7 +136,58 @@ public class FakeQrPaymentGateway implements PaymentGateway {
         return queries.values().stream().mapToInt(AtomicInteger::get).sum();
     }
 
+    /**
+     * The next {@link #query} call stops inside the caller's transaction (holding its locks) until the returned hold is
+     * released — tests force a real interleaving of two application flows (review P11-R-03).
+     */
+    public Hold holdNextQuery() {
+        Hold hold = new Hold();
+        queryHold.set(hold);
+        return hold;
+    }
+
+    /** As {@link #holdNextQuery} for the next {@link #createQr} call. */
+    public Hold holdNextCreateQr() {
+        Hold hold = new Hold();
+        createQrHold.set(hold);
+        return hold;
+    }
+
+    /** A one-shot stop point: the stopped thread signals {@link #awaitReached}, then waits for {@link #release}. */
+    public static final class Hold {
+
+        private final java.util.concurrent.CountDownLatch reached = new java.util.concurrent.CountDownLatch(1);
+        private final java.util.concurrent.CountDownLatch released = new java.util.concurrent.CountDownLatch(1);
+
+        /** Called by the stopped flow; waits at most 30 s so a broken test never hangs the build. */
+        public static void pass(Hold hold) {
+            if (hold == null) {
+                return;
+            }
+            hold.reached.countDown();
+            try {
+                if (!hold.released.await(30, java.util.concurrent.TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("hold never released");
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(e);
+            }
+        }
+
+        /** Waits until a flow stopped here; {@code false} after 30 s. */
+        public boolean awaitReached() throws InterruptedException {
+            return reached.await(30, java.util.concurrent.TimeUnit.SECONDS);
+        }
+
+        public void release() {
+            released.countDown();
+        }
+    }
+
     public void reset() {
+        queryHold.set(null);
+        createQrHold.set(null);
         outcomes.clear();
         queries.clear();
         unavailable = false;
