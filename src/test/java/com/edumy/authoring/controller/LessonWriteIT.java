@@ -145,6 +145,53 @@ class LessonWriteIT {
                 .andExpect(jsonPath("$.videoUrl").value(nullValue()));
     }
 
+    /** P10 Q-h: a published / hidden course changes at once (D-14), so its lessons always have content (BR-07). */
+    @ParameterizedTest
+    @ValueSource(strings = {"published", "hidden"})
+    void create_withoutContent_onPublicCourse_422LessonContentRequired_nothingWritten_Qh(String courseStatus)
+            throws Exception {
+        long a = fixtures.lesson(chapter, 1);
+        fixtures.setStatus(course, courseStatus, true);
+
+        expectContentRequired(mvc.perform(json(post(lessonsOf(chapter)), instructor,
+                "{\"title\": \"Sẽ quay sau\", \"contentType\": \"video\", \"videoUrl\": \"  \"}")), "videoUrl");
+        expectContentRequired(mvc.perform(json(post(lessonsOf(chapter)), instructor,
+                "{\"title\": \"Bài viết\", \"contentType\": \"article\"}")), "articleContent");
+        // update: clearing the content, or switching the type without the new type's content
+        expectContentRequired(mvc.perform(json(patch(BASE + "/lessons/" + a), instructor, "{\"videoUrl\": \"\"}")),
+                "videoUrl");
+        expectContentRequired(mvc.perform(json(patch(BASE + "/lessons/" + a), instructor,
+                "{\"contentType\": \"article\"}")), "articleContent");
+
+        assertThat(lessonIds(chapter)).containsExactly(a);
+        assertThat(jdbc.sql("SELECT CONCAT(content_type, '|', video_url) FROM lessons WHERE id = ?").param(a)
+                .query(String.class).single()).isEqualTo("video|" + VIDEO);
+        assertThat(events.stream(CourseContentChanged.class)).isEmpty();
+        // with content it works, and a type switch carrying the new content too
+        mvc.perform(json(post(lessonsOf(chapter)), instructor,
+                "{\"title\": \"Bài viết\", \"contentType\": \"article\", \"articleContent\": \"Nội dung\"}"))
+                .andExpect(status().isCreated());
+        mvc.perform(json(patch(BASE + "/lessons/" + a), instructor,
+                "{\"contentType\": \"article\", \"articleContent\": \"Nội dung mới\"}")).andExpect(status().isOk());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"draft", "rejected"})
+    void updateClearingContent_onDraftOrRejectedCourse_allowed_checkedAtSubmit_Qh(String courseStatus)
+            throws Exception {
+        long a = fixtures.lesson(chapter, 1);
+        fixtures.setStatus(course, courseStatus, false);
+
+        mvc.perform(json(patch(BASE + "/lessons/" + a), instructor, "{\"videoUrl\": \"\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.videoUrl").value(nullValue()));
+    }
+
+    private static void expectContentRequired(ResultActions actions, String field) throws Exception {
+        MvcResult result = expectProblem(actions, 422, "LESSON_CONTENT_REQUIRED");
+        jsonPath("$.errors[*].field", hasItem(field)).match(result);
+    }
+
     @Test
     void create_contentOfTheOtherType_400_never500_D22() throws Exception {
         expectField(mvc.perform(json(post(lessonsOf(chapter)), instructor,

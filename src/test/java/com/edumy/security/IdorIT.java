@@ -297,6 +297,7 @@ class IdorIT {
             admin("POST", "/admin/users/{studentAId}/unlock", null),
             admin("PUT", "/admin/users/{studentAId}/roles/instructor", null),
             admin("DELETE", "/admin/users/{studentAId}/roles/instructor", null),
+            admin("GET", "/admin/users/{studentAId}/instructor-revocation-impact", null),
             admin("POST", "/admin/payments/{payment}/resolve", "{\"action\": \"activated\", \"note\": \"Ghi chú\"}"),
             admin("POST", "/admin/reviews/{review}/hide", null),
             admin("POST", "/admin/reviews/{review}/restore", null),

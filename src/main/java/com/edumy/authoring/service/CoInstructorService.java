@@ -11,6 +11,7 @@ import com.edumy.authoring.entity.CourseCoInstructor;
 import com.edumy.authoring.entity.InvitationStatus;
 import com.edumy.authoring.repository.CourseCoInstructorRepository;
 import com.edumy.authoring.repository.CourseRepository;
+import com.edumy.authoring.security.InvitationResendLimiter;
 import com.edumy.identity.api.RoleQueryApi;
 import com.edumy.identity.api.UserQueryApi;
 import com.edumy.shared.error.BusinessException;
@@ -18,6 +19,7 @@ import com.edumy.shared.error.ErrorCode;
 import com.edumy.shared.security.RoleCode;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -39,22 +41,26 @@ public class CoInstructorService {
     private final CourseCoInstructorRepository coInstructors;
     private final UserQueryApi users;
     private final RoleQueryApi roles;
+    private final InvitationResendLimiter resendLimiter;
     private final ApplicationEventPublisher events;
     private final Clock clock;
 
     public CoInstructorService(CourseRepository courses, CourseCoInstructorRepository coInstructors,
-                               UserQueryApi users, RoleQueryApi roles, ApplicationEventPublisher events, Clock clock) {
+                               UserQueryApi users, RoleQueryApi roles, InvitationResendLimiter resendLimiter,
+                               ApplicationEventPublisher events, Clock clock) {
         this.courses = courses;
         this.coInstructors = coInstructors;
         this.users = users;
         this.roles = roles;
+        this.resendLimiter = resendLimiter;
         this.events = events;
         this.clock = clock;
     }
 
     /**
      * UC-I13. The invitee must have an account with an active instructor role (E1: one code for "no account" and "not
-     * an instructor", as the SRS gives one message — 422 {@code COURSE_CO_INSTRUCTOR_NOT_ELIGIBLE}), must not be the
+     * an instructor", as the SRS gives one message — 422 {@code COURSE_CO_INSTRUCTOR_NOT_ELIGIBLE}; a <b>locked</b>
+     * account gets the same answer, ADR-008), must not be the
      * main instructor (E3 / BR-02 → 422 {@code COURSE_CO_INSTRUCTOR_IS_MAIN}, also the V5 trigger) and must not have
      * a pending or accepted invitation (E2 → 409 {@code COURSE_CO_INSTRUCTOR_ALREADY_INVITED}). A declined / removed
      * row is reused (D-18: same id, back to pending, inviter and time renewed). Publishes {@link CoInstructorInvited}
@@ -65,6 +71,7 @@ public class CoInstructorService {
         Course course = lockCourse(courseId);
         Long inviteeId = users.findIdByEmail(email)
                 .filter(id -> roles.hasActiveRole(id, RoleCode.INSTRUCTOR))
+                .filter(this::isActiveAccount) // ADR-008: no collaboration offered to a locked account
                 .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_CO_INSTRUCTOR_NOT_ELIGIBLE));
         if (course.isMainInstructor(inviteeId)) {
             throw new BusinessException(ErrorCode.COURSE_CO_INSTRUCTOR_IS_MAIN); // BR-02, UC-I13 E3
@@ -84,6 +91,26 @@ public class CoInstructorService {
         }
         events.publishEvent(new CoInstructorInvited(row.getId(), courseId, inviteeId, inviterId));
         return inviteeId;
+    }
+
+    /**
+     * UC-I13 E4 "Gửi thư lỗi: lời mời vẫn hiệu lực; cho gửi lại thư" (P10, additive): sends the invitation mail of a
+     * <b>pending</b> invitation of the course again — status, inviter and invitation time stay unchanged. Unknown
+     * invitation or one of another course → 404; not pending → 409 {@code INVITATION_NOT_PENDING}; within 60 s of the
+     * previous mail → 429 {@code INVITATION_RESEND_TOO_SOON} + {@code Retry-After}. The mail goes after commit through
+     * the same {@link CoInstructorInvited} event as the first one.
+     */
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void resend(Long courseId, Long invitationId) {
+        lockCourse(courseId); // serialized with remove / accept / decline of the same course; fresh reads below
+        CourseCoInstructor row = coInstructors.findById(invitationId)
+                .filter(r -> r.getCourse().getId().equals(courseId))
+                .orElseThrow(BusinessException::notFound);
+        if (row.getInvitationStatus() != InvitationStatus.PENDING) {
+            throw new BusinessException(ErrorCode.INVITATION_NOT_PENDING);
+        }
+        resendLimiter.acquire(row.getId(), row.getInvitedAt());
+        events.publishEvent(new CoInstructorInvited(row.getId(), courseId, row.getInstructorId(), row.getInvitedBy()));
     }
 
     /**
@@ -159,6 +186,10 @@ public class CoInstructorService {
 
     private Course lockCourse(Long courseId) {
         return courses.findByIdForUpdate(courseId).orElseThrow(BusinessException::notFound);
+    }
+
+    private boolean isActiveAccount(Long userId) {
+        return users.findSummary(userId).map(user -> "active".equals(user.status())).orElse(false);
     }
 
     /** The catalog page of a published / hidden course lists its accepted co-instructors. */

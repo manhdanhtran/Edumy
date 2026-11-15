@@ -53,6 +53,8 @@ public enum ErrorCode {
     INVITATION_NOT_PENDING(HttpStatus.CONFLICT),                      // UC-I14/I15 E: invitation revoked or already answered
     COURSE_MAIN_INSTRUCTOR_LEAVE_FORBIDDEN(HttpStatus.FORBIDDEN),     // UC-I20, RBAC §3.3, BR-02: main never leaves
     COURSE_INVALID_TRANSITION(HttpStatus.CONFLICT),                   // UC-I17 pre, UC-A10/A11 E1, A12/A16 pre: wrong status
+    INVITATION_RESEND_TOO_SOON(HttpStatus.TOO_MANY_REQUESTS),         // UC-I13 E4: resend of the invitation mail within 60 s
+    LESSON_CONTENT_REQUIRED(HttpStatus.UNPROCESSABLE_CONTENT),        // P10 Q-h: a published / hidden course takes no empty lesson
 
     // commerce
     CART_COURSE_ALREADY_OWNED(HttpStatus.CONFLICT),

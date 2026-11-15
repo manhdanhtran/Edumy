@@ -13,6 +13,7 @@ import com.edumy.authoring.repository.CourseRepository;
 import com.edumy.authoring.repository.LessonRepository;
 import com.edumy.shared.error.BusinessException;
 import com.edumy.shared.error.ErrorCode;
+import com.edumy.shared.error.FieldViolation;
 import com.edumy.shared.jpa.CodeEnum;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -25,6 +26,10 @@ import org.springframework.transaction.annotation.Transactional;
  * re-checks BR-33), keeps positions 1..n and publishes {@link CourseContentChanged} for a published / hidden course
  * (D-14). The content must match the type (D-22): the entity rejects the other type's field with 400
  * {@code VALIDATION_FAILED}, so ck_lessons_content_match is never reached.
+ * <p>Content (P10, Q-h): a draft / rejected course may hold lessons without content while being authored (BR-07
+ * checks them at submit). A <b>published or hidden</b> course takes changes at once (D-14), so there a created or
+ * updated lesson must have the content of its type — video → {@code videoUrl}, article → {@code articleContent} — else
+ * 422 {@code LESSON_CONTENT_REQUIRED} on that field, nothing changes.
  */
 @Service
 public class LessonService {
@@ -52,6 +57,7 @@ public class LessonService {
         int position = lessons.findMaxSortOrderByChapterId(chapterId) + 1;
         Lesson lesson = Lesson.create(chapter, command.title(), type(command.contentType()), command.videoUrl(),
                 command.articleContent(), command.durationSeconds(), command.preview(), position, clock.instant());
+        requireContentOnPublicCourse(course, lesson);
         lessons.saveAndFlush(lesson);
         contentChanged(course);
         return lesson.getId();
@@ -75,6 +81,7 @@ public class LessonService {
                         : typeChanged ? null : lesson.getArticleContent(),
                 command.durationSeconds() != null ? command.durationSeconds() : lesson.getDurationSeconds(),
                 command.preview() != null ? command.preview() : lesson.isPreview());
+        requireContentOnPublicCourse(course, lesson); // thrown before the flush: the transaction rolls back
         lessons.flush();
         contentChanged(course);
     }
@@ -125,6 +132,18 @@ public class LessonService {
         Course course = courses.findByIdForUpdate(courseId).orElseThrow(BusinessException::notFound);
         course.assertEditable(); // BR-33: re-checked under the lock (a submit may have run since the access check)
         return course;
+    }
+
+    /** Q-h: on a published / hidden course every lesson keeps the content of its type (D-14 + BR-07). */
+    private static void requireContentOnPublicCourse(Course course, Lesson lesson) {
+        if (course.isPublishedOrHidden() && !lesson.hasContent()) {
+            String field = lesson.getContentType() == LessonType.VIDEO ? "videoUrl" : "articleContent";
+            String message = lesson.getContentType() == LessonType.VIDEO
+                    ? "Bài học video của khóa đã công khai phải có đường dẫn video"
+                    : "Bài viết của khóa đã công khai phải có nội dung";
+            throw BusinessException.withErrors(ErrorCode.LESSON_CONTENT_REQUIRED,
+                    List.of(new FieldViolation(field, message)));
+        }
     }
 
     private void contentChanged(Course course) {

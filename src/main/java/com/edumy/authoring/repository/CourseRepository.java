@@ -76,6 +76,23 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
     @Query("select c.slug from Course c where c.slug = :base or c.slug like concat(:base, '-%')")
     List<String> findSlugsWithBase(@Param("base") String base);
 
+    /** UC-A05 step 1 (impact preview): courses whose main instructor is {@code userId}, any status. */
+    long countByMainInstructorId(Long mainInstructorId);
+
+    /**
+     * UC-A05 step 1: courses {@code userId} instructs (main or accepted co-instructor) that are {@code published} now
+     * ("số khóa đang công khai"; they stay published after the revocation, D-07).
+     */
+    @Query("""
+            select count(c) from Course c
+            where c.status = com.edumy.authoring.entity.CourseStatus.PUBLISHED
+              and (c.mainInstructorId = :userId
+                   or exists (select 1 from CourseCoInstructor cci
+                              where cci.course = c and cci.instructorId = :userId
+                                and cci.invitationStatus = com.edumy.authoring.entity.InvitationStatus.ACCEPTED))
+            """)
+    long countPublishedInstructedBy(@Param("userId") Long userId);
+
     /** D-21 / UC-A08: a used category is deactivated instead of deleted. */
     boolean existsByCategoryId(Long categoryId);
 

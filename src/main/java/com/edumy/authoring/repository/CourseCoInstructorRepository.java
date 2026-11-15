@@ -27,6 +27,9 @@ public interface CourseCoInstructorRepository extends JpaRepository<CourseCoInst
     boolean existsByCourseIdAndInstructorIdAndInvitationStatus(Long courseId, Long instructorId,
                                                                InvitationStatus invitationStatus);
 
+    /** UC-A05 step 1 (impact preview): courses {@code instructorId} co-teaches ({@code ACCEPTED}). */
+    long countByInstructorIdAndInvitationStatus(Long instructorId, InvitationStatus invitationStatus);
+
     /** Co-instructor rows of a course (instructor course detail, UC-I02), oldest invitation first. */
     List<CourseCoInstructor> findByCourseIdOrderByInvitedAtAscIdAsc(Long courseId);
 

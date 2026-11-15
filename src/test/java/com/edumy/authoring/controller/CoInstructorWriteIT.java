@@ -10,10 +10,12 @@ import static org.hamcrest.Matchers.nullValue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.Duration;
 import java.util.Map;
 
 import com.edumy.authoring.api.CoInstructorInvited;
@@ -21,10 +23,12 @@ import com.edumy.authoring.api.CourseContentChanged;
 import com.edumy.shared.error.ConstraintViolationTranslator;
 import com.edumy.shared.error.ErrorCode;
 import com.edumy.shared.security.RoleCode;
+import com.edumy.support.CapturingMailGateway;
 import com.edumy.support.CourseFixtures;
 import com.edumy.support.IdorAssertions;
 import com.edumy.support.JwtTestTokens;
 import com.edumy.support.JwtTestTokens.Session;
+import com.edumy.support.MutableClock;
 import com.edumy.support.MySqlSpringBootTest;
 import com.edumy.support.SqlStatementCounter;
 import com.edumy.support.TestUsers;
@@ -72,6 +76,10 @@ class CoInstructorWriteIT {
     SqlStatementCounter sql;
     @Autowired
     ConstraintViolationTranslator translator;
+    @Autowired
+    MutableClock clock;
+    @Autowired
+    CapturingMailGateway mails;
 
     CourseFixtures fixtures;
     Session main;
@@ -207,6 +215,90 @@ class CoInstructorWriteIT {
         assertThat(withoutTraceAndInstance(noRole)).isEqualTo(withoutTraceAndInstance(unknown));
         assertThat(withoutTraceAndInstance(revokedRole)).isEqualTo(withoutTraceAndInstance(unknown));
         assertThat(rows(course)).isZero();
+    }
+
+    /** ADR-008 (Q-g): a locked instructor account is not eligible — same body as an unknown email (no probing). */
+    @Test
+    void invite_lockedInstructorAccount_422NotEligible_identicalToUnknown_ADR008() throws Exception {
+        TestUser locked = users.create(RoleCode.STUDENT, RoleCode.INSTRUCTOR);
+        users.lock(locked.id());
+
+        MvcResult unknown = expectProblem(mvc.perform(invite(course, main, "khong-ton-tai-" + course + "@edumy.test")),
+                422, "COURSE_CO_INSTRUCTOR_NOT_ELIGIBLE");
+        MvcResult lockedAccount = expectProblem(mvc.perform(invite(course, main, locked.email())),
+                422, "COURSE_CO_INSTRUCTOR_NOT_ELIGIBLE");
+
+        assertThat(withoutTraceAndInstance(lockedAccount)).isEqualTo(withoutTraceAndInstance(unknown));
+        assertThat(rows(course)).isZero();
+        assertThat(events.stream(CoInstructorInvited.class)).isEmpty();
+    }
+
+    // -------------------------------------------------------------------------------- UC-I13 E4 resend (P10)
+
+    @Test
+    void resend_pending_202_mailAgain_rowUnchanged_cooldown60s_429RetryAfter_UCI13E4() throws Exception {
+        long id = fixtures.coInstructor(course, invitee.userId(), main.userId(), "pending");
+        Map<String, Object> before = row(course, invitee.userId());
+        clock.advance(Duration.ofSeconds(61)); // the invitation mail itself counts as the previous mail
+
+        mvc.perform(resend(course, id, main)).andExpect(status().isAccepted())
+                .andExpect(content().string(""));
+        mails.awaitMail(invitee.user().email(), "co-instructor-invited");
+        assertThat(events.stream(CoInstructorInvited.class))
+                .containsExactly(new CoInstructorInvited(id, course, invitee.userId(), main.userId()));
+        assertThat(row(course, invitee.userId())).isEqualTo(before); // status, inviter, invitation time unchanged
+
+        clock.advance(Duration.ofSeconds(30));
+        MvcResult tooSoon = expectProblem(mvc.perform(resend(course, id, main)), 429, "INVITATION_RESEND_TOO_SOON");
+        header().string(HttpHeaders.RETRY_AFTER, "30").match(tooSoon);
+
+        clock.advance(Duration.ofSeconds(30));
+        mvc.perform(resend(course, id, main)).andExpect(status().isAccepted());
+        assertThat(mails.awaitMails(invitee.user().email(), "co-instructor-invited", 2)).hasSize(2);
+        assertThat(events.stream(CoInstructorInvited.class)).hasSize(2);
+    }
+
+    @Test
+    void resend_withinSixtySecondsOfTheInvitation_429() throws Exception {
+        mvc.perform(invite(course, main, invitee.user().email())).andExpect(status().isCreated());
+        long id = invitationId(course, invitee.userId());
+
+        MvcResult tooSoon = expectProblem(mvc.perform(resend(course, id, main)), 429, "INVITATION_RESEND_TOO_SOON");
+        header().exists(HttpHeaders.RETRY_AFTER).match(tooSoon);
+        assertThat(events.stream(CoInstructorInvited.class)).hasSize(1); // the invitation only
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"accepted", "declined", "removed"})
+    void resend_notPending_409InvitationNotPending_noMail(String current) throws Exception {
+        long id = fixtures.coInstructor(course, invitee.userId(), main.userId(), current);
+        clock.advance(Duration.ofSeconds(61));
+
+        expectProblem(mvc.perform(resend(course, id, main)), 409, "INVITATION_NOT_PENDING");
+        assertThat(events.stream(CoInstructorInvited.class)).isEmpty();
+    }
+
+    @Test
+    void resend_foreignOrUnknownInvitation_orNotMain_404Identical_studentOnly403_noToken401_NFR01() throws Exception {
+        long id = fixtures.coInstructor(course, invitee.userId(), main.userId(), "pending");
+        Session otherMain = tokens.newUserSession(RoleCode.STUDENT, RoleCode.INSTRUCTOR);
+        long otherCourse = fixtures.draftCourse(otherMain.userId());
+        Session acceptedCo = tokens.newUserSession(RoleCode.STUDENT, RoleCode.INSTRUCTOR);
+        fixtures.coInstructor(course, acceptedCo.userId(), main.userId(), "accepted");
+        clock.advance(Duration.ofSeconds(61));
+
+        // the invitation id under a course of the caller that does not hold it
+        IdorAssertions.assertSameNotFound(mvc, resend(otherCourse, id, otherMain),
+                resend(otherCourse, Long.MAX_VALUE, otherMain));
+        // a course the caller is not the main instructor of (other main, accepted co-instructor, the invitee)
+        for (Session caller : new Session[] {otherMain, acceptedCo, invitee}) {
+            IdorAssertions.assertSameNotFound(mvc, resend(course, id, caller), resend(Long.MAX_VALUE, id, caller));
+        }
+        Session student = tokens.newUserSession(RoleCode.STUDENT);
+        expectProblem(mvc.perform(resend(course, id, student)), 403, "ACCESS_DENIED");
+        expectProblem(mvc.perform(post("/api/v1/courses/" + course + "/invitations/" + id + "/resend")),
+                401, "UNAUTHENTICATED");
+        assertThat(events.stream(CoInstructorInvited.class)).isEmpty();
     }
 
     @Test
@@ -512,6 +604,11 @@ class CoInstructorWriteIT {
 
     private MockHttpServletRequestBuilder invite(long courseId, Session caller, String email) {
         return json(post(COURSES + "/" + courseId + "/co-instructors"), caller, "{\"email\": \"" + email + "\"}");
+    }
+
+    private static MockHttpServletRequestBuilder resend(long courseId, long invitationId, Session caller) {
+        return post("/api/v1/courses/" + courseId + "/invitations/" + invitationId + "/resend")
+                .header(HttpHeaders.AUTHORIZATION, caller.bearer());
     }
 
     private static MockHttpServletRequestBuilder removeRequest(long courseId, long userId, Session caller) {
