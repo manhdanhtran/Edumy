@@ -1,6 +1,7 @@
 package com.edumy.learning.controller;
 
 import com.edumy.learning.dto.response.CertificateResponse;
+import com.edumy.learning.service.CertificateCatchUpService;
 import com.edumy.learning.service.CertificateQueryService;
 import com.edumy.shared.security.CurrentUserId;
 import com.edumy.shared.web.StubSupport;
@@ -27,15 +28,21 @@ import org.springframework.web.bind.annotation.RestController;
 public class CertificateController {
 
     private final CertificateQueryService queries;
+    private final CertificateCatchUpService catchUp;
 
-    public CertificateController(CertificateQueryService queries) {
+    public CertificateController(CertificateQueryService queries, CertificateCatchUpService catchUp) {
         this.queries = queries;
+        this.catchUp = catchUp;
     }
 
-    /** {@code page}, {@code size} (default 20, max 100); newest first ({@code sort} is ignored). */
+    /**
+     * {@code page}, {@code size} (default 20, max 100); newest first ({@code sort} is ignored). UC-S20 step 1 / D-48:
+     * a certificate missing at 100 % (a lesson was deleted) is issued first (ADR-009).
+     */
     @GetMapping
-    @Operation(summary = "UC-S20 Xem chứng chỉ của tôi (mã, tên khóa, ngày cấp)")
+    @Operation(summary = "UC-S20 Xem chứng chỉ của tôi (mã, tên khóa, ngày cấp; cấp bổ sung nếu đạt 100%)")
     public PagedModel<CertificateResponse> mine(@CurrentUserId Long userId, @ParameterObject Pageable pageable) {
+        catchUp.issueMissing(userId, null);
         return new PagedModel<>(queries.listMine(userId, pageable));
     }
 

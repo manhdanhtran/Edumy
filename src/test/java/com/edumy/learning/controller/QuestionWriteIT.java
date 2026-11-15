@@ -227,7 +227,7 @@ class QuestionWriteIT {
                         .header(HttpHeaders.AUTHORIZATION, instructor.bearer()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", hasSize(2)))
-                .andExpect(jsonPath("$.content[0].title").value("Mới nhất"));
+                .andExpect(jsonPath("$.content[1].title").value("Mới nhất")); // queue: oldest first (P10 Q-b)
         assertThat(events.stream(QuestionAnsweredByInstructor.class).toList()).isEmpty();
     }
 

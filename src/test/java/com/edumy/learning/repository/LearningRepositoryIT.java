@@ -379,18 +379,19 @@ class LearningRepositoryIT {
 
         Page<QuestionSummaryView> unanswered = questions.findForInstructor(courseIds, true, PageRequest.of(0, 10));
         assertThat(unanswered.getTotalElements()).isEqualTo(4);
+        // P10 Q-b: the instructor queue is oldest first (SRS UC-I22 "cũ nhất trước")
         assertThat(unanswered.getContent()).extracting(QuestionSummaryView::getId)
-                .containsExactly(noAnswer.getId(), deletedAnswer.getId(), hiddenAnswer.getId(), onlyFollowUp.getId());
-        assertThat(unanswered.getContent().get(2).getCourseId()).isEqualTo(otherCourse);
-        assertThat(unanswered.getContent().get(2).getAnswerCount()).isZero();
-        assertThat(unanswered.getContent().get(3).getAnswerCount()).isEqualTo(1);
+                .containsExactly(onlyFollowUp.getId(), hiddenAnswer.getId(), deletedAnswer.getId(), noAnswer.getId());
+        assertThat(unanswered.getContent().get(1).getCourseId()).isEqualTo(otherCourse);
+        assertThat(unanswered.getContent().get(1).getAnswerCount()).isZero();
+        assertThat(unanswered.getContent().get(0).getAnswerCount()).isEqualTo(1);
         assertThat(questions.findForInstructor(courseIds, true, PageRequest.of(1, 3)).getContent())
-                .extracting(QuestionSummaryView::getId).containsExactly(onlyFollowUp.getId());
+                .extracting(QuestionSummaryView::getId).containsExactly(noAnswer.getId());
 
         Page<QuestionSummaryView> all = questions.findForInstructor(courseIds, false, PageRequest.of(0, 10));
         assertThat(all.getTotalElements()).isEqualTo(5);
-        assertThat(all.getContent().getLast().getId()).isEqualTo(answered.getId());
-        assertThat(all.getContent().getLast().getAnswerCount()).isEqualTo(2);
+        assertThat(all.getContent().getFirst().getId()).isEqualTo(answered.getId());
+        assertThat(all.getContent().getFirst().getAnswerCount()).isEqualTo(2);
     }
 
     @Test

@@ -258,20 +258,46 @@ class CatalogCacheIT {
         assertThat(list.estimatedSize()).isEqualTo(7);
     }
 
+    /**
+     * P10 Q-a (UC-A12 step 3, AC-28, D-08): hiding a course takes it out of the list and the search at once — every
+     * cached list page is emptied on hide / unhide / approve; unhide brings it back at once.
+     */
     @Test
-    void courseList_hasNoEviction_ttlOnly_staleUpTo60Seconds() throws Exception {
+    void courseList_hideAndUnhide_listAndSearchFreshAtOnce_Qa_AC28() throws Exception {
+        String keyword = jdbc.sql("SELECT title FROM courses WHERE id = ?").param(course).query(String.class).single();
         mvc.perform(list("categoryId", String.valueOf(category))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.content[0].slug").value(slug));
+        mvc.perform(list("q", keyword)).andExpect(jsonPath("$.content[*].slug", hasItem(slug)));
 
-        // an admin hides the course: the detail is evicted, the list page keeps it until its TTL (accepted, §5.3)
         mvc.perform(admin(post(API + "/admin/courses/" + course + "/hide"), "{\"reason\": \"Lý do\"}"))
                 .andExpect(status().isOk());
 
-        mvc.perform(list("categoryId", String.valueOf(category))).andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[0].slug").value(slug));
-        CatalogCaches.clear(cacheManager);
+        assertThat(nativeCache(CacheConfig.CATALOG_COURSE_LIST).estimatedSize()).isZero();
         mvc.perform(list("categoryId", String.valueOf(category))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.content").isEmpty());
+        mvc.perform(list("q", keyword)).andExpect(jsonPath("$.content[*].slug", not(hasItem(slug))));
+
+        mvc.perform(admin(post(API + "/admin/courses/" + course + "/unhide"), null)).andExpect(status().isOk());
+
+        mvc.perform(list("categoryId", String.valueOf(category))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].slug").value(slug));
+    }
+
+    /** A content edit of a listed course is TTL-only on the list (accepted staleness, docs/ai/05 §5.3). */
+    @Test
+    void courseList_contentEdit_ttlOnly_staleUpTo60Seconds() throws Exception {
+        mvc.perform(list("categoryId", String.valueOf(category))).andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].slug").value(slug));
+        long price = jdbc.sql("SELECT price FROM courses WHERE id = ?").param(course).query(Long.class).single();
+
+        mvc.perform(json(patch(API + "/instructor/courses/" + course), instructor, "{\"price\": 199000}"))
+                .andExpect(status().isOk());
+
+        mvc.perform(list("categoryId", String.valueOf(category))).andExpect(jsonPath("$.content[0].price")
+                .value(Math.toIntExact(price)));
+        CatalogCaches.clear(cacheManager);
+        mvc.perform(list("categoryId", String.valueOf(category))).andExpect(jsonPath("$.content[0].price")
+                .value(199000));
     }
 
     // ---------------------------------------------------------------- eviction through the real endpoints

@@ -105,7 +105,7 @@ public interface CourseQuestionRepository extends JpaRepository<CourseQuestion, 
                                   where ia.question = q
                                     and ia.authorType = com.edumy.learning.entity.AuthorType.INSTRUCTOR
                                     and ia.visibilityStatus = com.edumy.learning.entity.ContentStatus.VISIBLE))
-            order by q.createdAt desc, q.id desc
+            order by q.createdAt asc, q.id asc
             """,
             countQuery = """
             select count(q) from CourseQuestion q join q.enrollment e

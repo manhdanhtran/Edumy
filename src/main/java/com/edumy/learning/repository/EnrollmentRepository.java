@@ -127,6 +127,34 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
     Page<CourseStudentView> findStudentsByCourseId(@Param("courseId") Long courseId, Pageable pageable);
 
     /** Row of "my courses" (UC-S08). */
+    /**
+     * D-48 catch-up (UC-S20 step 1, UC-S11): enrollments of {@code studentId} (one course, or all when
+     * {@code courseId} is null) that have no certificate yet but at least one completed lesson, with their completed
+     * lesson count. The caller compares it with the lessons that exist now (authoring) — 100 % reached because a
+     * lesson was deleted. Empty in the usual case, so the read path pays one statement.
+     */
+    @Query("""
+            select e.id as enrollmentId, e.courseId as courseId,
+                   (select count(p) from LessonProgress p where p.enrollment = e and p.completed = true)
+                       as completedLessonCount
+            from Enrollment e
+            where e.studentId = :studentId
+              and (:courseId is null or e.courseId = :courseId)
+              and not exists (select 1 from Certificate c where c.enrollment = e)
+              and exists (select 1 from LessonProgress d where d.enrollment = e and d.completed = true)
+            """)
+    List<CertificateCandidateView> findCertificateCandidates(@Param("studentId") Long studentId,
+                                                             @Param("courseId") Long courseId);
+
+    /** Row of {@link #findCertificateCandidates}. */
+    interface CertificateCandidateView {
+        Long getEnrollmentId();
+
+        Long getCourseId();
+
+        long getCompletedLessonCount();
+    }
+
     interface StudentEnrollmentView {
         Long getId();
 

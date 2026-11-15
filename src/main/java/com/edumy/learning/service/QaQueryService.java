@@ -99,7 +99,11 @@ public class QaQueryService {
                 instructorReplied);
     }
 
-    /** UC-I22: visible questions of the courses the caller instructs (optionally one course, optionally unanswered). */
+    /**
+     * UC-I22: visible questions of the courses the caller instructs, <b>oldest first</b> (the waiting queue, SRS
+     * "cũ nhất trước", P10 Q-b); default filter "no visible instructor answer yet" ({@code status=all} lifts it);
+     * optionally one course. UC-S18 (the course's own list) stays newest first.
+     */
     public Page<QuestionSummaryResponse> listForInstructor(Long userId, InstructorQuestionSearchRequest filter,
                                                            Pageable pageable) {
         Set<Long> courseIds = courseAccess.findInstructedCourseIds(userId);

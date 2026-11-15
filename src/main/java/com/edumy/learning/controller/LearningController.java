@@ -4,6 +4,7 @@ import com.edumy.learning.dto.request.CompletionRequest;
 import com.edumy.learning.dto.response.LearningOutlineResponse;
 import com.edumy.learning.dto.response.LessonContentResponse;
 import com.edumy.learning.dto.response.ProgressResponse;
+import com.edumy.learning.service.CertificateCatchUpService;
 import com.edumy.learning.service.EnrollmentQueryService;
 import com.edumy.learning.service.ProgressService;
 import com.edumy.shared.security.CurrentUserId;
@@ -32,16 +33,21 @@ public class LearningController {
 
     private final EnrollmentQueryService queries;
     private final ProgressService progress;
+    private final CertificateCatchUpService catchUp;
 
-    public LearningController(EnrollmentQueryService queries, ProgressService progress) {
+    public LearningController(EnrollmentQueryService queries, ProgressService progress,
+                              CertificateCatchUpService catchUp) {
         this.queries = queries;
         this.progress = progress;
+        this.catchUp = catchUp;
     }
 
+    /** UC-S11 / D-48: the caller's missing certificate of this course (100 % after a lesson deletion) is issued first. */
     @GetMapping("/courses/{courseId}")
     @PreAuthorize("@enrollmentAccess.canViewContent(#courseId)")
     @Operation(summary = "UC-S11 Xem đề cương và tiến độ khóa học (GV, Admin xem nội dung, không có tiến độ)")
     public LearningOutlineResponse outline(@PathVariable Long courseId, @CurrentUserId Long userId) {
+        catchUp.issueMissing(userId, courseId);
         return queries.outline(userId, courseId);
     }
 

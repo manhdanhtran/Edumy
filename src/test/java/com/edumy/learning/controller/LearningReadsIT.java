@@ -237,14 +237,15 @@ class LearningReadsIT {
     @Test
     void outline_statementCount_independentOfCourseSize() throws Exception {
         as(STUDENT_A, "/api/v1/learn/courses/1").andExpect(status().isOk()); // warm-up
-        // access check + course + chapters + lessons + enrollment + completed lessons
+        // access check + course + chapters + lessons + enrollment + completed lessons = 6, plus the D-48 catch-up
+        // (P10 Q-c): 1 candidate query, +1 lesson count when the enrollment has completed lessons and no certificate
         sql.reset();
         as(STUDENT_A, "/api/v1/learn/courses/1").andExpect(jsonPath("$.chapters", hasSize(3))); // 9 lessons
-        assertThat(sql.count()).as(sql.statements().toString()).isEqualTo(6);
+        assertThat(sql.count()).as(sql.statements().toString()).isEqualTo(8); // enrollment 1: partial, no certificate
 
         sql.reset();
         as(STUDENT_A, "/api/v1/learn/courses/2").andExpect(jsonPath("$.chapters", hasSize(2))); // 4 lessons
-        assertThat(sql.count()).as(sql.statements().toString()).isEqualTo(6);
+        assertThat(sql.count()).as(sql.statements().toString()).isEqualTo(7); // enrollment 11: has its certificate
     }
 
     // ---- UC-S09 lesson content
@@ -336,13 +337,15 @@ class LearningReadsIT {
     void myCertificates_statementCount_oneJoinedQueryPlusCount() throws Exception {
         as(STUDENT_A, "/api/v1/me/certificates").andExpect(status().isOk()); // warm-up
 
+        // page + count, plus the D-48 catch-up (P10 Q-c): candidates + lesson count (student 6 has a partially
+        // completed enrollment without certificate, enrollment 1, which stays below 100 % — nothing is written)
         sql.reset();
         as(STUDENT_A, "/api/v1/me/certificates?size=1").andExpect(jsonPath("$.content", hasSize(1)));
-        assertThat(sql.count()).as(sql.statements().toString()).isEqualTo(2); // page + count
+        assertThat(sql.count()).as(sql.statements().toString()).isEqualTo(4);
 
         sql.reset(); // a first page that is not full needs no count query
         as(STUDENT_A, "/api/v1/me/certificates?size=20").andExpect(jsonPath("$.content", hasSize(1)));
-        assertThat(sql.count()).as(sql.statements().toString()).isEqualTo(1);
+        assertThat(sql.count()).as(sql.statements().toString()).isEqualTo(3);
     }
 
     @Test

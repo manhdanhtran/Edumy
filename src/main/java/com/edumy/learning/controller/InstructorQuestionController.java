@@ -29,7 +29,10 @@ public class InstructorQuestionController {
         this.queries = queries;
     }
 
-    /** {@code page}, {@code size} (default 20, max 100); newest first ({@code sort} is ignored). */
+    /**
+     * {@code page}, {@code size} (default 20, max 100); <b>oldest first</b> ({@code sort} is ignored); {@code status}
+     * defaults to {@code unanswered}, {@code all} shows every visible question (UC-I22, P10 Q-b).
+     */
     @GetMapping
     @Operation(summary = "UC-I22 Xem câu hỏi của các khóa phụ trách (lọc theo khóa, chưa có phản hồi GV)")
     public PagedModel<QuestionSummaryResponse> list(

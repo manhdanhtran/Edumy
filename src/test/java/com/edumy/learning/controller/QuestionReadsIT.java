@@ -226,27 +226,34 @@ class QuestionReadsIT {
 
     // ---- UC-I22 instructor list
 
+    /** P10 Q-b: UC-I22 is the waiting queue — oldest first (UC-S18, the course's own list, stays newest first). */
     @Test
-    void instructorList_questionsOfInstructedCourses_UCI22() throws Exception {
-        as(2, "/api/v1/instructor/questions")
+    void instructorList_questionsOfInstructedCourses_oldestFirst_UCI22() throws Exception {
+        as(2, "/api/v1/instructor/questions?status=all")
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content[*].id", contains(2, 3, 1)))
+                .andExpect(jsonPath("$.content[*].id", contains(1, 3, 2)))
                 .andExpect(jsonPath("$.content[1].courseId").value(3))
                 .andExpect(jsonPath("$.content[1].courseTitle")
                         .value("ReactJS thực chiến: Xây dựng website thương mại điện tử"))
                 .andExpect(jsonPath("$.content[1].asker.fullName").value("Đặng Quốc Việt"))
                 .andExpect(jsonPath("$.content[1].instructorReplied").value(false));
-        as(3, "/api/v1/instructor/questions") // courses 5, 6, 7, 12, 13 and co-instructor of 1; 5 is deleted
-                .andExpect(jsonPath("$.content[*].id", contains(2, 1)));
-        as(4, "/api/v1/instructor/questions").andExpect(jsonPath("$.content[*].id", contains(6)));
+        as(3, "/api/v1/instructor/questions?status=all") // courses 5, 6, 7, 12, 13 and co of 1; 5 is deleted
+                .andExpect(jsonPath("$.content[*].id", contains(1, 2)));
+        as(4, "/api/v1/instructor/questions?status=all").andExpect(jsonPath("$.content[*].id", contains(6)));
+        // the student list of a course keeps newest first (UC-S18)
+        as(2, "/api/v1/courses/1/questions").andExpect(jsonPath("$.content[*].id", contains(2, 1)));
     }
 
+    /** P10 Q-b: default filter "chưa có phản hồi GV" (SRS UC-I22); {@code status=all} lifts it; filter by course. */
     @Test
-    void instructorList_filters_unansweredAndCourse_UCI22() throws Exception {
+    void instructorList_defaultUnanswered_allLiftsIt_courseFilter_UCI22() throws Exception {
+        as(2, "/api/v1/instructor/questions").andExpect(jsonPath("$.content[*].id", contains(3)));
+        as(2, "/api/v1/instructor/questions?status=").andExpect(jsonPath("$.content[*].id", contains(3)));
         as(2, "/api/v1/instructor/questions?status=unanswered").andExpect(jsonPath("$.content[*].id", contains(3)));
-        as(2, "/api/v1/instructor/questions?courseId=1").andExpect(jsonPath("$.content[*].id", contains(2, 1)));
-        as(2, "/api/v1/instructor/questions?courseId=1&status=unanswered").andExpect(jsonPath("$.content", empty()));
-        as(2, "/api/v1/instructor/questions?courseId=2").andExpect(jsonPath("$.content", empty()));
+        as(2, "/api/v1/instructor/questions?courseId=1").andExpect(jsonPath("$.content", empty()));
+        as(2, "/api/v1/instructor/questions?courseId=1&status=all").andExpect(jsonPath("$.content[*].id",
+                contains(1, 2)));
+        as(2, "/api/v1/instructor/questions?courseId=2&status=all").andExpect(jsonPath("$.content", empty()));
     }
 
     @Test
@@ -275,15 +282,15 @@ class QuestionReadsIT {
 
     @Test
     void instructorList_statementCount_constantAcrossPageSizes() throws Exception {
-        as(2, "/api/v1/instructor/questions").andExpect(status().isOk()); // warm-up
+        as(2, "/api/v1/instructor/questions?status=all").andExpect(status().isOk()); // warm-up
 
         sql.reset();
-        as(2, "/api/v1/instructor/questions?size=1").andExpect(jsonPath("$.content", hasSize(1)));
+        as(2, "/api/v1/instructor/questions?status=all&size=1").andExpect(jsonPath("$.content", hasSize(1)));
         // instructed course ids + page + count + names + courses
         assertThat(sql.count()).as(sql.statements().toString()).isEqualTo(5);
 
         sql.reset();
-        as(2, "/api/v1/instructor/questions?size=3").andExpect(jsonPath("$.content", hasSize(3)));
+        as(2, "/api/v1/instructor/questions?status=all&size=3").andExpect(jsonPath("$.content", hasSize(3)));
         assertThat(sql.count()).as(sql.statements().toString()).isEqualTo(5);
     }
 }
