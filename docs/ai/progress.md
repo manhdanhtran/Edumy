@@ -85,6 +85,7 @@ P10 review + P10-fix-a (security minors + Q-g identity) · P10-fix-b (authoring:
 | P11-b commerce: T1 create order + UC-S16 cancel with lookup, PendingPaymentSettler, code generator, BR-32 batch relation | done | f951350 | 2334 tests green (+31: OrderWriteIT 21, CommerceCodeGeneratorTest 22; 12 create / cancel stub tests removed), suite 8 min 08 s; see `### P11-b` |
 | P11-c commerce: real create QR (UC-S05 steps 1–2) with lookup of the expired attempt, R3 order re-check | done | 71681f4 | 2340 tests green (+6 net: PaymentQrIT 12; 6 QR stub tests removed), suite 8 min 10 s; see `### P11-c` |
 | P11-d commerce + notification: real UC-A18, GET /admin/payments/{id} (Q4), purchase and reconciliation mails | done | 9992890 | 2345 tests green (+5 net: ReconciliationIT 8, CommerceMailListenerIT 3, MailComposerTest +3, IdorIT +1; CommerceStubsIT 7 + ReconciliationServiceTest 4 removed), suite 8 min 13 s; see `### P11-d` |
+| P11-e timers: QR expiry, 24 h order expiry, code cleanup (NFR-09, SKIP LOCKED) | done | 85d652c | 2359 tests green (+14: CommerceExpiryIT 9, TokenCleanupIT 1, SchedulerBeansTest 4), suite 8 min 09 s; see `### P11-e` |
 
 ## P11 — commerce (plan approved 2026-11-15 with Q1–Q5 + R1–R3; ADR-011)
 Units P11-a … P11-f. Plan: lock order cart → order → attempt → enrollments / cart lines; scalar-first reads (R1);
@@ -154,6 +155,21 @@ then 409 `ORDER_ALREADY_PAID`.
 - Tests: `ReconciliationIT` (8: activated, E2 + refund allowed, AC-24 end to end, E1, two admins, E3, BR-26 / 403 / 404 /
   401, Q4 detail), `CommerceMailListenerIT` (3: purchase mail, AC-03 failure, no mail when not applied),
   `MailComposerTest` +3.
+### P11-e
+- `edumy.scheduler.enabled: true` in `application.yml` (+ `interval: PT5M`, `initial-delay: PT1M`), `false` in
+  `application-test.yml`; `shared.config.SchedulingConfig` (`@EnableScheduling`, same condition) and the three timer beans
+  carry `@ConditionalOnProperty`; every timer only calls its service (Boot's `TaskScheduler`).
+- `CommerceExpiryService`: `expireQrAttempts()` (UC-S05 A1) and `cancelOverdueOrders()` (BR-29, AC-22). One order per
+  transaction: native claim `… LIMIT 1 FOR UPDATE [OF o] SKIP LOCKED` (`OrderRepository.claimOrderWithExpiredQr` /
+  `claimOverdueOrder`), then `PendingPaymentSettler` (lookup + close / T2), then cancel `expired` unless paid. A provider
+  failure or any error rolls back that order only, logged, retried next run; ids handled in the run are excluded with a
+  never-empty list (sentinel `-1`, no `IN ()`); at most 200 orders per run. No ShedLock (NFR-09 via row locks).
+- `identity`: `TokenCleanupService` deletes `user_tokens` expired > 30 days in batches of 1 000
+  (`DELETE … LIMIT`, one short transaction each; SRS §6); `TokenCleanupScheduler`. No index on `expires_at` (no schema
+  change): a scan of a small table every 5 min — noted for P13.
+- Tests: `CommerceExpiryIT` (9: AC-22 ×3 incl. paid, provider down then retried, A1 / AC-02, A1 paid, two concurrent
+  runs on 10 orders → 5 + 5, one lookup per order, SKIP LOCKED does not wait, sentinel), `TokenCleanupIT` (1),
+  `SchedulerBeansTest` (4: on / off, 5 min, delegation).
 
 ## P09 summary
 - **P09-a** constraint coverage: `docs/ai/09-constraint-coverage.md` maps DDD §8 rows 1-31 (+ one valid-row test per table) to the existing `*SchemaIT` tests; only gap (row 5 NOT NULL) closed with 2 tests. No separate `ConstraintsIT`.
