@@ -88,6 +88,7 @@ P10 review + P10-fix-a (security minors + Q-g identity) · P10-fix-b (authoring:
 | P11-e timers: QR expiry, 24 h order expiry, code cleanup (NFR-09, SKIP LOCKED) | done | 85d652c | 2359 tests green (+14: CommerceExpiryIT 9, TokenCleanupIT 1, SchedulerBeansTest 4), suite 8 min 09 s; see `### P11-e` |
 | P11-f cleanup: STUB-P1 down to 4 lines (P12/P13), docs 01/06/07/10/triage, mail sender on edumy.test | done | 614f1e0 | 2359 tests green (no test change), suite 16 min 05 s (same tests as P11-e at 8 min 09 s: machine load, see report); see `### P11-f` |
 | P11-fix-a R-02 + R-04 per-student cart lock; timers apply 'paid' in a new transaction; R-07 log hygiene | done | 83aaa2c | 2363 tests green (+4: PaymentRaceIT), suite 10 min 01 s; see `### P11-fix-a` |
+| P11-fix-b R-01 expired-QR claim follows its index (EXPLAIN, lock scope) | done | 6372d3d | 2367 tests green (+4: ClaimQueryPlanIT), suite 7 min 55 s; see `### P11-fix-b` |
 
 ## P11 — commerce (plan approved 2026-11-15 with Q1–Q5 + R1–R3; ADR-011)
 Units P11-a … P11-f. Plan: lock order cart → order → attempt → enrollments / cart lines; scalar-first reads (R1);
@@ -207,6 +208,17 @@ Commerce is real: T1 (P11-b), create QR (P11-c), webhook + T2 (P11-a), cancel (P
   the first is held).
 - Tests: `PaymentRaceIT` (4: late P0 then on-time P1 → needs_review (Q3); on-time first then late → needs_review
   (AC-24); partial → paid + WARN (SRS step 7); timer finds paid while T1 holds the cart → no deadlock, one effect).
+### P11-fix-b — R-01: claim walks the index
+- `claimOrderWithExpiredQr`: `ORDER BY p.qr_expires_at, p.id` (was `…, o.id`); `claimOverdueOrder` unchanged
+  (`o.created_at, o.id` already follows its index). EXPLAIN before / after in ADR-011.
+- Tests: `ClaimQueryPlanIT` (4: EXPLAIN of the exact repository SQL for both claims — no filesort, expected index;
+  instance A holds one order inside its lookup → instance B processes the other 3 at once; a webhook on an unclaimed
+  order is not blocked).
+
+### Mutation checks (P11-fix-c; each lock removed temporarily, test run, lock restored, never committed)
+| Test | Lock / code removed | Result |
+|---|---|---|
+| `ClaimQueryPlanIT` (3 of 4: plan, instance B, unblocked webhook) | `ORDER BY p.qr_expires_at, p.id` → `…, o.id` | RED (filesort; B processed 0; webhook blocked) |
 
 ## P09 summary
 - **P09-a** constraint coverage: `docs/ai/09-constraint-coverage.md` maps DDD §8 rows 1-31 (+ one valid-row test per table) to the existing `*SchemaIT` tests; only gap (row 5 NOT NULL) closed with 2 tests. No separate `ConstraintsIT`.

@@ -50,6 +50,23 @@ key (`uq_orders_one_pending`, `uq_payment_one_pending`, `uq_payment_ref`, `uq_en
 | Cancel (UC-S16) | scalar order id → cart → order `FOR UPDATE` → pending attempt `FOR UPDATE` | — |
 | Reconciliation (UC-A18) | scalar order id + buyer → cart → order `FOR UPDATE` → attempt `FOR UPDATE` | handled_* CHECKs |
 | Timers (NFR-09) | claim one order `FOR UPDATE [OF o] SKIP LOCKED` → attempt; "paid" → T2 in a new transaction | as above |
+### Claim queries walk their index (P11-fix-b, review P11-R-01)
+The expired-QR claim sorted by `p.qr_expires_at, o.id` (columns of two tables): MySQL read **every** candidate,
+locked each `orders` row, sorted and only then applied `LIMIT 1`, so one timer instance held all candidate orders
+during its provider call (a second instance found nothing; students' requests on those orders waited). Now
+`ORDER BY p.qr_expires_at, p.id` follows `ix_payment_pending_expiry (status, qr_expires_at, id)` and stops at the first
+free row; the 24 h claim already followed `ix_orders_pending_created (status, created_at, id)`.
+EXPLAIN on MySQL 8.4 (`ClaimQueryPlanIT`, 4 expired orders):
+
+| Query | Before | After |
+|---|---|---|
+| expired QR | `p`: ref on `ix_payment_review_queue`, **Using temporary; Using filesort** | `p`: **range on `ix_payment_pending_expiry`**, Using index condition; `o`: eq_ref PRIMARY |
+| 24 h order | — | `o`: index `ix_orders_pending_created`, Using where; Using index (no filesort) |
+
+`ClaimQueryPlanIT` asserts the plans (no filesort, the expected index) and the lock scope: while instance A is inside
+the lookup of one order, instance B processes the 3 other orders at once and a webhook on an unclaimed order goes
+through. With the old `ORDER BY` 3 of its 4 tests fail (mutation check, see progress).
+
 ### R1 — no stale entity under a lock
 A flow that must read before it locks reads a **scalar** (`findOrderIdByTransactionRef`, `findOrderIdById`), never an
 entity: `SELECT … FOR UPDATE` (or `find` with `PESSIMISTIC_WRITE`) on an entity that is already in the persistence
