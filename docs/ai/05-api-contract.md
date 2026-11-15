@@ -80,6 +80,8 @@
 | `COURSE_CO_INSTRUCTOR_NOT_ELIGIBLE` | 422 | UC-I13 E1 "Tài khoản chưa đăng ký làm giảng viên": no account with that email **or** no active instructor role — one code and body for both (no email probing) |
 | `COURSE_CO_INSTRUCTOR_ALREADY_INVITED` | 409 | UC-I13 E2: the invitee's invitation is pending or accepted; `uq_cci_course_instructor` under concurrency |
 | `INVITATION_NOT_PENDING` | 409 | UC-I14 / UC-I15 E "lời mời đã bị thu hồi": the caller's own invitation is no longer pending (removed, accepted, declined) |
+| `INVITATION_RESEND_TOO_SOON` | 429 | UC-I13 E4 (P10): resend of an invitation mail within 60 s of the previous one (the invitation or a resend); header `Retry-After` |
+| `LESSON_CONTENT_REQUIRED` | 422 | P10 Q-h (BR-07 + D-14): a lesson created / updated on a **published or hidden** course has no content of its type; `errors[].field` = `videoUrl` / `articleContent` |
 | `COURSE_MAIN_INSTRUCTOR_LEAVE_FORBIDDEN` | 403 | UC-I20 / RBAC §3.3 / BR-02: the main instructor cannot leave the course |
 | `COURSE_INVALID_TRANSITION` | 409 | docs/ai/02 §2.2: the course is not in the starting status of the requested transition — UC-I17 submit outside draft/rejected; UC-A10/A11 E1 "không còn chờ duyệt (Admin khác đã xử lý): không ghi đè"; UC-A12 hide outside published; UC-A16 unhide outside hidden |
 | `COURSE_LAST_LESSON_DELETE_FORBIDDEN` | 409 | D-14 / UC-I07 E "khóa đã công khai sẽ không còn bài" / UC-I11 E "khóa đã công khai chỉ còn một bài": deleting the only lesson, or a chapter holding every lesson, of a published or hidden course |
@@ -231,8 +233,8 @@ transaction. Preconditions that do not hold are refused with 409 and change noth
   `INSTRUCTOR_ROLE_ALREADY_ACTIVE` (E1).
 - `DELETE /admin/users/{id}/roles/instructor` (UC-A05) → row set `is_active = false` (kept, BR-28);
   `identity.active-roles` evicted → instructor actions refused (403) on the next request (D-07); sessions, published
-  courses and enrollments untouched. Error: 409 `INSTRUCTOR_ROLE_NOT_ACTIVE` (E1). The SRS step 1 "impact preview"
-  (number of main / co-taught / published courses) has no endpoint in this contract.
+  courses and enrollments untouched. Error: 409 `INSTRUCTOR_ROLE_NOT_ACTIVE` (E1). The SRS step 1 "impact preview" is
+  `GET /admin/users/{userId}/instructor-revocation-impact` (P10, authoring section).
 
 ### Front-end routes used in emails (contract for the SPA team, Q5)
 The identity mails link to two SPA routes, the co-instructor invitation mail to a third, the review-result mails
@@ -311,6 +313,8 @@ Catalog responses (P05):
 | POST `/instructor/courses/{id}/co-instructors` (by email) · DELETE `/instructor/courses/{id}/co-instructors/{userId}` | I13, I16 | R |
 | GET `/instructor/invitations` · POST `/instructor/invitations/{id}/accept` · POST `…/decline` | I14, I15 | R |
 | POST `/instructor/courses/{id}/leave` | I20 | R |
+| POST `/courses/{courseId}/invitations/{invitationId}/resend` (P10, additive) | I13 E4 | R |
+| GET `/admin/users/{userId}/instructor-revocation-impact` (P10, additive; served by authoring) | A05 step 1 | R |
 | POST `/instructor/courses/{id}/submit` · GET `/instructor/courses/{id}/review-status` | I17, I18 | R |
 | GET/POST `/admin/categories` · PATCH `/admin/categories/{id}` · DELETE `/admin/categories/{id}` (deactivate if used, D-21) | A06–A08 | R |
 | GET `/admin/courses/pending` | A09 | R |
@@ -408,6 +412,10 @@ chapters/lessons go at the end (max + 1); positions always stay 1..n (a delete m
 - `PATCH /instructor/lessons/{id}` `UpdateLessonRequest` (same fields, all optional; absent/`null` = unchanged, `""`
   clears videoUrl / articleContent; a blank title → 400) → **200** `LessonResponse`. Changing `contentType` drops the
   old type's content unless it is sent (then 400). `durationSeconds` cannot be reset to `null` (send `0`).
+- Content on public courses (P10 Q-h): on a **published or hidden** course a created or updated lesson must carry the
+  content of its type (video → `videoUrl`, article → `articleContent`), else 422 `LESSON_CONTENT_REQUIRED` on that
+  field, nothing changes (D-14 makes the change visible at once); draft / rejected courses still accept lessons without
+  content (BR-07 checks them at submit).
 - `DELETE /instructor/lessons/{id}` → **204**; its progress goes, its questions become course-level; 409
   `COURSE_LAST_LESSON_DELETE_FORBIDDEN` for the only lesson of a published / hidden course.
 - `PUT /instructor/chapters/{id}/lessons/order` `ReorderRequest {ids}` → **200** `ChapterResponse` (lessons in the new
@@ -426,7 +434,8 @@ content). Every write locks the course row FOR UPDATE, then reads the invitation
   bodies) · 422 `COURSE_CO_INSTRUCTOR_IS_MAIN` (own email, BR-02; the V5 triggers map to the same code) · 409
   `COURSE_CO_INSTRUCTOR_ALREADY_INVITED` (pending / accepted) · 400 `VALIDATION_FAILED`. Publishes
   `CoInstructorInvited(invitationId, courseId, instructorId, invitedBy)` → invitation mail after commit (a mail failure
-  keeps the invitation, UC-I13 E4; no resend endpoint — the main instructor can remove and invite again).
+  keeps the invitation, UC-I13 E4; resend: see P10-fix-b below). A **locked** invitee → 422
+  `COURSE_CO_INSTRUCTOR_NOT_ELIGIBLE`, same body as an unknown email (ADR-008).
 - `POST /instructor/invitations/{id}/accept` · `…/decline` (`{id}` = invitation id of `GET /instructor/invitations`) →
   **204**. Only the invitee (`@courseAccess.isActiveInstructor()` + scoped by `instructor_id` = caller): someone else's
   invitation → 404 identical to an unknown id (the inviting main instructor too); not pending any more → 409
@@ -438,6 +447,21 @@ content). Every write locks the course row FOR UPDATE, then reads the invitation
   declined / removed invitees and strangers → 404; the main instructor → 403 `COURSE_MAIN_INSTRUCTOR_LEAVE_FORBIDDEN`.
 - Accept, removal of an accepted co-instructor and leave on a **published / hidden** course publish
   `CourseContentChanged(courseId, slug)` (the catalog page lists accepted co-instructors; eviction P08).
+
+Authoring additions (P10-fix-b, approved additive contract):
+- `POST /courses/{courseId}/invitations/{invitationId}/resend` (no body) → **202** (UC-I13 E4 "cho gửi lại thư"): the
+  invitation mail of a **pending** invitation of that course is sent again after commit (same template and SPA route
+  as the first mail); status, inviter and `invitedAt` stay unchanged. Main instructor only (`@courseAccess.isMain`:
+  co-instructor / invitee / stranger → 404, no active instructor role → 403). Unknown invitation or one of another
+  course → 404 (identical) · not pending → 409 `INVITATION_NOT_PENDING` · within 60 s of the previous mail (the
+  invitation itself or a resend) → 429 `INVITATION_RESEND_TOO_SOON` + `Retry-After`. The cooldown lives in memory
+  (`authoring.security.InvitationResendLimiter`, same single-instance limit as ADR-002).
+- `GET /admin/users/{userId}/instructor-revocation-impact` → **200** `InstructorRevocationImpactResponse
+  {mainCourseCount, coInstructorCourseCount, publishedCourseCount}` (UC-A05 step 1, shown before the admin confirms
+  `DELETE /admin/users/{id}/roles/instructor`): courses whose main instructor is the user (any status) · courses
+  co-taught (accepted invitation) · of those, the ones published now. Admin only (route + `hasRole('ADMIN')`);
+  unknown user → 404; no active instructor role → 409 `INSTRUCTOR_ROLE_NOT_ACTIVE`. Served by authoring from its own
+  tables (identity depends on `shared` only, docs/ai/01 §1.8).
 
 Authoring writes (P06-G4, UC-I17 submit, UC-A10…A12, A16 moderation; docs/ai/02 §2.2). Every write locks the course
 row FOR UPDATE, then checks the status; a status the transition does not start from → 409 `COURSE_INVALID_TRANSITION`,

@@ -73,6 +73,7 @@ main-only endpoints (BR-06) and on invitations of somebody else; a revoked instr
 | DELETE `/instructor/lessons/{id}` | lesson -> course | same | `LessonWriteIT` (same) |
 | POST `/instructor/invitations/{id}/accept` | co-instructor invitation | the invitee | `CoInstructorWriteIT#acceptAndDecline_someoneElsesInvitation_404IdenticalToMissing_NFR01` |
 | POST `/instructor/invitations/{id}/decline` | co-instructor invitation | the invitee | same |
+| POST `/courses/{courseId}/invitations/{invitationId}/resend` (P10) | invitation of the course | main instructor; an invitation id under another course is 404 like an unknown id | `CoInstructorWriteIT#resend_foreignOrUnknownInvitation_orNotMain_404Identical_studentOnly403_noToken401_NFR01` (no `IdorIT` row: the 60 s cooldown of a freshly created invitation makes the owner control 429) |
 | GET `/instructor/courses/{courseId}/students` | course | main or accepted co-instructor | `learning/controller/InstructorStudentControllerIT#students_idor_unrelatedCourse_404IdenticalToUnknown` |
 | GET `/instructor/questions?courseId=` | course (query id) | main or accepted co-instructor | `learning/controller/QuestionReadsIT#instructorList_courseNotInstructed_404IdenticalToUnknown` |
 | GET `/learn/courses/{courseId}` | course | enrolled, course instructor, admin (D-32) | `learning/controller/LearningReadsIT#outline_idor_notEnrolledOrNotRelated_404IdenticalToUnknown` |
@@ -128,6 +129,7 @@ Access beans are additionally proved through the probe controller (`authoring/se
 | POST `/admin/courses/{id}/approve\|reject\|hide\|unhide` | `AdminCourseReviewWriteIT#everyAction_instructorOrStudent_403_withoutToken_401_unchanged` |
 | PATCH / DELETE `/admin/categories/{id}` | `AdminCategoryWriteIT#writes_asInstructorOrStudent_403_nothingChanges` |
 | POST `/admin/users/{id}/lock\|unlock`, PUT / DELETE `/admin/users/{id}/roles/instructor` | `AdminUserWriteIT#nonAdmin_403_everyEndpoint_nothingChanges`, `#adminRoleRevokedInDatabase_staleJwt_403_BR26` |
+| GET `/admin/users/{userId}/instructor-revocation-impact` (P10) | `IdorIT` admin row + `AdminInstructorControllerIT#impact_nonAdmin_403_noToken_401` |
 | POST `/admin/payments/{id}/resolve` (stub) | `CommerceStubsIT#resolve_nonAdmin_403_andStaleAdminToken_403_BR26` |
 | POST `/admin/reviews/{id}/hide\|restore` | `ReviewWriteIT#adminActions_studentOrInstructor_403_withoutToken_401_unchanged` |
 | POST `/admin/questions\|answers/{id}/hide\|restore` | `QaModerationIT#nonAdmin_403_accessDenied_withoutToken_401_unchanged` |
