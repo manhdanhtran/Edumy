@@ -61,6 +61,21 @@ public interface CourseRepository extends JpaRepository<Course, Long> {
             """)
     List<Long> findInstructedCourseIds(@Param("userId") Long userId);
 
+    /**
+     * Those of {@code courseIds} that {@code userId} instructs (main or accepted co-instructor), one query, no role
+     * check (BR-32 relation, commerce T1). Pass a non-empty collection.
+     */
+    @Query("""
+            select c.id from Course c
+            where c.id in :courseIds
+              and (c.mainInstructorId = :userId
+                   or exists (select 1 from CourseCoInstructor cci
+                              where cci.course = c and cci.instructorId = :userId
+                                and cci.invitationStatus = com.edumy.authoring.entity.InvitationStatus.ACCEPTED))
+            """)
+    List<Long> findInstructorRelationCourseIds(@Param("userId") Long userId,
+                                               @Param("courseIds") java.util.Collection<Long> courseIds);
+
     /** {@code @courseAccess.canEditContent} (BR-33) and the course-status checks of the access beans. */
     @Query("select c.status from Course c where c.id = :id")
     Optional<CourseStatus> findStatusById(@Param("id") Long id);

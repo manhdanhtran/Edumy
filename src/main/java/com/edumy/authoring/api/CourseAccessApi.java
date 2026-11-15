@@ -24,6 +24,13 @@ public interface CourseAccessApi {
     boolean hasInstructorRelation(Long userId, Long courseId);
 
     /**
+     * Batch form of {@link #hasInstructorRelation} (same rule, whatever the role state): those of {@code courseIds} that
+     * {@code userId} instructs, in one query (commerce T1 re-validates every cart line, D-26 / BR-32). An empty
+     * collection costs no query. The set is immutable.
+     */
+    java.util.Set<Long> findInstructorRelationCourseIds(Long userId, java.util.Collection<Long> courseIds);
+
+    /**
      * Ids of every course {@code userId} instructs (main or accepted co-instructor), one query; empty without an active
      * instructor role (BR-26). The set is immutable.
      */

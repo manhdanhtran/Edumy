@@ -45,6 +45,14 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     Optional<Order> findByOrderCodeAndStudentId(String orderCode, Long studentId);
 
     /**
+     * UC-S16 / UC-S05 (ADR-011, R1): id of the student's order as a scalar — the order entity is loaded for the first
+     * time by {@link #findByIdForUpdate}, under its lock. Another student's code and an unknown one are both empty.
+     */
+    @Query("select o.id from Order o where o.orderCode = :orderCode and o.studentId = :studentId")
+    Optional<Long> findIdByOrderCodeAndStudentId(@Param("orderCode") String orderCode,
+                                                 @Param("studentId") Long studentId);
+
+    /**
      * T1 (UC-S04 step 2, D-24): {@code SELECT … FOR UPDATE} of the student's pending order (at most one, BR-29), to
      * replace it after the provider lookup. Flush the cancel before saving the new order: IDENTITY inserts run at
      * persist time, before pending updates, and would hit uq_orders_one_pending.

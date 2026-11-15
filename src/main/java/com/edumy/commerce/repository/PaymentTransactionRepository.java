@@ -36,6 +36,20 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     Optional<PaymentTransaction> findPendingByOrderId(@Param("orderId") Long orderId);
 
     /**
+     * The pending attempt of an order (at most one, BR-16) {@code FOR UPDATE}, taken after the order row lock (ADR-011):
+     * T1 replacing an order, UC-S16, create QR, schedulers — before the provider lookup.
+     */
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select p from PaymentTransaction p
+            where p.order.id = :orderId and p.status = com.edumy.commerce.entity.PaymentStatus.PENDING
+            """)
+    Optional<PaymentTransaction> findPendingByOrderIdForUpdate(@Param("orderId") Long orderId);
+
+    /** Reference generation: pre-check ({@code uq_payment_ref} still decides under concurrency). */
+    boolean existsByTransactionRef(String transactionRef);
+
+    /**
      * T2 step 1 (ADR-011, R1): order id of the attempt named by a provider result — a scalar, so no
      * {@link PaymentTransaction} enters the persistence context before the order row is locked (an entity loaded
      * before the lock wait would keep its stale fields: {@code FOR UPDATE} on a managed entity does not reload it).

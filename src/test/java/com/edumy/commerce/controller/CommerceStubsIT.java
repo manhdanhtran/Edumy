@@ -42,9 +42,9 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * The remaining phase-1 commerce stubs (ADR-005, P07-commerce) on the dev seed, read-only: POST /orders (UC-S04), POST
- * /orders/{code}/cancel (UC-S16), POST /orders/{code}/payments (UC-S05) and POST /admin/payments/{id}/resolve (UC-A18);
- * the webhook is real since P11-a ({@code PaymentWebhookIT}). Every call that reaches a stub goes through {@link #stub}: it proves that the
+ * The remaining phase-1 commerce stubs (ADR-005, P07-commerce) on the dev seed, read-only: POST
+ * /orders/{code}/payments (UC-S05) and POST /admin/payments/{id}/resolve (UC-A18); POST /orders and cancel are real since
+ * P11-b ({@code OrderWriteIT}), the webhook since P11-a ({@code PaymentWebhookIT}). Every call that reaches a stub goes through {@link #stub}: it proves that the
  * row counts of carts, cart_items, orders, order_items, payment_transactions and enrollments are unchanged and that no
  * INSERT / UPDATE / DELETE / locking statement ran.
  * <p>Seed: cart 4 = student 16 (course 1, 799 000), cart 2 = student 11 (hidden course 10 + course 3), cart 5 = student
@@ -107,121 +107,6 @@ class CommerceStubsIT {
 
     private ResultActions stubbedOrderPost(long userId, String path) throws Exception {
         return stub(asUser(userId, post(path)));
-    }
-
-    // ---- POST /orders (UC-S04)
-
-    @Test
-    void createOrder_previewFromTheCart_201_UCS04() throws Exception {
-        stubbedOrderPost(16, "/api/v1/orders")
-                .andExpect(status().isCreated())
-                .andExpect(header().string("X-Edumy-Stub", "true"))
-                .andExpect(jsonPath("$.orderCode", matchesPattern("ORD-\\d{8}-STUB")))
-                .andExpect(jsonPath("$.status").value("pending"))
-                .andExpect(jsonPath("$.totalAmount").value(799000))
-                .andExpect(jsonPath("$.cancelReason").value(nullValue()))
-                .andExpect(jsonPath("$.createdAt").value(notNullValue()))
-                .andExpect(jsonPath("$.paidAt").value(nullValue()))
-                .andExpect(jsonPath("$.cancelledAt").value(nullValue()))
-                .andExpect(jsonPath("$.items", hasSize(1)))
-                .andExpect(jsonPath("$.items[0].courseId").value(1))
-                .andExpect(jsonPath("$.items[0].title").value("Lập trình Java Spring Boot từ cơ bản đến nâng cao"))
-                .andExpect(jsonPath("$.items[0].slug").isNotEmpty())
-                .andExpect(jsonPath("$.items[0].thumbnailUrl").value("https://cdn.edumy.vn/thumbnails/course-1.jpg"))
-                .andExpect(jsonPath("$.items[0].unitPrice").value(799000)) // current price (BR-12 snapshot-to-be)
-                .andExpect(jsonPath("$.payments", empty()));
-    }
-
-    @Test
-    void createOrder_leavesOutUnavailableLines_andTotalsTheRest_UCS04() throws Exception {
-        // cart 2: hidden course 10 (left out, D-26) + course 3 at 599 000
-        stubbedOrderPost(11, "/api/v1/orders")
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.items", hasSize(1)))
-                .andExpect(jsonPath("$.items[0].courseId").value(3))
-                .andExpect(jsonPath("$.totalAmount").value(599000));
-    }
-
-    @Test
-    void createOrder_total_isTheSumOfTheLineCurrentPrices_UCS04() throws Exception {
-        long cartTotal = ((Number) JsonPath.read(mvc.perform(asUser(17, get("/api/v1/cart")))
-                .andReturn().getResponse().getContentAsString(), "$.totalAmount")).longValue();
-        stubbedOrderPost(17, "/api/v1/orders")
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.items", hasSize(2)))
-                .andExpect(jsonPath("$.totalAmount").value(cartTotal))
-                .andExpect(jsonPath("$.items[*].courseId", contains(4, 8)));
-    }
-
-    @Test
-    void createOrder_acceptsTheQrMethodBody_andRejectsAnotherOne_UCS04() throws Exception {
-        stub(json(asUser(16, post("/api/v1/orders")), "{\"paymentMethod\":\"qr\"}"))
-                .andExpect(status().isCreated());
-        expectProblem(stub(json(asUser(16, post("/api/v1/orders")), "{\"paymentMethod\":\"card\"}")),
-                400, "VALIDATION_FAILED");
-    }
-
-    @Test
-    void createOrder_emptyCart_422_UCS04_E1() throws Exception {
-        expectProblem(stubbedOrderPost(6, "/api/v1/orders"), 422, "CART_EMPTY"); // student 6 has no cart
-    }
-
-    @Test
-    void createOrder_unverifiedEmail_403_D02() throws Exception {
-        expectProblem(stubbedOrderPost(SeedUserTokens.UNVERIFIED, "/api/v1/orders"), 403, "EMAIL_NOT_VERIFIED");
-    }
-
-    @Test
-    void createOrder_withoutToken_401() throws Exception {
-        expectProblem(stub(post("/api/v1/orders")), 401, "UNAUTHENTICATED");
-    }
-
-    // ---- POST /orders/{code}/cancel (UC-S16)
-
-    @Test
-    void cancelOrder_returnsTheOrderAsCancelled_200_UCS16() throws Exception {
-        stubbedOrderPost(8, "/api/v1/orders/" + ORDER_4 + "/cancel")
-                .andExpect(status().isOk())
-                .andExpect(header().string("X-Edumy-Stub", "true"))
-                .andExpect(jsonPath("$.orderCode").value(ORDER_4))
-                .andExpect(jsonPath("$.status").value("cancelled"))
-                .andExpect(jsonPath("$.cancelReason").value("user"))
-                .andExpect(jsonPath("$.cancelledAt").value(notNullValue()))
-                .andExpect(jsonPath("$.paidAt").value(nullValue()))
-                .andExpect(jsonPath("$.totalAmount").value(849000))
-                .andExpect(jsonPath("$.items", hasSize(2)))
-                // UC-S16 step 2: the pending QR attempt (6) is closed too
-                .andExpect(jsonPath("$.payments[*].transactionRef",
-                        contains("FAKEPAY-20261101-0006", "FAKEPAY-20261101-0005")))
-                .andExpect(jsonPath("$.payments[*].status", contains("expired", "expired")));
-        // nothing was saved: the real order is still pending
-        mvc.perform(asUser(8, get("/api/v1/orders/" + ORDER_4)))
-                .andExpect(jsonPath("$.status").value("pending"))
-                .andExpect(jsonPath("$.cancelReason").value(nullValue()));
-    }
-
-    @Test
-    void cancelOrder_acceptsAnEmptyJsonBody_UCS16() throws Exception {
-        stub(json(asUser(8, post("/api/v1/orders/" + ORDER_4 + "/cancel")), "{}")).andExpect(status().isOk());
-    }
-
-    @Test
-    void cancelOrder_notPending_409_UCS16() throws Exception {
-        expectProblem(stubbedOrderPost(8, "/api/v1/orders/" + ORDER_3 + "/cancel"), 409, "DATA_CONFLICT");
-        expectProblem(stubbedOrderPost(6, "/api/v1/orders/" + ORDER_1 + "/cancel"), 409, "DATA_CONFLICT");
-    }
-
-    @Test
-    void cancelOrder_otherStudentsOrder_isTheSame404AsAnUnknownOne_UCS16() throws Exception {
-        Map<String, Long> before = counts();
-        assertSameNotFound(mvc, asUser(7, post("/api/v1/orders/" + ORDER_4 + "/cancel")),
-                asUser(7, post("/api/v1/orders/" + UNKNOWN_ORDER + "/cancel")));
-        assertThat(counts()).isEqualTo(before);
-    }
-
-    @Test
-    void cancelOrder_withoutToken_401() throws Exception {
-        expectProblem(stub(post("/api/v1/orders/" + ORDER_4 + "/cancel")), 401, "UNAUTHENTICATED");
     }
 
     // ---- POST /orders/{code}/payments (UC-S05 create QR)

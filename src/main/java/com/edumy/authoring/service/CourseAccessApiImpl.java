@@ -40,6 +40,16 @@ class CourseAccessApiImpl implements CourseAccessApi {
 
     @Override
     @Transactional(readOnly = true)
+    public java.util.Set<Long> findInstructorRelationCourseIds(Long userId, java.util.Collection<Long> courseIds) {
+        java.util.List<Long> ids = courseIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        if (userId == null || ids.isEmpty()) {
+            return java.util.Set.of();
+        }
+        return java.util.Set.copyOf(courses.findInstructorRelationCourseIds(userId, ids)); // no role check (BR-32)
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public java.util.Set<Long> findInstructedCourseIds(Long userId) {
         if (userId == null || !roles.hasActiveRole(userId, RoleCode.INSTRUCTOR)) { // BR-26, D-07
             return java.util.Set.of();

@@ -5,23 +5,22 @@ import com.edumy.commerce.dto.request.CreateOrderRequest;
 import com.edumy.commerce.dto.response.OrderDetailResponse;
 import com.edumy.commerce.dto.response.OrderSummaryResponse;
 import com.edumy.commerce.service.OrderQueryService;
+import com.edumy.commerce.service.CreateOrderCommand;
 import com.edumy.commerce.service.OrderService;
 import com.edumy.shared.security.CurrentUserId;
-import com.edumy.shared.web.StubSupport;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PagedModel;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /** The caller's orders (UC-S04, S06, S07, S16). Scoped by the caller's id; another student's order is a 404. */
@@ -52,34 +51,32 @@ public class OrderController {
     }
 
     /**
-     * Phase-1 stub, header {@code X-Edumy-Stub: true}: 201 + the order the caller's cart WOULD become (code
-     * {@code ORD-<yyyyMMdd>-STUB}, status {@code pending}, purchasable lines at the current price, total); nothing is
-     * inserted. 403 {@code EMAIL_NOT_VERIFIED} (D-02) · 422 {@code CART_EMPTY} (no purchasable line, UC-S04 E1).
+     * UC-S04 (T1, P11-b): 201 + the new pending order (lines at the locked price, BR-12; total, BR-27), or 200 + the
+     * identical pending order the student already has (E3: concurrent / repeated request). 403 {@code EMAIL_NOT_VERIFIED}
+     * (D-02) · 422 {@code CART_EMPTY} (no purchasable line, E1) · 409 {@code ORDER_CART_CHANGED} (expected lines / total
+     * no longer true, step 3) · 409 {@code ORDER_ALREADY_PAID} (the previous pending order turned out paid: recorded,
+     * reload the cart) · 503 {@code PAYMENT_PROVIDER_UNAVAILABLE} (the previous order could not be looked up).
      */
     @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    @Operation(summary = "UC-S04 Tạo đơn hàng từ giỏ hàng (STUB-P1: trả đơn mẫu tính từ giỏ hiện tại, không ghi dữ liệu)",
-            description = "Phase-1 stub: returns the order preview (X-Edumy-Stub: true), nothing is inserted.")
-    public OrderDetailResponse create(@CurrentUserId Long userId,
-                                      @Valid @RequestBody(required = false) CreateOrderRequest request,
-                                      HttpServletResponse response) {
-        StubSupport.mark(response);
-        // STUB-P1: replace with OrderService.create (T1 insert order + lines) — UC-S04, BR-12, BR-27, BR-29
-        return orders.create(userId, request);
+    @Operation(summary = "UC-S04 Tạo đơn hàng từ giỏ hàng (giá chốt; thay đơn chờ cũ sau tra cứu)")
+    public ResponseEntity<OrderDetailResponse> create(@CurrentUserId Long userId,
+                                                      @Valid @RequestBody(required = false) CreateOrderRequest request) {
+        CreateOrderCommand command = request == null ? CreateOrderCommand.unchecked()
+                : new CreateOrderCommand(request.expectedTotalAmount(), request.expectedCourseIds());
+        OrderService.CreateOutcome outcome = orders.create(userId, command);
+        return ResponseEntity.status(outcome.created() ? HttpStatus.CREATED : HttpStatus.OK).body(outcome.order());
     }
 
     /**
-     * Phase-1 stub, header {@code X-Edumy-Stub: true}: 200 + the order as it WOULD look cancelled (reason {@code user});
-     * nothing is saved. 404 for an unknown or foreign code · 409 {@code DATA_CONFLICT} when the order is not pending.
+     * UC-S16 (P11-b): 200 + the order, now {@code cancelled} ({@code user}); its pending attempt was looked up and
+     * closed. 404 for an unknown or foreign code · 409 {@code DATA_CONFLICT} when the order is not pending · 409
+     * {@code ORDER_ALREADY_PAID} (the lookup found it paid: recorded, not cancelled, E1) · 503
+     * {@code PAYMENT_PROVIDER_UNAVAILABLE} (lookup failed: the order stays pending, E2).
      */
     @PostMapping("/{orderCode}/cancel")
-    @Operation(summary = "UC-S16 Hủy đơn chờ thanh toán (STUB-P1: trả đơn như sau khi hủy, không ghi dữ liệu)",
-            description = "Phase-1 stub: returns the cancelled-order preview (X-Edumy-Stub: true), nothing is saved.")
+    @Operation(summary = "UC-S16 Hủy đơn chờ thanh toán (tra cứu giao dịch trước khi hủy)")
     public OrderDetailResponse cancel(@PathVariable String orderCode, @CurrentUserId Long userId,
-                                      @Valid @RequestBody(required = false) CancelOrderRequest request,
-                                      HttpServletResponse response) {
-        StubSupport.mark(response);
-        // STUB-P1: replace with OrderService.cancel (provider lookup, cancel order, expire attempt) — UC-S16, BR-29, BR-30
+                                      @Valid @RequestBody(required = false) CancelOrderRequest request) {
         return orders.cancel(userId, orderCode);
     }
 }

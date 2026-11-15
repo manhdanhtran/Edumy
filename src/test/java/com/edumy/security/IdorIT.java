@@ -280,8 +280,9 @@ class IdorIT {
             // ---- commerce: own orders, payments, cart (UC-S03, UC-S05, UC-S07, UC-S16)
             owned("GET", "/orders/{orderCode}", null, everyoneBut(Who.STUDENT_A), Who.STUDENT_A, 200),
             owned("GET", "/orders/{orderCode}/payments/current", null, everyoneBut(Who.STUDENT_A), Who.STUDENT_A, 200),
-            owned("POST", "/orders/{orderCode}/cancel", null, everyoneBut(Who.STUDENT_A), Who.STUDENT_A, 200),
             owned("POST", "/orders/{orderCode}/payments", null, everyoneBut(Who.STUDENT_A), Who.STUDENT_A, 200),
+            // the owner's cancel is real since P11-b: it runs after the QR row (owner rows share one world, in order)
+            owned("POST", "/orders/{orderCode}/cancel", null, everyoneBut(Who.STUDENT_A), Who.STUDENT_A, 200),
             owned("DELETE", "/cart/items/{paidCourse}", null, everyoneBut(Who.STUDENT_A), Who.STUDENT_A, 204));
 
 
