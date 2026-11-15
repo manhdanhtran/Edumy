@@ -82,6 +82,7 @@ P10 review + P10-fix-a (security minors + Q-g identity) · P10-fix-b (authoring:
 | P10-fix-d Q-a hidden course list eviction, Q-b UC-I22 queue, Q-c certificate catch-up | done | 6fd049a | 2274 tests green (+8), suite 7 min 27 s (one red run first: 2 ordering assertions still expected newest-first, fixed in the tests); ADR-009; `status=all` added to UC-I22 |
 | P10-fix-e reviewer BLOCKER/MAJOR: DT-B1 READ COMMITTED, AC-14, ex-instructor answers, BR-32 in learning, CORS, type mismatch | done | b1ddcdf | 2285 tests green (+11), suite 7 min 31 s; ADR-010; lost updates reproduced red first (`support/LockWaits`, test user gets `PROCESS`); triage in `docs/ai/reviews/triage.md` — 0 BLOCKER / 0 MAJOR open |
 | P11-a commerce: PaymentGateway port + FakeQrPaymentGateway, T2 `PaymentResultApplier`, real webhook, `EnrollmentApi.grantForPaidOrder`, `OrderPaid`, SC-M4 (admin search criteria), 3 new codes | done | 3c856d3 | 2303 tests green (+18 net: PaymentWebhookIT 18, FakeQrPaymentGatewayTest 6, LearningModuleIT +1; 7 webhook stub tests removed), suite 8 min 23 s; ADR-011, ADR-010 approval conditions; see `## P11` |
+| P11-b commerce: T1 create order + UC-S16 cancel with lookup, PendingPaymentSettler, code generator, BR-32 batch relation | done | f951350 | 2334 tests green (+31: OrderWriteIT 21, CommerceCodeGeneratorTest 22; 12 create / cancel stub tests removed), suite 8 min 08 s; see `### P11-b` |
 
 ## P11 — commerce (plan approved 2026-11-15 with Q1–Q5 + R1–R3; ADR-011)
 Units P11-a … P11-f. Plan: lock order cart → order → attempt → enrollments / cart lines; scalar-first reads (R1);
@@ -108,6 +109,22 @@ then 409 `ORDER_ALREADY_PAID`.
   (6), `LearningModuleIT` +1 (MANDATORY grant); webhook tests removed from `CommerceStubsIT` (seed DB is read-only).
   Test support: `CommerceFixtures`, `Concurrently`, `PaymentTestHooks` (in-transaction `OrderPaid` recorder + failure
   probe) + `PaymentTestHooksResetExtension` (also resets the fake gateway) in `@MySqlSpringBootTest`.
+
+### P11-b
+- `OrderService.create(studentId, CreateOrderCommand)` (T1) and `cancel(studentId, orderCode)` (UC-S16) in a
+  `TransactionTemplate` (tx-timeout); `PendingPaymentSettler` (lock the pending attempt after the order, lookup, apply:
+  paid → T2, failed → `failed`, not paid → `expired`; provider error propagates → 503, rollback) is shared with QR and
+  the schedulers. `CommerceCodeGenerator` (order code `ORD-<yyyyMMdd>-<8 base32>`, reference 15 digits in
+  [10^14, 10^15), SecureRandom).
+- T1 order of checks: D-02 outside the transaction → cart `FOR UPDATE` → D-26 re-validation (3 queries: summaries,
+  owned, new `CourseAccessApi.findInstructorRelationCourseIds` batch, BR-32 by relation) → Q2 expectations → pending order
+  `FOR UPDATE` → Q1 identical → reuse (200) / settle + cancel `replaced` + flush → insert (201).
+- Deviation from the SRS step order (documented): the step-3 confirmation (Q2) is checked before step 2, so a stale
+  confirmation never cancels the previous order.
+- `CreateOrderRequest` gained `expectedTotalAmount` / `expectedCourseIds` (optional, additive); POST /orders answers 201
+  or 200; stub markers removed from create and cancel; stub preview mapper methods deleted.
+- Tests: `OrderWriteIT` (21), `CommerceCodeGeneratorTest` (22 incl. 20 repetitions); create / cancel stub tests removed
+  from `CommerceStubsIT`; `IdorIT` owner rows: QR before cancel (owner rows share one world in table order).
 
 ## P09 summary
 - **P09-a** constraint coverage: `docs/ai/09-constraint-coverage.md` maps DDD §8 rows 1-31 (+ one valid-row test per table) to the existing `*SchemaIT` tests; only gap (row 5 NOT NULL) closed with 2 tests. No separate `ConstraintsIT`.

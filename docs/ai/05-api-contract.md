@@ -509,9 +509,9 @@ kept by submit / approve / unhide (DDD "lý do từ chối hoặc ẩn gần nh�
 | Method & path | UC | P1 |
 |---|---|---|
 | GET `/cart` · POST `/cart/items` · DELETE `/cart/items/{courseId}` | S02, S01, S03 | R |
-| POST `/orders` (T1) | S04 | **S** |
+| POST `/orders` (T1) | S04 | R (P11-b) |
 | GET `/orders` · GET `/orders/{orderCode}` | S06, S07 | R |
-| POST `/orders/{orderCode}/cancel` | S16 | **S** |
+| POST `/orders/{orderCode}/cancel` | S16 | R (P11-b) |
 | POST `/orders/{orderCode}/payments` (create QR) | S05 | **S** |
 | GET `/orders/{orderCode}/payments/current` (polling) | S05 | R |
 | POST `/webhooks/payments/fake` (dev only, HMAC header) | S05 | R (P11-a) |
@@ -564,17 +564,7 @@ Commerce writes (P06-G5), login required (D-23; no verified email needed to cart
 Commerce stubs (P07-commerce, ADR-005 phase 1): every response carries `X-Edumy-Stub: true` (also the error responses of
 these handlers); nothing is written, no payment provider is called; the controllers are final, phase 2 replaces the
 bodies of `OrderService` / `PaymentService` / `ReconciliationService`.
-- `POST /orders` `CreateOrderRequest {paymentMethod?}` (body optional, only `qr`; else 400) (UC-S04) → **201**
-  `OrderDetailResponse`: the order the caller's cart WOULD become: `orderCode` `ORD-<yyyyMMdd>-STUB` (UTC, never stored),
-  `status` `pending`, one line per purchasable cart line at the **current** price (BR-12), `totalAmount` = Σ (BR-27),
-  `payments: []`. Checks: unverified email → 403 `EMAIL_NOT_VERIFIED` (D-02); lines re-validated like D-26 — hidden / owned
-  / own / now-free lines are left out of the preview (their reason stays in `GET /cart`; `OrderDetailResponse` has no
-  field for excluded lines); no purchasable line left (also: no cart) → 422 new `CART_EMPTY` (UC-S04 E1). An existing
-  pending order is not touched (D-24 is phase 2).
-- `POST /orders/{orderCode}/cancel` `CancelOrderRequest {}` (body optional, empty: the reason is always `user`) (UC-S16) →
-  **200** `OrderDetailResponse` as it WOULD look: `status` `cancelled`, `cancelReason` `user`, `cancelledAt` = now, the
-  pending attempt shown as `expired`. Unknown / another student's code → 404 `RESOURCE_NOT_FOUND` (identical); not
-  `pending` → 409 `DATA_CONFLICT`.
+- `POST /orders` and `POST /orders/{orderCode}/cancel` — **real since P11-b**, see "Commerce payments (P11)" below.
 - `POST /orders/{orderCode}/payments` (UC-S05) → **201** `PaymentQrResponse {orderCode,transactionRef,status,amount,qrData,
   qrExpiresAt,createdAt}`: sample attempt `FAKEPAY-<yyyyMMdd>-STUB`, `qrData` `FAKEQR|EDUMY|<orderCode>|<amount>`,
   `amount` = order total (BR-14), `qrExpiresAt` = now + 15 min (BR-13, `edumy.payment.qr-ttl`), `status` `pending`; when
@@ -596,6 +586,25 @@ Commerce payments (P11, ADR-011):
   owned, on-time result with every course owned → `needs_review` (no access, UC-A18 queue); a repeated result, a result
   for an unknown reference → acknowledged, nothing changes (idempotent by `transactionRef`, AC-11). The answer is 200 in
   every applied / ignored case so the provider stops retrying; 500 only when the transaction failed (nothing kept).
+- `POST /orders` (UC-S04 T1) `CreateOrderRequest {paymentMethod? (qr only), expectedTotalAmount? ≥0, expectedCourseIds?
+  (≤100 ids > 0)}` (body optional) → **201** `OrderDetailResponse` of the new pending order (no `X-Edumy-Stub`), or
+  **200** with the student's identical pending order (same courses, same prices: UC-S04 E3, repeated / concurrent
+  request — decision Q1). Code `ORD-<yyyyMMdd>-<8 base32>`. Lines = the cart's purchasable lines in cart order at the
+  **current** price, locked (BR-12; a later price change never touches the order, D-14), total = Σ (BR-27). Re-validation
+  (D-26): not published → left out, owned → left out, instructor relation (main, or accepted co-instructor, also after
+  the instructor role was revoked, BR-32) → left out, free now → left out; left-out lines stay in the cart. The cart is
+  never emptied by T1. Errors: 403 `EMAIL_NOT_VERIFIED` (D-02) · 422 `CART_EMPTY` (no cart, no line, or no
+  purchasable line; AC-18) · 409 `ORDER_CART_CHANGED` (`expectedCourseIds` / `expectedTotalAmount` sent and no longer
+  true; `errors[]` names each course / the current total; nothing changed) · 409 `ORDER_ALREADY_PAID` (the previous
+  pending order's attempt was found paid by the lookup: payment, order and enrollments are committed, its courses left
+  the cart — show the cart again) · 503 `PAYMENT_PROVIDER_UNAVAILABLE` (the previous order could not be looked up;
+  nothing changed). A different previous pending order is cancelled as `replaced` (its pending attempt looked up and
+  closed) **before** the new order is created (AC-21); never two pending orders (BR-29).
+- `POST /orders/{orderCode}/cancel` (UC-S16) `CancelOrderRequest {}` (body optional) → **200** `OrderDetailResponse`,
+  `status` `cancelled`, `cancelReason` `user`; the pending attempt (if any) was looked up and closed (`expired`, or
+  `failed`). Cart untouched. 404 unknown / another student's (identical) · 409 `DATA_CONFLICT` not pending · 409
+  `ORDER_ALREADY_PAID` (lookup found it paid: recorded, order `paid`, E1) · 503 `PAYMENT_PROVIDER_UNAVAILABLE` (lookup
+  failed, the order stays pending, E2).
 - `POST /admin/payments/{id}/resolve` `ResolvePaymentRequest {action activated|refund_outside, note}` (note required,
   trimmed, ≤16 383 chars; the SRS names no limit) (UC-A18) → **200** `AdminPaymentResponse` as it WOULD look after handling
   (`handledBy`, `handledAction`, `handledNote`, `handledAt`; `activated` → `status` `success` + `confirmedAt`;
