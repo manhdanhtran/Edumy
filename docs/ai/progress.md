@@ -81,6 +81,33 @@ P10 review + P10-fix-a (security minors + Q-g identity) · P10-fix-b (authoring:
 | P10-fix-c learning access: 403/404 principle incl. UC-S09, SC-M1 | done | 3bc5fdc | 2266 tests green (+1 net: 6 learning tests rewritten, IdorIT +1), suite 7 min 04 s; published course without relation → 403 `ENROLLMENT_REQUIRED` (one body), hidden / draft / pending / rejected → 404; IdorIT world's main course now hidden |
 | P10-fix-d Q-a hidden course list eviction, Q-b UC-I22 queue, Q-c certificate catch-up | done | 6fd049a | 2274 tests green (+8), suite 7 min 27 s (one red run first: 2 ordering assertions still expected newest-first, fixed in the tests); ADR-009; `status=all` added to UC-I22 |
 | P10-fix-e reviewer BLOCKER/MAJOR: DT-B1 READ COMMITTED, AC-14, ex-instructor answers, BR-32 in learning, CORS, type mismatch | done | b1ddcdf | 2285 tests green (+11), suite 7 min 31 s; ADR-010; lost updates reproduced red first (`support/LockWaits`, test user gets `PROCESS`); triage in `docs/ai/reviews/triage.md` — 0 BLOCKER / 0 MAJOR open |
+| P11-a commerce: PaymentGateway port + FakeQrPaymentGateway, T2 `PaymentResultApplier`, real webhook, `EnrollmentApi.grantForPaidOrder`, `OrderPaid`, SC-M4 (admin search criteria), 3 new codes | done | 3c856d3 | 2303 tests green (+18 net: PaymentWebhookIT 18, FakeQrPaymentGatewayTest 6, LearningModuleIT +1; 7 webhook stub tests removed), suite 8 min 23 s; ADR-011, ADR-010 approval conditions; see `## P11` |
+
+## P11 — commerce (plan approved 2026-11-15 with Q1–Q5 + R1–R3; ADR-011)
+Units P11-a … P11-f. Plan: lock order cart → order → attempt → enrollments / cart lines; scalar-first reads (R1);
+provider calls inside a `TransactionTemplate` with `edumy.payment.tx-timeout`; "lookup found it paid" commits first,
+then 409 `ORDER_ALREADY_PAID`.
+
+### P11-a
+- Port `commerce.integration.PaymentGateway` (`createQr`, `query`, `verifyWebhook`) + `FakeQrPaymentGateway`
+  (`@Profile("!payos")`; payload `FAKEQR|EDUMY|<transactionRef>|<amount>`; remembers verified webhooks for lookups;
+  test hooks `simulatePaid/Failed`, `setUnavailable`, `queryCount`, `reset`). The webhook's JSON is parsed by the
+  gateway into its own record (`FakePaymentNotification`); `dto.request.PaymentWebhookRequest` stays as the OpenAPI
+  schema only.
+- `PaymentResultApplier` (T2, `MANDATORY`): decision table of ADR-011; `PaymentService.receiveWebhook(rawBody,
+  headers)`: signature first (401 without any SQL), then scalar order id → order `FOR UPDATE` → attempt `FOR UPDATE`
+  → apply, one transaction. Unknown reference → 200 + WARN. `X-Edumy-Stub` / `STUB-P1` removed from the webhook.
+- `learning::api.EnrollmentApi.grantForPaidOrder(GrantEnrollmentCommand)` (`MANDATORY`, `INSERT IGNORE` per course,
+  returns the granted course ids); `commerce::api.OrderPaid` (no listener before P11-d).
+- SC-M4 (commerce part): `OrderQueryService.search(OrderSearchCriteria)`, `PaymentQueryService.search(
+  PaymentSearchCriteria)`; the remaining commerce services take commands as their bodies are rewritten (b–d).
+- New codes `ORDER_CART_CHANGED` 409, `ORDER_ALREADY_PAID` 409, `PAYMENT_PROVIDER_UNAVAILABLE` 503 (used from P11-b);
+  `PaymentProperties` gained `orderTtl` 24 h, `txTimeout` 10 s, `connectTimeout` / `readTimeout` 5 s.
+- Tests: `PaymentWebhookIT` (18: AC-01, AC-02, AC-11 incl. 4 concurrent deliveries, AC-19 ×2, AC-23, AC-24, Q3 ×2,
+  R1 race with `LockWaits`, NFR-04 rollback probe, unknown reference, signature / body errors), `FakeQrPaymentGatewayTest`
+  (6), `LearningModuleIT` +1 (MANDATORY grant); webhook tests removed from `CommerceStubsIT` (seed DB is read-only).
+  Test support: `CommerceFixtures`, `Concurrently`, `PaymentTestHooks` (in-transaction `OrderPaid` recorder + failure
+  probe) + `PaymentTestHooksResetExtension` (also resets the fake gateway) in `@MySqlSpringBootTest`.
 
 ## P09 summary
 - **P09-a** constraint coverage: `docs/ai/09-constraint-coverage.md` maps DDD §8 rows 1-31 (+ one valid-row test per table) to the existing `*SchemaIT` tests; only gap (row 5 NOT NULL) closed with 2 tests. No separate `ConstraintsIT`.

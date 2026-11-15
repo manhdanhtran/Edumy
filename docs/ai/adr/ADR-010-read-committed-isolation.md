@@ -31,3 +31,11 @@ hence every transaction, runs READ COMMITTED. A read after a lock sees what was 
 - Test support: `support/LockWaits` interleaves a lock holder and a request deterministically by waiting for
   `information_schema.innodb_trx` to show `LOCK WAIT` (the test user gets `PROCESS`, `support/SharedMySql`);
   `shared/config/TransactionIsolationIT` asserts the configured level.
+
+## Conditions of approval (P11 brief, 2026-11-15)
+- No gap locks under READ COMMITTED: never use "plain SELECT says the row is absent → INSERT" unless a UNIQUE key or a
+  lock on a parent row protects the insert (commerce applies this in ADR-011).
+- The `PROCESS` privilege is granted **only to the test database user** (for `support/LockWaits`); the production user
+  does not need it.
+- Production requires `binlog_format=ROW` (READ COMMITTED with statement-based binary logging is refused by MySQL);
+  the runbook (P14) states both points.

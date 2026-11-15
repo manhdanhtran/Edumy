@@ -72,6 +72,9 @@
 | `COURSE_SUBMIT_CHECKLIST_FAILED` | 422 | BR-07; `errors` lists every failed checklist item (`field` = item, `message` = Vietnamese reason) |
 | `CART_OWN_COURSE` | 422 | BR-32 |
 | `CART_EMPTY` | 422 | UC-S04 E1 "Giỏ hàng trống" / BR-27: after D-26 re-validation no purchasable line is left, so no order is created (P07-commerce; the SRS names the text, no code) |
+| `ORDER_CART_CHANGED` | 409 | UC-S04 step 3 (P11, ADR-011 Q2/R3): the lines or the total sent in `CreateOrderRequest.expectedCourseIds` / `expectedTotalAmount` differ from the re-validated cart (`errors[]` = excluded lines), or a pending order holds a course the student owns now (create QR cancels it) — nothing else changed |
+| `ORDER_ALREADY_PAID` | 409 | UC-S04 step 2 / UC-S16 E1 / create QR (P11): the provider lookup found the order paid; the payment, the order and the enrollments were recorded (committed) and the request stops — reload the cart / orders |
+| `PAYMENT_PROVIDER_UNAVAILABLE` | 503 | UC-S05 E1, UC-S16 E2 (P11): the payment provider did not answer; nothing was changed (order and cart kept), retry later |
 | `CART_COURSE_FREE` | 422 | BR-09 / UC-S01 E3: the course is free (price 0) — enroll with UC-S15 instead (P06-G5; the SRS names no error text, only "chuyển sang ghi danh") |
 | `COURSE_CO_INSTRUCTOR_IS_MAIN` | 422 | BR-02; trigger: the invited instructor is the course's main instructor |
 | `LESSON_COURSE_MISMATCH` | 422 | BR-24 / BR-37; triggers: the lesson does not belong to the enrollment's course |
@@ -511,7 +514,7 @@ kept by submit / approve / unhide (DDD "lý do từ chối hoặc ẩn gần nh�
 | POST `/orders/{orderCode}/cancel` | S16 | **S** |
 | POST `/orders/{orderCode}/payments` (create QR) | S05 | **S** |
 | GET `/orders/{orderCode}/payments/current` (polling) | S05 | R |
-| POST `/webhooks/payments/fake` (dev only, HMAC header) | S05 | **S** |
+| POST `/webhooks/payments/fake` (dev only, HMAC header) | S05 | R (P11-a) |
 | GET `/admin/orders` · GET `/admin/payments?status=` | A13, A14 | R |
 | POST `/admin/payments/{id}/resolve` (`activated` \| `refund_outside`, note required) | A18 | **S** |
 
@@ -577,13 +580,22 @@ bodies of `OrderService` / `PaymentService` / `ReconciliationService`.
   `amount` = order total (BR-14), `qrExpiresAt` = now + 15 min (BR-13, `edumy.payment.qr-ttl`), `status` `pending`; when
   the order already has a still-valid pending attempt, that stored attempt is returned instead with **200** (UC-S05
   precondition). 404 as above; order not `pending` → 409 `DATA_CONFLICT`.
-- `POST /webhooks/payments/fake` (UC-S05, **dev and test profiles only**: the controller is not registered otherwise →
-  404) `PaymentWebhookRequest {transactionRef ≤100, orderCode ≤30, amount > 0, status success|failed, paidAt?}` → **200**
-  `PaymentWebhookResponse {received:true, transactionRef}`. No JWT; header `X-Signature` = hex (any case) HMAC-SHA256 of
-  the RAW body with `edumy.payment.webhook-secret` (set in `application-dev.yml` / `application-test.yml` only; blank =
-  every call refused); missing / wrong / malformed signature or a tampered body → 401 `UNAUTHENTICATED` (constant-time
-  compare, nothing logged about it); signed but unreadable / invalid body → 400 `MALFORMED_REQUEST` / `VALIDATION_FAILED`
-  (checked after the signature). No database access at all.
+- `POST /webhooks/payments/fake` — **real since P11-a**, see "Commerce payments (P11)" below.
+
+Commerce payments (P11, ADR-011):
+- `POST /webhooks/payments/fake` (UC-S05 steps 5–7, **dev and test profiles only**: the controller is not registered
+  otherwise → 404; a real provider gets its own path under its profile) `PaymentWebhookRequest {transactionRef ≤100,
+  orderCode ≤30, amount > 0, status success|failed, paidAt?}` → **200** `PaymentWebhookResponse {received:true,
+  transactionRef}`, no `X-Edumy-Stub`. No JWT; header `X-Signature` = hex (any case) HMAC-SHA256 of the RAW body with
+  `edumy.payment.webhook-secret` (dev / test files only; blank = every call refused), checked before the body is parsed
+  or the database is read: missing / wrong / malformed signature or tampered body → 401 `UNAUTHENTICATED` (no SQL
+  statement); signed but unreadable / invalid body → 400 `MALFORMED_REQUEST` / `VALIDATION_FAILED`. Then T2 in one
+  transaction (NFR-04): success matching reference, order and amount → attempt `success`, order `paid` (also from
+  `cancelled`: late result, BR-30), `purchase` enrollments for the courses not owned, those courses leave the cart,
+  event `OrderPaid` (purchase mail after commit, P11-d); failed → attempt `failed`; amount or order mismatch, late result with a course already
+  owned, on-time result with every course owned → `needs_review` (no access, UC-A18 queue); a repeated result, a result
+  for an unknown reference → acknowledged, nothing changes (idempotent by `transactionRef`, AC-11). The answer is 200 in
+  every applied / ignored case so the provider stops retrying; 500 only when the transaction failed (nothing kept).
 - `POST /admin/payments/{id}/resolve` `ResolvePaymentRequest {action activated|refund_outside, note}` (note required,
   trimmed, ≤16 383 chars; the SRS names no limit) (UC-A18) → **200** `AdminPaymentResponse` as it WOULD look after handling
   (`handledBy`, `handledAction`, `handledNote`, `handledAt`; `activated` → `status` `success` + `confirmedAt`;
