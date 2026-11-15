@@ -86,6 +86,7 @@ P10 review + P10-fix-a (security minors + Q-g identity) · P10-fix-b (authoring:
 | P11-c commerce: real create QR (UC-S05 steps 1–2) with lookup of the expired attempt, R3 order re-check | done | 71681f4 | 2340 tests green (+6 net: PaymentQrIT 12; 6 QR stub tests removed), suite 8 min 10 s; see `### P11-c` |
 | P11-d commerce + notification: real UC-A18, GET /admin/payments/{id} (Q4), purchase and reconciliation mails | done | 9992890 | 2345 tests green (+5 net: ReconciliationIT 8, CommerceMailListenerIT 3, MailComposerTest +3, IdorIT +1; CommerceStubsIT 7 + ReconciliationServiceTest 4 removed), suite 8 min 13 s; see `### P11-d` |
 | P11-e timers: QR expiry, 24 h order expiry, code cleanup (NFR-09, SKIP LOCKED) | done | 85d652c | 2359 tests green (+14: CommerceExpiryIT 9, TokenCleanupIT 1, SchedulerBeansTest 4), suite 8 min 09 s; see `### P11-e` |
+| P11-f cleanup: STUB-P1 down to 4 lines (P12/P13), docs 01/06/07/10/triage, mail sender on edumy.test | done | 614f1e0 | 2359 tests green (no test change), suite 16 min 05 s (same tests as P11-e at 8 min 09 s: machine load, see report); see `### P11-f` |
 
 ## P11 — commerce (plan approved 2026-11-15 with Q1–Q5 + R1–R3; ADR-011)
 Units P11-a … P11-f. Plan: lock order cart → order → attempt → enrollments / cart lines; scalar-first reads (R1);
@@ -170,6 +171,23 @@ then 409 `ORDER_ALREADY_PAID`.
 - Tests: `CommerceExpiryIT` (9: AC-22 ×3 incl. paid, provider down then retried, A1 / AC-02, A1 paid, two concurrent
   runs on 10 orders → 5 + 5, one lookup per order, SKIP LOCKED does not wait, sentinel), `TokenCleanupIT` (1),
   `SchedulerBeansTest` (4: on / off, 5 min, delegation).
+### P11-f
+- `grep -rn "STUB-P1" src/main` → 4 lines: `CertificateController` (2), `SampleCertificatePdfRenderer` (1),
+  `StubSupport` Javadoc (1) — all P12/P13. No commerce endpoint carries `X-Edumy-Stub` any more.
+- Docs: docs/ai/01 (§1.5 commerce tree, §1.9 `findInstructorRelationCourseIds`, §1.10 `OrderPaid` / `PaymentReconciled`,
+  §1.11 → ADR-011, schedulers), 06 (stub list, phase-2 status), 07 (commerce test recipe), 10 (cancel / QR / resolve
+  rows real, new admin detail row), reviews/triage (SC-M4 closed).
+- Rule 6: `edumy.mail.from` default `no-reply@edumy.local` → `no-reply@edumy.test` (application*.yml,
+  `EdumyProperties`, `.env.example`, docs README, `JwtIssuerTest`). **Not changed (hard stop, report):** the dev seed
+  `db/seed/V1000__dev_seed.sql` holds `admin@edumy.vn` (editing an applied Flyway file changes its checksum on every dev
+  database) and ~11 test classes use `@edumy.vn` / `@x.com` literals (three of them assert the seed admin).
+
+## P11 summary
+Commerce is real: T1 (P11-b), create QR (P11-c), webhook + T2 (P11-a), cancel (P11-b), UC-A18 + payment detail
+(P11-d), mails (P11-d), timers (P11-e). Lock order, scalar-first reads (R1), provider calls in a timed
+`TransactionTemplate`, commit-then-409 for "found paid": ADR-011. New codes: `ORDER_CART_CHANGED` 409,
+`ORDER_ALREADY_PAID` 409, `PAYMENT_PROVIDER_UNAVAILABLE` 503. Additive contract: `CreateOrderRequest.expectedTotalAmount`
+/ `expectedCourseIds`, POST /orders 200 for the identical pending order, `GET /admin/payments/{id}`.
 
 ## P09 summary
 - **P09-a** constraint coverage: `docs/ai/09-constraint-coverage.md` maps DDD §8 rows 1-31 (+ one valid-row test per table) to the existing `*SchemaIT` tests; only gap (row 5 NOT NULL) closed with 2 tests. No separate `ConstraintsIT`.

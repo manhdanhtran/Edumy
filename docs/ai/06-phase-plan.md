@@ -30,14 +30,18 @@ A stub endpoint:
 - has a `// STUB-P1: replace with <Service>.<method> — UC-xx, BR-xx` comment (grep `STUB-P1` to list remaining work);
 - never writes to the database and never calls external services.
 
-Stub list: POST `/orders` (T1) · POST `/orders/{code}/cancel` · POST `/orders/{code}/payments` · POST
-`/webhooks/payments/fake` · POST `/admin/payments/{id}/resolve` · GET `/me/certificates/{code}/pdf` · all schedulers
-(disabled by `edumy.scheduler.enabled=false`).
+Stub list (phase 1): POST `/orders` (T1) · POST `/orders/{code}/cancel` · POST `/orders/{code}/payments` · POST
+`/webhooks/payments/fake` · POST `/admin/payments/{id}/resolve` · GET `/me/certificates/{code}/pdf` · all schedulers.
+**Since P11** only GET `/me/certificates/{code}/pdf` is left (P12); the commerce endpoints and the schedulers are real
+(ADR-011; schedulers on with `edumy.scheduler.enabled=true`).
 
 ## Phase 2 — business logic
 Replace each `STUB-P1` with a real use case (prompt P12), in this order: T1 create order → fake QR provider + T2 →
 cancel/expiry schedulers → reconciliation A18 → certificate PDF (needs Q-11 template). Enable Modulith event
 publication registry. Load test NFR-05.
+
+**Done in P11 (2026-11-15):** fake QR provider + T2 (P11-a), T1 + cancel (P11-b), create QR (P11-c), reconciliation A18
++ purchase / reconciliation mails (P11-d), expiry schedulers + code cleanup (P11-e). Not done: Modulith event publication (would be a new dependency / schema: mails stay at-most-once, ADR-006); NFR-05 load test (out of scope list, P14).
 
 ## Definition of Done (every task)
 - [ ] UC/BR codes listed in the PR description; behaviour matches SRS §3.4 state machine and §5 rules

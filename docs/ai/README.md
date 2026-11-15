@@ -24,7 +24,7 @@ Cài vào repo: chép `AGENTS.md`, `CLAUDE.md`, `.cursor/`, `.github/`, `docs/` 
 | Biến môi trường | Thuộc tính | Mặc định | Ý nghĩa |
 |---|---|---|---|
 | `EDUMY_FRONTEND_BASE_URL` | `edumy.frontend.base-url` | `http://localhost:5173` | gốc SPA dùng để tạo liên kết trong email |
-| `EDUMY_MAIL_FROM` | `edumy.mail.from` | `no-reply@edumy.local` | địa chỉ `From:` của mọi email |
+| `EDUMY_MAIL_FROM` | `edumy.mail.from` | `no-reply@edumy.test` | địa chỉ `From:` của mọi email |
 
 Gửi thư cần `spring.mail.host` (profile dev: Mailpit `localhost:1025`, xem thư tại `http://localhost:8025`); không có
 host (profile test) thì thư bị bỏ qua kèm một dòng WARN. Hai route SPA mà email trỏ tới (chi tiết:

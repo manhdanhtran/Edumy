@@ -96,8 +96,8 @@ main-only endpoints (BR-06) and on invitations of somebody else; a revoked instr
 | GET `/me/certificates/{code}/pdf` | certificate | its student | `learning/controller/CertificatePdfStubIT#anotherUsersCode_unknownCode_identical404_IDOR`, `#malformedCodes_sameNotFound_noWrites` |
 | GET `/orders/{orderCode}` | order | its student | `commerce/controller/StudentCommerceReadsIT#orderDetail_otherStudentsOrder_sameNotFoundAsUnknown_IDOR` |
 | GET `/orders/{orderCode}/payments/current` | order -> payment | its student | `StudentCommerceReadsIT#currentPayment_otherStudentsOrder_sameNotFoundAsUnknown_IDOR` |
-| POST `/orders/{orderCode}/cancel` (stub) | order | its student | `commerce/controller/CommerceStubsIT#cancelOrder_otherStudentsOrder_isTheSame404AsAnUnknownOne_UCS16` |
-| POST `/orders/{orderCode}/payments` (stub) | order | its student | `CommerceStubsIT#createQr_otherStudentsOrder_isTheSame404AsAnUnknownOne_UCS05` |
+| POST `/orders/{orderCode}/cancel` | order | its student | `commerce/controller/OrderWriteIT#cancel_anotherStudentsOrder_404IdenticalToAnUnknownCode_untouched_NFR01` (P11-b) |
+| POST `/orders/{orderCode}/payments` | order | its student | `PaymentQrIT#notPending_409_foreign404IdenticalToUnknown_noToken401` (P11-c) |
 | DELETE `/cart/items/{courseId}` | cart line | the cart's student (isolation: another student's cart row stays untouched) | `commerce/controller/CartWriteIT#remove_courseOnlyInSomeoneElsesCart_404_theirRowUntouched_NFR01`, `#remove_isScopedToTheCallersCart_otherStudentsRowUntouched_NFR01` |
 
 State variants in `IdorIT` (same mapping, a second row): POST `/instructor/courses/{pendingCourse}/chapters`, PATCH
@@ -131,7 +131,8 @@ Access beans are additionally proved through the probe controller (`authoring/se
 | PATCH / DELETE `/admin/categories/{id}` | `AdminCategoryWriteIT#writes_asInstructorOrStudent_403_nothingChanges` |
 | POST `/admin/users/{id}/lock\|unlock`, PUT / DELETE `/admin/users/{id}/roles/instructor` | `AdminUserWriteIT#nonAdmin_403_everyEndpoint_nothingChanges`, `#adminRoleRevokedInDatabase_staleJwt_403_BR26` |
 | GET `/admin/users/{userId}/instructor-revocation-impact` (P10) | `IdorIT` admin row + `AdminInstructorControllerIT#impact_nonAdmin_403_noToken_401` |
-| POST `/admin/payments/{id}/resolve` (stub) | `CommerceStubsIT#resolve_nonAdmin_403_andStaleAdminToken_403_BR26` |
+| POST `/admin/payments/{id}/resolve` | `ReconciliationIT#adminRoleRevokedInTheDatabase_403_nonAdmin403_unknown404_noToken401_BR26` (P11-d) |
+| GET `/admin/payments/{id}` (P11-d, Q4) | `ReconciliationIT#detail_linesOwnedCoursesAndTheAmountTheProviderReports_Q4` + `IdorIT` admin row |
 | POST `/admin/reviews/{id}/hide\|restore` | `ReviewWriteIT#adminActions_studentOrInstructor_403_withoutToken_401_unchanged` |
 | POST `/admin/questions\|answers/{id}/hide\|restore` | `QaModerationIT#nonAdmin_403_accessDenied_withoutToken_401_unchanged` |
 

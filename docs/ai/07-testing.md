@@ -137,3 +137,20 @@ class AuthoringModuleIT {                          //           TestUsers, Cours
 - Mails: `CapturingMailGateway` (`sentTo`, `failedTo`, `failNextSendsTo`) + `OutputCaptureExtension` for the NFR-08 log line.
 - Modulith docs: `ModularityTest#writesDocumentation` writes `target/spring-modulith-docs`; a copy is committed in
   `docs/modulith/` (see its README) and refreshed after any module / api change.
+
+## Commerce / payment tests (P11)
+- `support/CommerceFixtures`: carts, orders (builder: lines, `createdAt`, `paid()`, `cancelled(reason)`), attempts
+  (`payment`, `pendingPayment`), column readers that accept `null`; `deleteAll()` removes everything of the tracked
+  students (orders, attempts, enrollments the API created, carts) — call it before `CourseFixtures.deleteAll()`.
+- The fake provider (`FakeQrPaymentGateway`) is scripted per test (`simulatePaid`, `simulateFailed`,
+  `setUnavailable`, `queryCount`) and reset after every test with `support/PaymentTestHooks` (in-transaction `OrderPaid`
+  recorder, `failNextOrderPaid()` = NFR-04 rollback probe) by `PaymentTestHooksResetExtension` (both in
+  `@MySqlSpringBootTest`).
+- Races: `support/Concurrently.run / times` (all tasks start together, 30 s cap); lock interleavings:
+  `support/LockWaits` (R1: a request that waited for a lock must see the committed row).
+- Never move the `MutableClock` past the access-token TTL (15 min) in an HTTP test: the token expires (401). Move the
+  data instead (e.g. `qr_expires_at` in the past).
+- Timers are off in the test profile; tests call `CommerceExpiryService` / `TokenCleanupService` directly, the switch
+  itself is `SchedulerBeansTest` (`ApplicationContextRunner`).
+- VS Code writes its own classes into `target/`; "Unresolved compilation problems", "Failed to introspect class" or
+  "ClassSelector resolution failed" mean a stale class: run narrow tests with `./mvnw clean test -Dtest=…` as well.

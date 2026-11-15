@@ -13,7 +13,7 @@ All five confirmed and fixed in P10-fix-a (`7a8ee8e`); proofs in `security.md`.
 | SC-M1 learning authorizes through authoring's internal `@courseAccess` | **fixed** P10-fix-c `3bc5fdc` | confirmed (`InstructorQuestionController`, `InstructorStudentController` use the SpEL bean of `authoring.security`); learning-side `@enrollmentAccess.isActiveInstructor()` / `isCourseInstructor(id)` on `RoleQueryApi` + `CourseAccessApi` |
 | SC-M2 type-mismatch errors in English with Java class names | **fixed** P10-fix-e `b1ddcdf` | confirmed (`GlobalExceptionHandler` uses `getDefaultMessage()` for binding failures) |
 | SC-M3 CORS exposes only `Retry-After` | **fixed** P10-fix-e `b1ddcdf` | confirmed (`WebConfig`); expose `Location`, `Content-Disposition`, `X-Trace-Id`, `X-Edumy-Stub` |
-| SC-M4 services take `dto/request` records | **fixed** partly: `QaQueryService` in P10-fix-e `b1ddcdf`; the five commerce services in P11 (their bodies are rewritten there) | confirmed |
+| SC-M4 services take `dto/request` records | **fixed**: `QaQueryService` in P10-fix-e `b1ddcdf`; the five commerce services in P11-a (`OrderSearchCriteria`, `PaymentSearchCriteria`, raw webhook body), P11-b (`CreateOrderCommand`), P11-d (`ResolvePaymentCommand`) | confirmed |
 | SC-m1 stale §1.5 trees | backlog → P14 (docs refresh with the RTM) | |
 | SC-m2 no OpenAPI bearer scheme | backlog → P14 (OpenAPI item) | |
 | SC-m3 one `@Operation` summary starts with `D-34` | **fixed** P10-fix-e `b1ddcdf` | |
@@ -56,3 +56,4 @@ All five confirmed and fixed in P10-fix-a (`7a8ee8e`); proofs in `security.md`.
 | data, tests, phase | 1 | 1 | 6 | 1 BLOCKER + 1 MAJOR + 2 MINOR (DT-m1, DT-m4 partly) | 1 (DT-m6) | 3 MINOR (DT-m5 → P13) |
 
 Open after P10: 0 BLOCKER, 0 MAJOR (SC-M4's commerce services are rewritten in P11 and must take commands, not HTTP records).
+After P11: SC-M4 closed (no commerce service imports `dto.request`).

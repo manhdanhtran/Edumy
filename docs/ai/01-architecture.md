@@ -186,19 +186,22 @@ authoring/
 ```
 commerce/
 ├── package-info.java                 # allowedDependencies = {"shared", "identity :: api", "authoring :: api", "learning :: api"}
-├── api/          OrderPaid
+├── api/          OrderPaid, PaymentReconciled
 ├── controller/   CartController, OrderController, PaymentController, PaymentWebhookController, AdminOrderController
 ├── dto/request/  AddCartItemRequest, CreateOrderRequest, CancelOrderRequest, PaymentWebhookRequest, ResolvePaymentRequest
 ├── dto/response/ CartResponse, OrderSummaryResponse, OrderDetailResponse, PaymentQrResponse, PaymentStatusResponse,
-│                 AdminPaymentResponse
+│                 AdminPaymentResponse, AdminPaymentDetailResponse
 ├── service/      CartService, CartQueryService, OrderService, OrderQueryService, PaymentService, PaymentQueryService,
-│                 ReconciliationService
+│                 ReconciliationService, CommerceExpiryService, PaymentResultApplier (T2), PendingPaymentSettler,
+│                 CommerceCodeGenerator; commands / criteria: CreateOrderCommand, ResolvePaymentCommand,
+│                 OrderSearchCriteria, PaymentSearchCriteria
 ├── mapper/       CartMapper, OrderMapper, PaymentMapper
 ├── entity/       Cart, CartItem, Order, OrderItem, PaymentTransaction, OrderStatus, CancelReason, PaymentStatus, HandledAction
 ├── repository/   CartRepository, CartItemRepository, OrderRepository, PaymentTransactionRepository
 ├── listener/     CourseHiddenListener                 # flags cart items of hidden courses (UC-A12)
-├── integration/  PaymentGateway (interface), FakeQrPaymentGateway, WebhookSignatureVerifier
-├── scheduler/    PendingOrderExpiryScheduler, PaymentExpiryScheduler   # disabled in phase 1
+├── integration/  PaymentGateway (port), FakeQrPaymentGateway (profile !payos), WebhookSignatureVerifier, QrCode,
+│                 PaymentLookup, PaymentResult, PaymentGatewayException, FakePaymentNotification   # ADR-011
+├── scheduler/    PendingOrderExpiryScheduler, PaymentExpiryScheduler   # edumy.scheduler.enabled (P11-e)
 └── config/       PaymentProperties
 ```
 
@@ -231,7 +234,7 @@ learning/
 ```
 notification/
 ├── package-info.java                 # allowedDependencies = {"shared", "identity :: api", "authoring :: api", "commerce :: api", "learning :: api"}
-├── listener/     IdentityMailListener, AuthoringMailListener, CommerceMailListener, LearningMailListener
+├── listener/     IdentityMailListener, AuthoringMailListener, CommerceMailListener (P11-d), LearningMailListener
 ├── service/      MailComposer (picks template, fills Vietnamese text), MailService (compose + send)
 └── integration/  MailGateway (interface), MailMessage (record), SmtpMailGateway (Spring Mail → Mailpit in dev)
 ```
@@ -303,7 +306,7 @@ Consequences:
 | identity | `UserQueryApi` | `Optional<UserSummary> findSummary(Long id)` → id, fullName, email, status (lower-case code); `Optional<Long> findIdByEmail(String)` (P05-commerce); `Map<Long, UserSummary> findSummaries(Collection<Long> ids)` — one query for a whole list (no N+1), unknown ids absent (P05-authoring) |
 | identity | `RoleQueryApi` | `Set<RoleCode> activeRoles(Long userId)`, `boolean hasActiveRole(Long userId, RoleCode role)` — cached 60 s (`identity.active-roles`, key = user id), evicted after commit by `service/RoleCacheEvictor` on every grant/revoke |
 | authoring | `CourseQueryApi` | `boolean exists(Long courseId)` (P04-e, admin content access D-32); `Map<Long, CourseSummary> findSummaries(Collection<Long>)` (P05-commerce: title, slug, thumbnail, price, `published`, mainInstructorId; any status, one query); later `Optional<SellableCourse> findSellable(Long courseId)` (published only, BR-31) |
-| authoring | `CourseAccessApi` | `isMainInstructor`, `isCourseInstructor` (main or accepted co **and** active instructor role); `Set<Long> findInstructedCourseIds(userId)` (P05-learning, one query, empty without an active instructor role) |
+| authoring | `CourseAccessApi` | `isMainInstructor`, `isCourseInstructor` (main or accepted co **and** active instructor role); `Set<Long> findInstructedCourseIds(userId)` (P05-learning, one query, empty without an active instructor role); `Set<Long> findInstructorRelationCourseIds(userId, courseIds)` (P11-b, BR-32 by relation whatever the role, one query) |
 | authoring | `LessonQueryApi` | `Optional<Long> findCourseId(lessonId)`; `Map<Long,Integer> countLessons(Collection<Long>)` (one query); `List<ChapterOutline> findOutline(courseId)` (2 queries); `Optional<LessonContent> findContent(lessonId)` (P05-learning) |
 | learning | `EnrollmentApi` | `boolean owns(studentId, courseId)`; `Set<Long> findOwnedCourseIds(studentId, Collection<Long>)` (P05-commerce, one query); `void grantForPaidOrder(GrantEnrollmentCommand)` — `@Transactional(propagation = MANDATORY)` (ADR-004) |
 
@@ -316,7 +319,8 @@ Consequences:
 |  ↳ `CourseContentChanged` (courseId, slug) | published only for a **published or hidden** course (D-14 edit without re-review; P06-G1: UC-I03; P06-G2: UC-I05…I12 chapter / lesson writes; P06-G3: accepted co-instructors changed — accept, remove accepted, leave) | catalog (`catalog.course-detail` by slug, P08) | after commit |
 | `CategoryChanged` (categoryId) | authoring (UC-A06…A08: create, update, deactivate, delete) | catalog (`catalog.categories` eviction, P08) | after commit |
 | `CoInstructorInvited` (invitationId, courseId, instructorId, invitedBy) | authoring (UC-I13 invite and D-18 re-invite, P06-G3) | notification (`AuthoringMailListener` → invitation mail; names, email, course title read through `identity::api` / `authoring::api` by `MailService`) | async, after commit |
-| `OrderPaid` | commerce | notification (BR-20) | async — mail failure never touches the order |
+| `OrderPaid` (orderId, orderCode, studentId, totalAmount, courseIds, paidAt) | commerce T2 (P11-a: webhook, lookups) | notification (`CommerceMailListener` → purchase confirmation, BR-20) | async, after commit — mail failure never touches the order (AC-03) |
+| `PaymentReconciled` (paymentId, orderCode, studentId, action, grantedCourseIds) | commerce UC-A18 (P11-d) | notification (`CommerceMailListener` → reconciliation result, the admin note is never mailed) | async, after commit |
 | `ReviewChanged` (courseId, slug) | learning (UC-S12…S14, A15, A17, P06-G7: create, re-rate, edit, withdraw, hide, restore) | catalog (`catalog.rating` by courseId + `catalog.course-detail` by slug, P08) | after commit |
 | `QuestionAnsweredByInstructor` (questionId, answerId, courseId, askerId, instructorId, questionTitle) | learning (UC-I21, P06-G8: instructor-type answers only) | notification (`LearningMailListener` → mail to the asker; names, email, course title / slug read through `identity::api` / `authoring::api` by `MailService`) | async, after commit — mail failure never touches the answer |
 | `CertificateIssued` (certificateId, enrollmentId, studentId, courseId) | learning (UC-S10, P06-G6) | logging (NFR-08, `learning.listener.CertificateIssuedListener`: ids only) | after commit |
@@ -331,7 +335,10 @@ Consequences:
     payment `success`, order `paid`, `EnrollmentApi.grantForPaidOrder(...)`, remove bought cart items — one transaction.
   - **T7 consume token** (`AccountTokenService.consume`): single atomic `UPDATE … WHERE used_at IS NULL AND expires_at > ?`;
     1 row updated = success (BR-34).
-- Schedulers: `SELECT … FOR UPDATE SKIP LOCKED`; disabled in phase 1 (`edumy.scheduler.enabled=false`).
+- Commerce T1 / QR / T2 / cancel / UC-A18 / timers: lock order, scalar-first reads and provider calls inside a
+  `TransactionTemplate` with `edumy.payment.tx-timeout` — **ADR-011** (P11).
+- Schedulers (P11-e): one row per transaction claimed with `SELECT … LIMIT 1 FOR UPDATE [OF o] SKIP LOCKED`; on with
+  `edumy.scheduler.enabled=true` (`application.yml`), off in the test profile.
 
 ## 1.12 Catalog read model (ADR-003)
 `catalog.repository.*CatalogRepository` classes use `JdbcClient` with hand-written `SELECT`s mapped straight into
