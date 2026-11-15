@@ -17,4 +17,12 @@ public interface EnrollmentApi {
      * no query. The set is immutable.
      */
     Set<Long> findOwnedCourseIds(Long studentId, Collection<Long> courseIds);
+
+    /**
+     * T2 (ADR-004, NFR-04): purchase enrollment for every course of the command the student does not own yet (UC-S05
+     * step 7, BR-17: lifetime, at most one per student and course — an existing one is kept, nothing is added). Runs
+     * only inside the caller's transaction ({@code propagation = MANDATORY}): the enrollments commit or roll back
+     * together with the order and the payment. Returns the course ids that got a new enrollment (immutable).
+     */
+    Set<Long> grantForPaidOrder(GrantEnrollmentCommand command);
 }

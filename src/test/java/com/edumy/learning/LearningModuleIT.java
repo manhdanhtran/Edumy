@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.BDDMockito.given;
 
+import java.time.Instant;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -18,6 +20,8 @@ import com.edumy.identity.api.RoleQueryApi;
 import com.edumy.identity.api.UserQueryApi;
 import com.edumy.identity.api.UserSummary;
 import com.edumy.learning.api.CertificateIssued;
+import com.edumy.learning.api.EnrollmentApi;
+import com.edumy.learning.api.GrantEnrollmentCommand;
 import com.edumy.learning.api.QuestionAnsweredByInstructor;
 import com.edumy.learning.api.ReviewChanged;
 import com.edumy.learning.dto.response.ProgressResponse;
@@ -40,6 +44,9 @@ import org.springframework.modulith.test.ApplicationModuleTest;
 import org.springframework.modulith.test.PublishedEvents;
 import org.springframework.modulith.test.Scenario;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.transaction.IllegalTransactionStateException;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Module test of {@code learning} (authoring and identity mocked through their {@code api}): the services that
@@ -74,6 +81,10 @@ class LearningModuleIT {
     CourseFixtures fixtures;
     @Autowired
     JdbcClient jdbc;
+    @Autowired
+    EnrollmentApi enrollmentApi;
+    @Autowired
+    PlatformTransactionManager txManager;
 
     TestUser student;
     TestUser instructor;
@@ -218,6 +229,38 @@ class LearningModuleIT {
         assertThat(events.ofType(CertificateIssued.class)).isEmpty();
         assertThat(jdbc.sql("SELECT COUNT(*) FROM certificates WHERE enrollment_id = ?").param(enrollment)
                 .query(Long.class).single()).isZero();
+    }
+
+    // ------------------------------------------------------------------------------------------ EnrollmentApi (T2)
+
+    @Test
+    void grantForPaidOrder_onlyInsideTheCallersTransaction_grantsTheCoursesNotOwned_ADR004() {
+        long second = fixtures.draftCourse(instructor.id());
+        String code = "ORD-T-GRANT-" + student.id();
+        jdbc.sql("""
+                        INSERT INTO orders (student_id, order_code, total_amount, status, paid_at)
+                        VALUES (?, ?, 1000, 'paid', CURRENT_TIMESTAMP(6))""")
+                .params(student.id(), code).update();
+        long order = jdbc.sql("SELECT id FROM orders WHERE order_code = ?").param(code).query(Long.class).single();
+        GrantEnrollmentCommand command = new GrantEnrollmentCommand(student.id(), order, List.of(course, second),
+                Instant.now());
+        try {
+            assertThatThrownBy(() -> enrollmentApi.grantForPaidOrder(command))
+                    .isInstanceOf(IllegalTransactionStateException.class); // MANDATORY: never on its own
+
+            Set<Long> granted = new TransactionTemplate(txManager)
+                    .execute(status -> enrollmentApi.grantForPaidOrder(command));
+
+            assertThat(granted).containsExactly(second); // the free enrollment of `course` is kept (BR-17)
+            assertThat(jdbc.sql("SELECT enroll_source FROM enrollments WHERE student_id = ? AND course_id = ?")
+                    .params(student.id(), second).query(String.class).single()).isEqualTo("purchase");
+            Set<Long> again = new TransactionTemplate(txManager)
+                    .execute(status -> enrollmentApi.grantForPaidOrder(command));
+            assertThat(again).isEmpty();
+        } finally {
+            jdbc.sql("DELETE FROM enrollments WHERE order_id = ?").param(order).update();
+            jdbc.sql("DELETE FROM orders WHERE id = ?").param(order).update();
+        }
     }
 
     private static void assertCode(Runnable call, ErrorCode expected) {

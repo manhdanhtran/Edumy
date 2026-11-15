@@ -3,7 +3,6 @@ package com.edumy.commerce.integration;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 
 import com.edumy.commerce.config.PaymentProperties;
 import org.junit.jupiter.api.Test;
@@ -15,7 +14,7 @@ class WebhookSignatureVerifierTest {
     static final String RFC4231_CASE2 = "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843";
 
     private static WebhookSignatureVerifier verifier(String secret) {
-        return new WebhookSignatureVerifier(new PaymentProperties("fake", secret, Duration.ofMinutes(15)));
+        return new WebhookSignatureVerifier(PaymentProperties.of("fake", secret));
     }
 
     @Test
@@ -45,7 +44,7 @@ class WebhookSignatureVerifierTest {
 
     @Test
     void propertiesToString_hidesTheSecret() {
-        assertThat(new PaymentProperties("fake", "s3cr3t", Duration.ofMinutes(15)).toString())
+        assertThat(PaymentProperties.of("fake", "s3cr3t").toString())
                 .doesNotContain("s3cr3t");
     }
 }

@@ -21,6 +21,10 @@ public interface CartRepository extends JpaRepository<Cart, Long> {
     @EntityGraph(attributePaths = "items")
     Optional<Cart> findWithItemsByStudentId(Long studentId);
 
+    /** T2: id of the student's cart, plain read, no lock and no entity (ADR-011 lock order: T2 never locks carts). */
+    @Query("select c.id from Cart c where c.studentId = :studentId")
+    Optional<Long> findIdByStudentId(@Param("studentId") Long studentId);
+
     /**
      * T1 step "lock the cart" (UC-S04): {@code SELECT … FOR UPDATE} of the cart row, so two concurrent "create order"
      * requests of one student are serialised (UC-S04 E3). Items load lazily inside the same transaction.

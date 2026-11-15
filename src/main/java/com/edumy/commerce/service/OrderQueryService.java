@@ -2,7 +2,6 @@ package com.edumy.commerce.service;
 
 import com.edumy.authoring.api.CourseQueryApi;
 import com.edumy.authoring.api.CourseSummary;
-import com.edumy.commerce.dto.request.AdminOrderSearchRequest;
 import com.edumy.commerce.dto.response.AdminOrderResponse;
 import com.edumy.commerce.dto.response.OrderDetailResponse;
 import com.edumy.commerce.dto.response.OrderSummaryResponse;
@@ -65,8 +64,8 @@ public class OrderQueryService {
                 payments.findByOrderIdOrderByCreatedAtDescIdDesc(order.getId()));
     }
 
-    /** UC-A13: filters in {@link AdminOrderSearchRequest}; an email that matches no account gives an empty page. */
-    public Page<AdminOrderResponse> search(AdminOrderSearchRequest filter, Pageable pageable) {
+    /** UC-A13: filters in {@link OrderSearchCriteria}; an email that matches no account gives an empty page. */
+    public Page<AdminOrderResponse> search(OrderSearchCriteria filter, Pageable pageable) {
         Long studentId = null;
         if (filter.email() != null) {
             Optional<Long> found = users.findIdByEmail(filter.email());

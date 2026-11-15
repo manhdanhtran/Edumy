@@ -4,39 +4,33 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
-import java.util.Comparator;
-import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
 import com.edumy.commerce.config.PaymentProperties;
-import com.edumy.commerce.dto.request.PaymentWebhookRequest;
 import com.edumy.commerce.dto.response.PaymentQrResponse;
 import com.edumy.commerce.dto.response.PaymentWebhookResponse;
 import com.edumy.commerce.entity.Order;
 import com.edumy.commerce.entity.PaymentStatus;
 import com.edumy.commerce.entity.PaymentTransaction;
-import com.edumy.commerce.integration.WebhookSignatureVerifier;
+import com.edumy.commerce.integration.PaymentGateway;
+import com.edumy.commerce.integration.PaymentResult;
 import com.edumy.commerce.mapper.PaymentMapper;
 import com.edumy.commerce.repository.OrderRepository;
 import com.edumy.commerce.repository.PaymentTransactionRepository;
 import com.edumy.shared.error.BusinessException;
 import com.edumy.shared.error.ErrorCode;
-import com.edumy.shared.error.FieldViolation;
 import com.edumy.shared.text.LogSanitizer;
-import jakarta.validation.ConstraintViolation;
-import jakarta.validation.Validator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.core.JacksonException;
-import tools.jackson.databind.json.JsonMapper;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
- * Payment use cases, <b>phase-1 STUBS</b> (ADR-005): UC-S05 create QR and the fake provider's webhook only read and
- * compute; they never write, never call a payment provider. Phase 2 replaces the bodies with the real flow
- * ({@code FakeQrPaymentGateway}, T2 {@code applyResult}, docs/ai/01 §1.11); the controllers stay.
+ * Payment use cases of UC-S05. The provider's result (webhook) is real since P11-a: signature on the raw body, then T2
+ * ({@link PaymentResultApplier}) in one transaction. Create QR is still the <b>phase-1 STUB</b> (P11-c replaces it).
  */
 @Service
 public class PaymentService {
@@ -48,21 +42,22 @@ public class PaymentService {
     private final PaymentTransactionRepository payments;
     private final PaymentMapper mapper;
     private final PaymentProperties properties;
-    private final WebhookSignatureVerifier verifier;
-    private final JsonMapper json;
-    private final Validator validator;
+    private final PaymentGateway gateway;
+    private final PaymentResultApplier applier;
+    private final TransactionTemplate tx;
     private final Clock clock;
 
     public PaymentService(OrderRepository orders, PaymentTransactionRepository payments, PaymentMapper mapper,
-                          PaymentProperties properties, WebhookSignatureVerifier verifier, JsonMapper json,
-                          Validator validator, Clock clock) {
+                          PaymentProperties properties, PaymentGateway gateway, PaymentResultApplier applier,
+                          PlatformTransactionManager transactionManager, Clock clock) {
         this.orders = orders;
         this.payments = payments;
         this.mapper = mapper;
         this.properties = properties;
-        this.verifier = verifier;
-        this.json = json;
-        this.validator = validator;
+        this.gateway = gateway;
+        this.applier = applier;
+        this.tx = new TransactionTemplate(transactionManager);
+        this.tx.setTimeout(properties.txTimeoutSeconds());
         this.clock = clock;
     }
 
@@ -97,36 +92,38 @@ public class PaymentService {
     }
 
     /**
-     * UC-S05 step 5 webhook of the fake provider. The signature over the raw body is checked first (missing / wrong →
-     * 401 {@code UNAUTHENTICATED}, constant time, nothing is logged about it); then the body is parsed and validated like
-     * a {@code @Valid @RequestBody} (400 {@code MALFORMED_REQUEST} / {@code VALIDATION_FAILED}). Stub: acknowledges only,
-     * T2 (verify reference / order / amount, apply, enroll) is phase 2. No state change, no database access.
+     * UC-S05 step 5–7: the provider's notification. {@link PaymentGateway#verifyWebhook} checks the signature over the
+     * RAW body before anything is parsed or read from the database (401 / 400, nothing touched); then T2 runs in one
+     * transaction (NFR-04): order row locked, attempt locked, {@link PaymentResultApplier}. A reference Edumy does not
+     * know is acknowledged and logged (the provider must not retry forever); a repeated result is acknowledged and
+     * changes nothing (E3, AC-11).
+     *
+     * @param headers request headers, keys case-insensitive
      */
-    public PaymentWebhookResponse receiveWebhook(byte[] rawBody, String signature) {
-        if (!verifier.verify(rawBody, signature)) {
-            log.warn("Payment webhook refused: invalid or missing signature");
-            throw new BusinessException(ErrorCode.UNAUTHENTICATED);
+    public PaymentWebhookResponse receiveWebhook(byte[] rawBody, Map<String, String> headers) {
+        PaymentResult result = gateway.verifyWebhook(rawBody, headers);
+        log.info("Payment result received: transactionRef={}, orderCode={}, success={}, amount={}",
+                LogSanitizer.clean(result.reference()), LogSanitizer.clean(result.orderCode()), result.success(),
+                result.amount());
+        tx.executeWithoutResult(status -> applyResult(result));
+        return new PaymentWebhookResponse(true, result.reference());
+    }
+
+    /**
+     * T2 lock order (ADR-011): the order id is read as a scalar (no entity before the wait, R1), the order row is
+     * locked, then the attempt is loaded under its own lock.
+     */
+    private void applyResult(PaymentResult result) {
+        Optional<Long> orderId = payments.findOrderIdByTransactionRef(result.reference());
+        if (orderId.isEmpty()) {
+            log.warn("Payment result for an unknown reference ignored: transactionRef={}",
+                    LogSanitizer.clean(result.reference()));
+            return;
         }
-        PaymentWebhookRequest request;
-        try {
-            request = json.readValue(rawBody, PaymentWebhookRequest.class);
-        } catch (JacksonException e) {
-            throw new BusinessException(ErrorCode.MALFORMED_REQUEST);
-        }
-        if (request == null) {
-            throw new BusinessException(ErrorCode.MALFORMED_REQUEST);
-        }
-        Set<ConstraintViolation<PaymentWebhookRequest>> violations = validator.validate(request);
-        if (!violations.isEmpty()) {
-            List<FieldViolation> errors = violations.stream()
-                    .map(v -> new FieldViolation(v.getPropertyPath().toString(), v.getMessage()))
-                    .sorted(Comparator.comparing(FieldViolation::field))
-                    .toList();
-            throw BusinessException.withErrors(ErrorCode.VALIDATION_FAILED, errors);
-        }
-        log.info("Payment webhook received (stub, ignored): transactionRef={}, orderCode={}, status={}",
-                LogSanitizer.clean(request.transactionRef()), LogSanitizer.clean(request.orderCode()),
-                request.status());
-        return new PaymentWebhookResponse(true, request.transactionRef());
+        Order order = orders.findByIdForUpdate(orderId.get())
+                .orElseThrow(() -> new IllegalStateException("order of a payment vanished"));
+        PaymentTransaction payment = payments.findByTransactionRefForUpdate(result.reference())
+                .orElseThrow(() -> new IllegalStateException("payment vanished under the order lock"));
+        applier.apply(order, payment, result);
     }
 }

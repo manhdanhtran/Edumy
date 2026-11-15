@@ -6,7 +6,9 @@ import com.edumy.commerce.dto.request.ResolvePaymentRequest;
 import com.edumy.commerce.dto.response.AdminOrderResponse;
 import com.edumy.commerce.dto.response.AdminPaymentResponse;
 import com.edumy.commerce.service.OrderQueryService;
+import com.edumy.commerce.service.OrderSearchCriteria;
 import com.edumy.commerce.service.PaymentQueryService;
+import com.edumy.commerce.service.PaymentSearchCriteria;
 import com.edumy.commerce.service.ReconciliationService;
 import com.edumy.shared.security.CurrentUserId;
 import com.edumy.shared.web.StubSupport;
@@ -52,7 +54,8 @@ public class AdminOrderController {
     @Operation(summary = "UC-A13 Xem danh sách đơn hàng (tra cứu theo mã đơn, email, trạng thái, khoảng thời gian)")
     public PagedModel<AdminOrderResponse> orders(@Valid @ParameterObject @ModelAttribute AdminOrderSearchRequest filter,
                                                  @ParameterObject Pageable pageable) {
-        return new PagedModel<>(orders.search(filter, pageable));
+        return new PagedModel<>(orders.search(new OrderSearchCriteria(filter.orderCode(), filter.email(),
+                filter.status(), filter.createdFrom(), filter.createdTo()), pageable));
     }
 
     /** Newest first; {@code awaitingReview=true} = the unhandled reconciliation queue, oldest first. */
@@ -61,7 +64,8 @@ public class AdminOrderController {
     public PagedModel<AdminPaymentResponse> payments(
             @Valid @ParameterObject @ModelAttribute AdminPaymentSearchRequest filter,
             @ParameterObject Pageable pageable) {
-        return new PagedModel<>(payments.search(filter, pageable));
+        return new PagedModel<>(payments.search(
+                new PaymentSearchCriteria(filter.status(), filter.onlyAwaitingReview()), pageable));
     }
 
     /**

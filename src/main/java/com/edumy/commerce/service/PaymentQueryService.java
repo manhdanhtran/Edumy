@@ -1,6 +1,5 @@
 package com.edumy.commerce.service;
 
-import com.edumy.commerce.dto.request.AdminPaymentSearchRequest;
 import com.edumy.commerce.dto.response.AdminPaymentResponse;
 import com.edumy.commerce.dto.response.PaymentStatusResponse;
 import com.edumy.commerce.entity.Order;
@@ -59,10 +58,10 @@ public class PaymentQueryService {
     }
 
     /** UC-A14: newest first, or the unhandled reconciliation queue (oldest first) with {@code awaitingReview}. */
-    public Page<AdminPaymentResponse> search(AdminPaymentSearchRequest filter, Pageable pageable) {
+    public Page<AdminPaymentResponse> search(PaymentSearchCriteria filter, Pageable pageable) {
         Pageable unsorted = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
         Page<AdminPaymentView> page;
-        if (filter.onlyAwaitingReview()) {
+        if (filter.awaitingReview()) {
             page = payments.findReviewQueue(unsorted);
         } else {
             PaymentStatus status = filter.status() == null ? null

@@ -23,8 +23,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 
 import com.edumy.support.MutableClock;
 import com.edumy.support.MySqlSeedSpringBootTest;
@@ -34,7 +32,6 @@ import com.edumy.shared.security.RoleCode;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -45,9 +42,9 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * The five phase-1 commerce stubs (ADR-005, P07-commerce) on the dev seed, read-only: POST /orders (UC-S04), POST
- * /orders/{code}/cancel (UC-S16), POST /orders/{code}/payments (UC-S05), POST /webhooks/payments/fake (UC-S05) and POST
- * /admin/payments/{id}/resolve (UC-A18). Every call that reaches a stub goes through {@link #stub}: it proves that the
+ * The remaining phase-1 commerce stubs (ADR-005, P07-commerce) on the dev seed, read-only: POST /orders (UC-S04), POST
+ * /orders/{code}/cancel (UC-S16), POST /orders/{code}/payments (UC-S05) and POST /admin/payments/{id}/resolve (UC-A18);
+ * the webhook is real since P11-a ({@code PaymentWebhookIT}). Every call that reaches a stub goes through {@link #stub}: it proves that the
  * row counts of carts, cart_items, orders, order_items, payment_transactions and enrollments are unchanged and that no
  * INSERT / UPDATE / DELETE / locking statement ran.
  * <p>Seed: cart 4 = student 16 (course 1, 799 000), cart 2 = student 11 (hidden course 10 + course 3), cart 5 = student
@@ -79,8 +76,6 @@ class CommerceStubsIT {
     JdbcClient jdbc;
     @Autowired
     MutableClock clock;
-    @Value("${edumy.payment.webhook-secret}")
-    String webhookSecret;
 
     // ---- helpers
 
@@ -284,82 +279,6 @@ class CommerceStubsIT {
     @Test
     void createQr_withoutToken_401() throws Exception {
         expectProblem(stub(post("/api/v1/orders/" + ORDER_4 + "/payments")), 401, "UNAUTHENTICATED");
-    }
-
-    // ---- POST /webhooks/payments/fake (UC-S05, dev/test only, HMAC)
-
-    static final String WEBHOOK = "/api/v1/webhooks/payments/fake";
-    static final String WEBHOOK_BODY =
-            "{\"transactionRef\":\"FAKEPAY-20261101-0006\",\"orderCode\":\"ORD-20261101-0004\","
-                    + "\"amount\":849000,\"status\":\"success\",\"paidAt\":\"2026-11-01T08:10:00Z\"}";
-
-    private String sign(String secret, String body) throws Exception {
-        Mac mac = Mac.getInstance("HmacSHA256");
-        mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-        return java.util.HexFormat.of().formatHex(mac.doFinal(body.getBytes(StandardCharsets.UTF_8)));
-    }
-
-    private MockHttpServletRequestBuilder webhook(String body, String signature) {
-        MockHttpServletRequestBuilder request = json(post(WEBHOOK), body);
-        return signature == null ? request : request.header("X-Signature", signature);
-    }
-
-    @Test
-    void webhook_validSignature_acknowledges_200_noStateChange() throws Exception {
-        stub(webhook(WEBHOOK_BODY, sign(webhookSecret, WEBHOOK_BODY)))
-                .andExpect(status().isOk())
-                .andExpect(header().string("X-Edumy-Stub", "true"))
-                .andExpect(jsonPath("$.received").value(true))
-                .andExpect(jsonPath("$.transactionRef").value("FAKEPAY-20261101-0006"));
-        // the real attempt is still pending: the stub applied nothing
-        assertThat(jdbc.sql("select status from payment_transactions where id = 6").query(String.class).single())
-                .isEqualTo("pending");
-    }
-
-    @Test
-    void webhook_runsNoStatementAtAll() throws Exception {
-        mvc.perform(webhook(WEBHOOK_BODY, sign(webhookSecret, WEBHOOK_BODY))).andExpect(status().isOk()); // warm-up
-        sql.reset();
-        mvc.perform(webhook(WEBHOOK_BODY, sign(webhookSecret, WEBHOOK_BODY))).andExpect(status().isOk());
-        assertThat(sql.count()).as(sql.statements().toString()).isZero();
-    }
-
-    @Test
-    void webhook_uppercaseHexSignature_isAccepted() throws Exception {
-        stub(webhook(WEBHOOK_BODY, sign(webhookSecret, WEBHOOK_BODY).toUpperCase())).andExpect(status().isOk());
-    }
-
-    @Test
-    void webhook_wrongSignature_401() throws Exception {
-        expectProblem(stub(webhook(WEBHOOK_BODY, sign("another-secret", WEBHOOK_BODY))), 401, "UNAUTHENTICATED");
-    }
-
-    @Test
-    void webhook_missingOrMalformedSignature_401() throws Exception {
-        expectProblem(stub(webhook(WEBHOOK_BODY, null)), 401, "UNAUTHENTICATED");
-        expectProblem(stub(webhook(WEBHOOK_BODY, "")), 401, "UNAUTHENTICATED");
-        expectProblem(stub(webhook(WEBHOOK_BODY, "not-hex")), 401, "UNAUTHENTICATED");
-        expectProblem(stub(webhook(WEBHOOK_BODY, "sha256=" + sign(webhookSecret, WEBHOOK_BODY))), 401,
-                "UNAUTHENTICATED");
-    }
-
-    @Test
-    void webhook_tamperedBody_401() throws Exception {
-        String signature = sign(webhookSecret, WEBHOOK_BODY);
-        String tampered = WEBHOOK_BODY.replace("849000", "1");
-        expectProblem(stub(webhook(tampered, signature)), 401, "UNAUTHENTICATED");
-    }
-
-    @Test
-    void webhook_signedButInvalidBody_400() throws Exception {
-        String invalid = "{\"transactionRef\":\"\",\"orderCode\":\"ORD-1\",\"amount\":-5,\"status\":\"maybe\"}";
-        MvcResult result = expectProblem(stub(webhook(invalid, sign(webhookSecret, invalid))), 400,
-                "VALIDATION_FAILED");
-        String body = result.getResponse().getContentAsString(StandardCharsets.UTF_8);
-        List<String> fields = JsonPath.read(body, "$.errors[*].field");
-        assertThat(fields).containsExactlyInAnyOrder("transactionRef", "amount", "status");
-        String notJson = "this is not json";
-        expectProblem(stub(webhook(notJson, sign(webhookSecret, notJson))), 400, "MALFORMED_REQUEST");
     }
 
     // ---- POST /admin/payments/{id}/resolve (UC-A18)
