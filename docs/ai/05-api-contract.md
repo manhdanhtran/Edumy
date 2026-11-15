@@ -254,6 +254,7 @@ The identity mails link to two SPA routes, the co-instructor invitation mail to 
 | `{base}/instructor/courses/{courseId}` | "Khóa học của bạn chưa được phê duyệt trên Edumy" (UC-A11, with the reason) · "Khóa học của bạn đã bị ẩn trên Edumy" (UC-A12, with the reason) (P06-G4) | after login, the instructor's course page: `GET /api/v1/instructor/courses/{id}` (+ `…/review-status`); after a rejection the instructor edits and calls `POST /api/v1/instructor/courses/{id}/submit` |
 | `{base}/courses/{slug}/learn?question={questionId}` | "Giảng viên đã trả lời câu hỏi của bạn trên Edumy" (UC-I21 step 5, D-42, P06-G8); no token | after login, the learning page of the course with the Q&A tab on that thread: `GET /api/v1/questions/{id}` (404 if the asker lost access); the answer text is not in the mail |
 | `{base}/instructor/invitations` | "Lời mời làm đồng giảng viên khóa học trên Edumy" (UC-I13, P06-G3); no token | after login, lists `GET /api/v1/instructor/invitations` and answers with `POST /api/v1/instructor/invitations/{id}/accept` / `…/decline` (204; 409 `INVITATION_NOT_PENDING` → "lời mời đã bị thu hồi"; 403 without an active instructor role) |
+| `{base}/orders/{orderCode}` | "Xác nhận thanh toán đơn hàng … trên Edumy" (UC-S05 step 9, BR-20) · "Kết quả đối soát đơn hàng … trên Edumy" (UC-A18 step 6) (P11-d); no token | after login, the order page: `GET /api/v1/orders/{orderCode}` (404 for anybody but the buyer) |
 
 The "password changed" notice (UC-G08 step 6, UC-G12) has no link. Mail sender = `edumy.mail.from`
 (env `EDUMY_MAIL_FROM`). Recommended: the SPA does not log or forward the token (analytics, Referer: e.g.
@@ -516,7 +517,7 @@ kept by submit / approve / unhide (DDD "lý do từ chối hoặc ẩn gần nh�
 | GET `/orders/{orderCode}/payments/current` (polling) | S05 | R |
 | POST `/webhooks/payments/fake` (dev only, HMAC header) | S05 | R (P11-a) |
 | GET `/admin/orders` · GET `/admin/payments?status=` | A13, A14 | R |
-| POST `/admin/payments/{id}/resolve` (`activated` \| `refund_outside`, note required) | A18 | **S** |
+| GET `/admin/payments/{id}` (P11 Q4) · POST `/admin/payments/{id}/resolve` (`activated` \| `refund_outside`, note required) | A18 | R (P11-d) |
 
 Commerce reads (P05):
 - `GET /cart` → **200** `CartResponse {items[{courseId,title,slug,thumbnailUrl,price,isFree,instructor{id,fullName},addedAt,
@@ -561,12 +562,14 @@ Commerce writes (P06-G5), login required (D-23; no verified email needed to cart
 - Known limit: the `own_course` flag of `GET /cart` still looks at the main instructor only; `POST /cart/items` also
   refuses accepted co-instructors (BR-32).
 
-Commerce stubs (P07-commerce, ADR-005 phase 1): every response carries `X-Edumy-Stub: true` (also the error responses of
-these handlers); nothing is written, no payment provider is called; the controllers are final, phase 2 replaces the
+Commerce stubs (P07-commerce, ADR-005 phase 1, all replaced in P11 — kept as history): every response carried
+`X-Edumy-Stub: true` (also the error responses of these handlers); nothing is written, no payment provider is called; the controllers are final, phase 2 replaces the
 bodies of `OrderService` / `PaymentService` / `ReconciliationService`.
 - `POST /orders` and `POST /orders/{orderCode}/cancel` — **real since P11-b**, see "Commerce payments (P11)" below.
 - `POST /orders/{orderCode}/payments` — **real since P11-c**, see "Commerce payments (P11)" below.
 - `POST /webhooks/payments/fake` — **real since P11-a**, see "Commerce payments (P11)" below.
+- `POST /admin/payments/{id}/resolve` — **real since P11-d**, see "Commerce payments (P11)" below. No commerce endpoint
+  is a stub any more.
 
 Commerce payments (P11, ADR-011):
 - `POST /webhooks/payments/fake` (UC-S05 steps 5–7, **dev and test profiles only**: the controller is not registered
@@ -611,12 +614,20 @@ Commerce payments (P11, ADR-011):
   `DATA_CONFLICT`; an order holding a course the student owns now is looked up and cancelled as `replaced` → 409
   `ORDER_CART_CHANGED` (order again from the cart). 404 unknown / foreign (identical) · 409 `DATA_CONFLICT` not pending ·
   503 `PAYMENT_PROVIDER_UNAVAILABLE` (no QR, nothing changed, E1).
-- `POST /admin/payments/{id}/resolve` `ResolvePaymentRequest {action activated|refund_outside, note}` (note required,
-  trimmed, ≤16 383 chars; the SRS names no limit) (UC-A18) → **200** `AdminPaymentResponse` as it WOULD look after handling
-  (`handledBy`, `handledAction`, `handledNote`, `handledAt`; `activated` → `status` `success` + `confirmedAt`;
-  `refund_outside` keeps `needs_review`). Route + `hasRole('ADMIN')` + admin role re-checked in the database (BR-26 →
-  403 `ACCESS_DENIED`); unknown id → 404; not an unhandled `needs_review` (E1) or `activated` with every course of the
-  order already owned (E2) → 409 `DATA_CONFLICT`.
+- `GET /admin/payments/{id}` (UC-A18 step 1, decision Q4, additive) → **200** `AdminPaymentDetailResponse {payment:
+  AdminPaymentResponse, items[{courseId, title, unitPrice}], ownedCourseIds[], receivedAmount}`: the order lines at
+  their locked price, the courses of the order the student already owns (E2), and the amount the provider reports as paid
+  for this reference **now** (`null` when nothing is paid or the provider cannot be reached; no column stores it). Admin
+  only (route + `hasRole('ADMIN')`); 404 unknown id.
+- `POST /admin/payments/{id}/resolve` (UC-A18) `ResolvePaymentRequest {action activated|refund_outside, note ≤16 383,
+  required}` → **200** `AdminPaymentResponse` after the decision, no `X-Edumy-Stub`: `handledBy`, `handledAction`,
+  `handledNote` (trimmed), `handledAt` stored (step 5, D-29). (a) `activated` → attempt `success` + `confirmedAt`, order
+  `paid` (from pending or cancelled), `purchase` enrollments for the courses not owned, those courses leave the cart —
+  one transaction; (b) `refund_outside` → attempt stays `needs_review`, no access. Both mail the student the result
+  after commit ("Kết quả đối soát", the note is never mailed). Admin role re-checked in the database (BR-26 → 403
+  `ACCESS_DENIED`) · 404 unknown id · 409 `DATA_CONFLICT` not an unhandled `needs_review` (E1, also the loser of two
+  concurrent decisions) or `activated` with every course already owned (E2) · 400 `VALIDATION_FAILED` blank note (E3) /
+  unknown action.
 
 ### learning
 | Method & path | UC | P1 |
