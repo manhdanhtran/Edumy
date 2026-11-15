@@ -1,5 +1,6 @@
 package com.edumy.learning.controller;
 
+import static com.edumy.support.IdorAssertions.assertEnrollmentRequired;
 import static com.edumy.support.IdorAssertions.assertSameNotFound;
 import static com.edumy.support.ProblemAssertions.expectProblem;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -110,13 +111,16 @@ class QuestionReadsIT {
         as(6, "/api/v1/courses/3/questions?q=_").andExpect(jsonPath("$.content", empty()));
     }
 
+    /** 403/404 principle: published course without relation → 403 ENROLLMENT_REQUIRED; hidden / pending → 404. */
     @Test
-    void courseList_idor_notEnrolled_404IdenticalToUnknown() throws Exception {
-        assertSameNotFound(mvc, req(8, "/api/v1/courses/1/questions"),
+    void courseList_notEnrolled_publishedCourse403_nonPublic404IdenticalToUnknown() throws Exception {
+        assertEnrollmentRequired(mvc, req(8, "/api/v1/courses/1/questions"), req(2, "/api/v1/courses/5/questions"));
+        assertSameNotFound(mvc, req(8, "/api/v1/courses/10/questions"), // hidden, student 8 not enrolled
                 req(8, "/api/v1/courses/" + Long.MAX_VALUE + "/questions"));
+        assertSameNotFound(mvc, req(2, "/api/v1/courses/12/questions"), // pending, instructor 2 unrelated
+                req(2, "/api/v1/courses/" + Long.MAX_VALUE + "/questions"));
         as(SeedUserTokens.ADMIN, "/api/v1/courses/12/questions").andExpect(status().isOk());
         as(2, "/api/v1/courses/1/questions").andExpect(status().isOk()); // instructor of the course
-        as(2, "/api/v1/courses/5/questions").andExpect(status().isNotFound());
     }
 
     @Test

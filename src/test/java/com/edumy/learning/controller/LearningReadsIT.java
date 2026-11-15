@@ -1,5 +1,6 @@
 package com.edumy.learning.controller;
 
+import static com.edumy.support.IdorAssertions.assertEnrollmentRequired;
 import static com.edumy.support.IdorAssertions.assertSameNotFound;
 import static com.edumy.support.ProblemAssertions.expectProblem;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -210,14 +211,21 @@ class LearningReadsIT {
         as(8, "/api/v1/learn/courses/12").andExpect(status().isNotFound());
     }
 
+    /**
+     * UC-S09 "Không có quyền → trang giới thiệu khóa" + 403/404 principle (ADR-008 §2): a published course is public,
+     * so no relation → 403 {@code ENROLLMENT_REQUIRED}, one body for every caller; a hidden / pending course → the 404
+     * of an unknown id (NFR-01, UC-G04 E1).
+     */
     @Test
-    void outline_idor_notEnrolledOrNotRelated_404IdenticalToUnknown() throws Exception {
-        assertSameNotFound(mvc, req(STUDENT_B, "/api/v1/learn/courses/1"),
+    void outline_notEnrolledOrNotRelated_publishedCourse403_nonPublic404IdenticalToUnknown() throws Exception {
+        // published 1 and 5: a student of other courses, a pending co-instructor (course 5, instructor 4), an
+        // instructor of other courses
+        assertEnrollmentRequired(mvc, req(STUDENT_B, "/api/v1/learn/courses/1"), req(4, "/api/v1/learn/courses/5"),
+                req(2, "/api/v1/learn/courses/5"));
+        // hidden 10 (only student 10 enrolled) and pending 12: not public
+        assertSameNotFound(mvc, req(STUDENT_B, "/api/v1/learn/courses/10"),
                 req(STUDENT_B, "/api/v1/learn/courses/" + Long.MAX_VALUE));
-        // pending co-instructor invitation (course 5, instructor 4), removed co-instructor (course 3, instructor 5)
-        assertSameNotFound(mvc, req(4, "/api/v1/learn/courses/5"),
-                req(4, "/api/v1/learn/courses/" + Long.MAX_VALUE));
-        assertSameNotFound(mvc, req(2, "/api/v1/learn/courses/5"), // instructor of other courses
+        assertSameNotFound(mvc, req(2, "/api/v1/learn/courses/12"),
                 req(2, "/api/v1/learn/courses/" + Long.MAX_VALUE));
     }
 
@@ -285,14 +293,17 @@ class LearningReadsIT {
                 .andExpect(jsonPath("$.content[1].lastAccessedAt").value("2026-10-30T21:00:00Z"));
     }
 
+    /** UC-S09 + 403/404 principle: lessons of a published course → 403; of a hidden / pending course → 404. */
     @Test
-    void lesson_notEnrolled_404IdenticalToUnknown() throws Exception {
-        assertSameNotFound(mvc, req(8, "/api/v1/learn/lessons/1"),
-                req(8, "/api/v1/learn/lessons/" + Long.MAX_VALUE)); // student 8 is not enrolled in course 1
-        assertSameNotFound(mvc, req(STUDENT_B, "/api/v1/learn/lessons/5"),
-                req(STUDENT_B, "/api/v1/learn/lessons/" + Long.MAX_VALUE));
-        assertSameNotFound(mvc, req(4, "/api/v1/learn/lessons/23"), // instructor 4: pending invitation on course 5
-                req(4, "/api/v1/learn/lessons/" + Long.MAX_VALUE));
+    void lesson_notEnrolled_publishedCourse403_nonPublic404IdenticalToUnknown() throws Exception {
+        assertEnrollmentRequired(mvc,
+                req(8, "/api/v1/learn/lessons/1"),          // student 8 is not enrolled in course 1
+                req(STUDENT_B, "/api/v1/learn/lessons/5"),
+                req(4, "/api/v1/learn/lessons/23"));        // instructor 4: pending invitation on course 5
+        assertSameNotFound(mvc, req(8, "/api/v1/learn/lessons/45"), // hidden course 10
+                req(8, "/api/v1/learn/lessons/" + Long.MAX_VALUE));
+        assertSameNotFound(mvc, req(8, "/api/v1/learn/lessons/49"), // pending course 12
+                req(8, "/api/v1/learn/lessons/" + Long.MAX_VALUE));
     }
 
     @Test

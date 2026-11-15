@@ -1,5 +1,6 @@
 package com.edumy.learning.controller;
 
+import static com.edumy.support.IdorAssertions.assertEnrollmentRequired;
 import static com.edumy.support.IdorAssertions.assertSameNotFound;
 import static com.edumy.support.ProblemAssertions.expectProblem;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -221,20 +222,22 @@ class ProgressWriteIT {
         expectProblem(mvc.perform(post("/api/v1/learn/lessons/" + lessons[0] + "/visit")), 401, "UNAUTHENTICATED");
     }
 
-    /** E1: only the caller's own enrollment counts; everything else is the same 404 as an unknown lesson. */
+    /**
+     * E1: only the caller's own enrollment counts. 403/404 principle: a lesson of a <b>published</b> course without
+     * enrollment → 403 {@code ENROLLMENT_REQUIRED} (stranger, a student of another course — BR-24 at the door — and
+     * the course's own instructor, who has no progress, D-32); a non-public course → the 404 of an unknown lesson.
+     */
     @Test
-    void completion_notEnrolled_otherCourse_instructor_404_identical_NFR01() throws Exception {
+    void completion_notEnrolled_otherCourse_instructor_published403_hidden404_NFR01() throws Exception {
         Session stranger = tokens.newUserSession(RoleCode.STUDENT);
         long otherCourse = fixtures.draftCourse(instructor.userId());
         fixtures.setStatus(otherCourse, "published", false);
         long[] otherLessons = lessonsOf(otherCourse, 1);
 
-        // not enrolled at all
-        assertSameNotFound(mvc, complete(stranger, lessons[0], true), complete(stranger, UNKNOWN_LESSON, true));
-        // enrolled in course A, lesson of course B (BR-24 at the door)
+        assertEnrollmentRequired(mvc, complete(stranger, lessons[0], true), complete(student, otherLessons[0], true),
+                complete(instructor, lessons[0], true));
+        fixtures.setStatus(otherCourse, "hidden", true);
         assertSameNotFound(mvc, complete(student, otherLessons[0], true), complete(student, UNKNOWN_LESSON, true));
-        // the course's own instructor has no progress (D-32)
-        assertSameNotFound(mvc, complete(instructor, lessons[0], true), complete(instructor, UNKNOWN_LESSON, true));
 
         assertThat(progressRows(enrollment)).isZero();
         assertThat(jdbc.sql("SELECT COUNT(*) FROM lesson_progresses").query(Long.class).single()).isZero();
@@ -419,9 +422,11 @@ class ProgressWriteIT {
     }
 
     @Test
-    void visit_notEnrolledOrUnknown_404_identical_NFR01() throws Exception {
+    void visit_notEnrolled_published403_hidden404IdenticalToUnknown_NFR01() throws Exception {
         Session stranger = tokens.newUserSession(RoleCode.STUDENT);
 
+        assertEnrollmentRequired(mvc, visit(stranger, lessons[0]));
+        fixtures.setStatus(course, "hidden", true);
         assertSameNotFound(mvc, visit(stranger, lessons[0]), visit(stranger, UNKNOWN_LESSON));
 
         assertThat(jdbc.sql("SELECT COUNT(*) FROM lesson_progresses").query(Long.class).single()).isZero();

@@ -34,7 +34,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Learning reads: my enrollments (UC-S08), the course outline with progress (UC-S11), lesson content (UC-S09) and the
- * students of a course (UC-I19). Access is decided before by {@code @enrollmentAccess} / {@code @courseAccess}.
+ * students of a course (UC-I19). Access is decided before by {@code @enrollmentAccess}.
  * Progress is derived on every read (D-33: floor(completed * 100 / total lessons now)). Statements: my enrollments =
  * page + count + courses + lesson counts + certificates (2 when the page is empty); outline =
  * enrollment + course + chapters + lessons + completed ids; students = page + count + lesson count + names.

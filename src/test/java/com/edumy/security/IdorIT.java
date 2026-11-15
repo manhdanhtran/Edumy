@@ -312,7 +312,7 @@ class IdorIT {
             pub("/catalog/courses/{pendingSlug}"),
             pub("/catalog/courses/{draftSlug}/reviews"),
             pub("/catalog/courses/{draftSlug}/lessons/{draftLesson}/preview"),
-            pub("/catalog/courses/{publishedSlug}/lessons/{l1}/preview").target("l1"));
+            pub("/catalog/courses/{publishedSlug}/lessons/{openLesson}/preview").target("openLesson"));
 
     static Stream<Row> owned() {
         return OWNED.stream();
@@ -452,13 +452,60 @@ class IdorIT {
         for (Who who : List.of(Who.STRANGER_STUDENT, Who.STRANGER_INSTRUCTOR, Who.OWNER_INSTRUCTOR, Who.ADMIN,
                 Who.CO_ACCEPTED)) {
             check("review create as " + who, () -> {
-                MvcResult result = expectProblem(mvc.perform(w.request("POST", "/courses/" + w.ids.get("course")
+                MvcResult result = expectProblem(mvc.perform(w.request("POST", "/courses/" + w.ids.get("openCourse")
                         + "/reviews", body, who, null, false)), 403, "ENROLLMENT_REQUIRED");
                 w.assertNoDataIn(result);
                 expectProblem(mvc.perform(w.request("POST", "/courses/" + MISSING_ID + "/reviews", body, who, null,
                         false)), 404, "RESOURCE_NOT_FOUND");
             });
         }
+    }
+
+    /**
+     * UC-S09 "Không có quyền → trang giới thiệu khóa" + P10 403/404 principle (ADR-008 §2): on a <b>published</b>
+     * course every learning endpoint answers a caller without the needed relation 403 {@code ENROLLMENT_REQUIRED},
+     * one body for every caller and endpoint family, no data of anybody in it. (The same endpoints on the hidden main
+     * course are rows of {@link #OWNED}: 404 like an unknown id.)
+     */
+    @Test
+    void learning_publishedCourseWithoutRelation_403_ENROLLMENT_REQUIRED_sameBody_noData() throws Exception {
+        World w = world();
+        Map<String, String> reads = Map.of(
+                "GET /learn/courses/{openCourse}", "",
+                "GET /learn/lessons/{openLesson}", "",
+                "POST /learn/lessons/{openLesson}/visit", "",
+                "GET /courses/{openCourse}/questions", "");
+        Map<String, String> enrolledOnly = Map.of(
+                "PUT /learn/lessons/{openLesson}/completion", "{\"completed\": true}",
+                "POST /courses/{openCourse}/questions", "{\"title\": \"Hỏi\", \"content\": \"Nội dung hỏi\"}");
+        String first = null;
+        for (Map.Entry<String, String> e : concat(reads, enrolledOnly).entrySet()) {
+            String[] mp = e.getKey().split(" ", 2);
+            Set<Who> callers = enrolledOnly.containsKey(e.getKey())
+                    ? plus(LEARN_OUTSIDERS, Who.OWNER_INSTRUCTOR, Who.ADMIN, Who.STUDENT_A)
+                    : plus(LEARN_OUTSIDERS, Who.STUDENT_A);
+            for (Who who : callers) {
+                String label = e.getKey() + " as " + who;
+                MvcResult[] holder = new MvcResult[1];
+                check(label, () -> {
+                    holder[0] = expectProblem(mvc.perform(w.request(mp[0], mp[1],
+                            e.getValue().isEmpty() ? null : e.getValue(), who, null, false)), 403,
+                            "ENROLLMENT_REQUIRED");
+                    w.assertNoDataIn(holder[0]);
+                });
+                String body = withoutTraceAndInstance(holder[0]);
+                if (first == null) {
+                    first = body;
+                }
+                assertThat(body).as(label + ": one body for every 403 ENROLLMENT_REQUIRED").isEqualTo(first);
+            }
+        }
+    }
+
+    private static Map<String, String> concat(Map<String, String> a, Map<String, String> b) {
+        Map<String, String> all = new java.util.LinkedHashMap<>(a);
+        all.putAll(b);
+        return all;
     }
 
     /**
@@ -586,7 +633,9 @@ class IdorIT {
             secrets.add(owner.user().email());
             secrets.add(studentA.user().email());
 
-            // the main course: published, free, two chapters with three lessons, co-instructors in every state
+            // the main course: HIDDEN (published once, then hidden — not public, so every outsider gets the 404 of an
+            // unknown id, P10 403/404 principle; its enrolled student, instructors and the admin keep access, BR-31 /
+            // D-32), free, two chapters with three lessons, co-instructors in every state
             long category = fixtures.category(true);
             ids.put("category", String.valueOf(category));
             long course = fixtures.draftCourse(owner.userId(), category);
@@ -596,7 +645,7 @@ class IdorIT {
             long l2 = fixtures.lesson(ch1, 2);
             long ch2 = fixtures.chapter(course, 2);
             fixtures.lesson(ch2, 1);
-            fixtures.setStatus(course, "published", false);
+            fixtures.setStatus(course, "hidden", true);
             ids.put("course", String.valueOf(course));
             ids.put("ch1", String.valueOf(ch1));
             ids.put("ch2", String.valueOf(ch2));
@@ -635,7 +684,11 @@ class IdorIT {
             ids.put("submitCourse", String.valueOf(submit));
 
             // a free published course anybody may enrol in, two paid ones for the cart and the order
-            ids.put("openCourse", String.valueOf(publishedCourse(owner.userId(), category, 0)));
+            long open = publishedCourse(owner.userId(), category, 0);
+            ids.put("openCourse", String.valueOf(open));
+            ids.put("openLesson", String.valueOf(jdbc.sql("""
+                    SELECT l.id FROM lessons l JOIN chapters c ON c.id = l.chapter_id WHERE c.course_id = ?""")
+                    .param(open).query(Long.class).single())); // not a preview lesson
             long paid = publishedCourse(owner.userId(), category, 499_000);
             long paid2 = publishedCourse(owner.userId(), category, 299_000);
             ids.put("paidCourse", String.valueOf(paid));
@@ -698,7 +751,7 @@ class IdorIT {
             }
             ids.put("draftSlug", slug(draft));
             ids.put("pendingSlug", slug(pending));
-            ids.put("publishedSlug", slug(course));
+            ids.put("publishedSlug", slug(open));
         }
 
         private String slug(long course) {

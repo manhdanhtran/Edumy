@@ -30,7 +30,7 @@ public class InstructorStudentController {
 
     /** {@code page}, {@code size} (default 20, max 100); newest enrollment first ({@code sort} is ignored). */
     @GetMapping
-    @PreAuthorize("@courseAccess.isInstructor(#courseId)")
+    @PreAuthorize("@enrollmentAccess.isCourseInstructor(#courseId)")
     @Operation(summary = "UC-I19 Xem học viên của khóa học (họ tên, ngày ghi danh, nguồn, tiến độ %)")
     public PagedModel<StudentProgressResponse> students(@PathVariable Long courseId,
                                                         @ParameterObject Pageable pageable) {

@@ -1,5 +1,6 @@
 package com.edumy.learning.controller;
 
+import static com.edumy.support.IdorAssertions.assertEnrollmentRequired;
 import static com.edumy.support.IdorAssertions.assertSameNotFound;
 import static com.edumy.support.ProblemAssertions.expectProblem;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -151,13 +152,18 @@ class QuestionWriteIT {
                 .hasMessageContaining("BR-37");
     }
 
+    /**
+     * E1 / BR-37 + 403/404 principle: no enrollment in a <b>published</b> course → 403 {@code ENROLLMENT_REQUIRED}
+     * (instructor and admin too: only students ask); a hidden course → the 404 of an unknown id.
+     */
     @Test
-    void ask_notEnrolled_404_identicalToUnknownCourse_instructorAndAdminToo_E1_BR37() throws Exception {
+    void ask_notEnrolled_publishedCourse403_hiddenCourse404_instructorAndAdminToo_E1_BR37() throws Exception {
         String body = "{\"title\": \"T\", \"content\": \"C\"}";
 
+        assertEnrollmentRequired(mvc, ask(stranger, course, body), ask(instructor, course, body),
+                ask(admin, course, body));
+        fixtures.setStatus(course, "hidden", true);
         assertSameNotFound(mvc, ask(stranger, course, body), ask(stranger, Long.MAX_VALUE, body));
-        assertSameNotFound(mvc, ask(instructor, course, body), ask(instructor, Long.MAX_VALUE, body));
-        assertSameNotFound(mvc, ask(admin, course, body), ask(admin, Long.MAX_VALUE, body));
 
         assertThat(questionCount()).isZero();
     }

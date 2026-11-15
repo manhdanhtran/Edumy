@@ -20,7 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/instructor/questions")
 @Tag(name = "learning")
-@PreAuthorize("@courseAccess.isActiveInstructor()")
+@PreAuthorize("@enrollmentAccess.isActiveInstructor()")
 public class InstructorQuestionController {
 
     private final QaQueryService queries;

@@ -32,4 +32,22 @@ public final class IdorAssertions {
                 .as("404 of another user's resource must equal the 404 of a missing one (NFR-01)")
                 .isEqualTo(withoutTraceAndInstance(absent));
     }
+
+    /**
+     * 403/404 principle (ADR-008 §2): a <b>published</b> course is public, so a caller without the needed relation
+     * gets 403 {@code ENROLLMENT_REQUIRED} — every request must answer it, with one and the same body (only
+     * {@code traceId} / {@code instance} differ), so the answer tells nothing about the caller's other relations.
+     */
+    public static void assertEnrollmentRequired(MockMvc mvc, RequestBuilder... requests) throws Exception {
+        String first = null;
+        for (RequestBuilder request : requests) {
+            String body = withoutTraceAndInstance(
+                    expectProblem(mvc.perform(request), 403, ErrorCode.ENROLLMENT_REQUIRED.name()));
+            if (first == null) {
+                first = body;
+            } else {
+                assertThat(body).as("every 403 ENROLLMENT_REQUIRED carries the same body").isEqualTo(first);
+            }
+        }
+    }
 }

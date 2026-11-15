@@ -33,7 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Q&amp;A reads (UC-S18 course list and thread, UC-I22 instructor list). Who may call is decided before by
- * {@code @enrollmentAccess.canViewContent} / {@code @qaAccess.canView} / {@code @courseAccess.isActiveInstructor};
+ * {@code @enrollmentAccess.canViewContent} / {@code @qaAccess.canView} / {@code @enrollmentAccess.isActiveInstructor};
  * this service only shapes what each caller sees: deleted content never; hidden questions for their asker and an
  * admin; hidden answers for their author and an admin (BR-41). Statements: course list = page + count + names;
  * thread = question + answers + names; instructor list = instructed ids + page + count + names + courses.
