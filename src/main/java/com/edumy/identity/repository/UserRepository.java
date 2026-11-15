@@ -39,26 +39,27 @@ public interface UserRepository extends JpaRepository<User, Long> {
     /**
      * UC-A01 {@code GET /admin/users?q=&status=&role=}. Every filter is optional (null = no filter). {@code q} matches a
      * substring of the email (compared lower-case, column is utf8mb4_bin) or of the full name (ai_ci: case- and
-     * accent-insensitive); {@code %}/{@code _} in {@code q} act as LIKE wildcards. {@code role} keeps users holding that
-     * role actively. Roles of the page: {@link UserRoleRepository#findActiveRoleCodesByUserIdIn}.
+     * accent-insensitive). {@code pattern} = {@code LikePattern.contains(q)}: {@code %} / {@code _} typed by the admin
+     * are escaped ({@code ESCAPE '!'}) and match literally. {@code role} keeps users holding that role actively. Roles
+     * of the page: {@link UserRoleRepository#findActiveRoleCodesByUserIdIn}.
      */
     @Query(value = """
             select u.id as id, u.email as email, u.fullName as fullName, u.emailVerified as emailVerified,
                    u.status as status, u.createdAt as createdAt
             from User u
-            where (:q is null or u.email like concat('%', lower(:q), '%') or u.fullName like concat('%', :q, '%'))
+            where (:pattern is null or u.email like lower(:pattern) escape '!' or u.fullName like :pattern escape '!')
               and (:status is null or u.status = :status)
               and (:role is null or exists (select 1 from UserRole ur
                                             where ur.user = u and ur.active = true and ur.role.code = :role))
             """,
             countQuery = """
             select count(u) from User u
-            where (:q is null or u.email like concat('%', lower(:q), '%') or u.fullName like concat('%', :q, '%'))
+            where (:pattern is null or u.email like lower(:pattern) escape '!' or u.fullName like :pattern escape '!')
               and (:status is null or u.status = :status)
               and (:role is null or exists (select 1 from UserRole ur
                                             where ur.user = u and ur.active = true and ur.role.code = :role))
             """)
-    Page<AdminUserView> searchForAdmin(@Param("q") String q, @Param("status") UserStatus status,
+    Page<AdminUserView> searchForAdmin(@Param("pattern") String pattern, @Param("status") UserStatus status,
                                        @Param("role") RoleCode role, Pageable pageable);
 
     /** {@code identity::api.UserQueryApi.findIdByEmail}: normalized email to id, no entity load. */

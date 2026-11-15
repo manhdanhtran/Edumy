@@ -7,6 +7,7 @@ import com.edumy.authoring.dto.request.CategoryRequest;
 import com.edumy.authoring.dto.response.AdminCategoryResponse;
 import com.edumy.authoring.service.CategoryQueryService;
 import com.edumy.authoring.service.CategoryService;
+import com.edumy.shared.security.CurrentUserId;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -23,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Category administration (UC-A06…A08). Admin only: route rule {@code /api/v1/admin/**} plus the method-level check
- * (docs/ai/04 §4.3).
+ * (docs/ai/04 §4.3); the writes also re-check the admin role in the database (BR-26 → 403 {@code ACCESS_DENIED}).
  */
 @RestController
 @RequestMapping("/api/v1/admin/categories")
@@ -52,8 +53,9 @@ public class AdminCategoryController {
      */
     @PostMapping
     @Operation(summary = "UC-A06 Thêm danh mục khóa học (tên, slug duy nhất; mặc định đang hoạt động)")
-    public ResponseEntity<AdminCategoryResponse> create(@Valid @RequestBody CategoryRequest request) {
-        Long id = categories.create(request.name(), request.slug(), request.active());
+    public ResponseEntity<AdminCategoryResponse> create(@CurrentUserId Long adminId,
+                                                        @Valid @RequestBody CategoryRequest request) {
+        Long id = categories.create(adminId, request.name(), request.slug(), request.active());
         return ResponseEntity.created(URI.create("/api/v1/admin/categories/" + id)).body(queries.get(id));
     }
 
@@ -63,8 +65,9 @@ public class AdminCategoryController {
      */
     @PatchMapping("/{id}")
     @Operation(summary = "UC-A07 Cập nhật danh mục (tên, slug, trạng thái hoạt động)")
-    public AdminCategoryResponse update(@PathVariable Long id, @Valid @RequestBody CategoryRequest request) {
-        categories.update(id, request.name(), request.slug(), request.active());
+    public AdminCategoryResponse update(@PathVariable Long id, @CurrentUserId Long adminId,
+                                        @Valid @RequestBody CategoryRequest request) {
+        categories.update(adminId, id, request.name(), request.slug(), request.active());
         return queries.get(id);
     }
 
@@ -74,8 +77,8 @@ public class AdminCategoryController {
      */
     @DeleteMapping("/{id}")
     @Operation(summary = "UC-A08 Xóa danh mục chưa dùng hoặc ngừng sử dụng danh mục đã có khóa học")
-    public ResponseEntity<AdminCategoryResponse> delete(@PathVariable Long id) {
-        if (categories.deleteOrDeactivate(id)) {
+    public ResponseEntity<AdminCategoryResponse> delete(@PathVariable Long id, @CurrentUserId Long adminId) {
+        if (categories.deleteOrDeactivate(adminId, id)) {
             return ResponseEntity.noContent().build();
         }
         return ResponseEntity.ok(queries.get(id));

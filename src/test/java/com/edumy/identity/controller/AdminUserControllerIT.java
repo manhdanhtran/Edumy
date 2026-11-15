@@ -18,6 +18,7 @@ import com.edumy.support.SqlStatementCounter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.web.servlet.MockMvc;
@@ -112,6 +113,16 @@ class AdminUserControllerIT {
     @Test
     void list_noMatch_emptyPage_UCA01() throws Exception {
         asAdmin("?q=khong-ton-tai")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content", empty()))
+                .andExpect(jsonPath("$.page.totalElements").value(0));
+    }
+
+    /** P10 MINOR-4: LIKE wildcards typed by the admin are literals; no seed email / name holds {@code %} or {@code _}. */
+    @ParameterizedTest
+    @ValueSource(strings = {"%25", "_", "%25%25", "h_ng", "!"})
+    void list_likeWildcardsInQ_areLiterals_neverTheWholeList_UCA01(String encodedQ) throws Exception {
+        asAdmin("?q=" + encodedQ)
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content", empty()))
                 .andExpect(jsonPath("$.page.totalElements").value(0));

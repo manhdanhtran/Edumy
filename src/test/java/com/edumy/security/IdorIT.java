@@ -460,6 +460,23 @@ class IdorIT {
         }
     }
 
+    /**
+     * P10 403/404 principle: a course that is not public (draft, pending review) is invisible to a caller with no
+     * enrollment — review create answers the 404 of an unknown id, identical body (MINOR-2 of the P10 security review).
+     */
+    @Test
+    void reviewCreate_noEnrollmentInNonPublicCourse_404IdenticalToMissing_NFR01() throws Exception {
+        World w = world();
+        String body = "{\"rating\": 5, \"comment\": \"Tốt\"}";
+        for (String course : List.of("draftCourse", "pendingCourse")) {
+            for (Who who : List.of(Who.STRANGER_STUDENT, Who.STRANGER_INSTRUCTOR, Who.OWNER_INSTRUCTOR, Who.ADMIN)) {
+                check("review create on " + course + " as " + who, () -> assertSameNotFound(mvc,
+                        w.request("POST", "/courses/" + w.ids.get(course) + "/reviews", body, who, null, false),
+                        w.request("POST", "/courses/" + MISSING_ID + "/reviews", body, who, null, false)));
+            }
+        }
+    }
+
     // ================================================================================================== helpers
 
     interface Check {

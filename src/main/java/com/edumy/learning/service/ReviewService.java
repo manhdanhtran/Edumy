@@ -62,7 +62,10 @@ public class ReviewService {
     }
 
     /**
-     * UC-S12 in SRS order: the course must exist (unknown → 404); E1 no enrollment → 403 {@code ENROLLMENT_REQUIRED};
+     * UC-S12 in SRS order: the course must exist (unknown → 404); E1 no enrollment → 403 {@code ENROLLMENT_REQUIRED}
+     * for a <b>published</b> course only (its id is public, so the SPA sends the caller to the course page, UC-S09) —
+     * a draft / pending / rejected / hidden course without enrollment answers the 404 of an unknown id (NFR-01, P10
+     * 403/404 principle; enrolled students still review hidden courses, BR-31);
      * no review yet → new visible review; withdrawn → the same row is re-rated and visible again (step 3); visible →
      * 409 {@code DATA_CONFLICT} (step 3 sends the student to UC-S13, BR-18); hidden by an admin → 409
      * {@code REVIEW_HIDDEN_BY_ADMIN} (E2, BR-35).
@@ -74,7 +77,8 @@ public class ReviewService {
             throw BusinessException.notFound();
         }
         Enrollment enrollment = enrollments.findByStudentIdAndCourseIdForUpdate(studentId, courseId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.ENROLLMENT_REQUIRED));
+                .orElseThrow(() -> course.published() ? new BusinessException(ErrorCode.ENROLLMENT_REQUIRED)
+                        : BusinessException.notFound());
         CourseReview review = reviews.findByEnrollmentId(enrollment.getId()).orElse(null);
         boolean created = review == null;
         if (created) {

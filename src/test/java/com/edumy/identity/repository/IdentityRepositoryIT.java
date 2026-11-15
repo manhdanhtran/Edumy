@@ -24,6 +24,7 @@ import com.edumy.identity.entity.UserToken;
 import com.edumy.identity.repository.UserRepository.AdminUserView;
 import com.edumy.identity.repository.UserRoleRepository.UserRoleCodeView;
 import com.edumy.shared.security.RoleCode;
+import com.edumy.shared.text.LikePattern;
 import com.edumy.support.MySqlSpringBootTest;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
@@ -125,7 +126,7 @@ class IdentityRepositoryIT {
         em.clear();
         PageRequest page = PageRequest.of(0, 10, Sort.by("email"));
 
-        Page<AdminUserView> byQ = users.searchForAdmin(marker, null, null, page);
+        Page<AdminUserView> byQ = users.searchForAdmin(LikePattern.contains(marker), null, null, page);
         assertThat(byQ.getTotalElements()).isEqualTo(3);
         assertThat(byQ.getContent()).extracting(AdminUserView::getEmail)
                 .containsExactly(marker + "-i@edumy.vn", marker + "-l@edumy.vn", marker + "-s@edumy.vn");
@@ -137,22 +138,38 @@ class IdentityRepositoryIT {
         assertThat(first.getCreatedAt()).isEqualTo(NOW);
 
         // q is case-insensitive on the email (lower-cased) and case/accent-insensitive on full_name (ai_ci)
-        assertThat(users.searchForAdmin(marker.toUpperCase() + "-S@", null, null, page).getContent())
+        assertThat(users.searchForAdmin(LikePattern.contains(marker.toUpperCase() + "-S@"), null, null, page).getContent())
                 .extracting(AdminUserView::getId).containsExactly(student.getId());
-        assertThat(users.searchForAdmin("giang vien " + marker, null, null, page).getContent())
+        assertThat(users.searchForAdmin(LikePattern.contains("giang vien " + marker), null, null, page).getContent())
                 .extracting(AdminUserView::getId).containsExactly(instructor.getId());
 
-        assertThat(users.searchForAdmin(marker, UserStatus.LOCKED, null, page).getContent())
+        assertThat(users.searchForAdmin(LikePattern.contains(marker), UserStatus.LOCKED, null, page).getContent())
                 .extracting(AdminUserView::getId).containsExactly(locked.getId());
         // revoked roles do not count
-        assertThat(users.searchForAdmin(marker, null, RoleCode.INSTRUCTOR, page).getContent())
+        assertThat(users.searchForAdmin(LikePattern.contains(marker), null, RoleCode.INSTRUCTOR, page).getContent())
                 .extracting(AdminUserView::getId).containsExactly(instructor.getId());
-        assertThat(users.searchForAdmin(marker, UserStatus.ACTIVE, RoleCode.STUDENT, page).getTotalElements())
+        assertThat(users.searchForAdmin(LikePattern.contains(marker), UserStatus.ACTIVE, RoleCode.STUDENT, page).getTotalElements())
                 .isEqualTo(2);
 
-        Page<AdminUserView> paged = users.searchForAdmin(marker, null, null, PageRequest.of(1, 2, Sort.by("email")));
+        Page<AdminUserView> paged = users.searchForAdmin(LikePattern.contains(marker), null, null,
+                PageRequest.of(1, 2, Sort.by("email")));
         assertThat(paged.getTotalElements()).isEqualTo(3);
         assertThat(paged.getContent()).extracting(AdminUserView::getId).containsExactly(student.getId());
+
+        // MINOR-4 (P10): % and _ of the keyword are literals (ESCAPE '!'), never wildcards
+        assertThat(users.searchForAdmin(LikePattern.contains(marker + "%"), null, null, page).getTotalElements())
+                .isZero();
+        assertThat(users.searchForAdmin(LikePattern.contains(marker + "_s@"), null, null, page).getTotalElements())
+                .isZero();
+        assertThat(users.searchForAdmin(LikePattern.contains(marker + "!"), null, null, page).getTotalElements())
+                .isZero();
+        User odd = newUser(marker + "_x%y!z@edumy.vn", "Ký Tự " + marker);
+        em.flush();
+        assertThat(users.searchForAdmin(LikePattern.contains(marker + "_x%y!z"), null, null, page).getContent())
+                .extracting(AdminUserView::getId).containsExactly(odd.getId());
+        // no keyword = no filter
+        assertThat(users.searchForAdmin(null, null, null, PageRequest.of(0, 1)).getTotalElements())
+                .isGreaterThanOrEqualTo(4);
     }
 
     // ----------------------------------------------------------------------------------------------- roles, user_roles

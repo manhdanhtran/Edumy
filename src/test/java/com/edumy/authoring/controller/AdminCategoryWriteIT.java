@@ -282,6 +282,28 @@ class AdminCategoryWriteIT {
         assertThat(events.stream(CategoryChanged.class)).isEmpty();
     }
 
+    /** P10 MINOR-1 / BR-26: a token still claiming {@code admin} after the role was revoked in the DB gets 403. */
+    @Test
+    void writes_adminRoleRevokedInDatabase_staleJwt_403_nothingChanges_BR26() throws Exception {
+        Session staleAdmin = tokens.newUserSession(RoleCode.ADMIN);
+        users.revokeRole(staleAdmin.userId(), RoleCode.ADMIN); // the JWT still claims admin
+        long id = fixtures.category(true);
+        String name = "Stale " + unique;
+
+        expectProblem(mvc.perform(json(post(CATEGORIES), staleAdmin, "{\"name\": \"" + name + "\"}")),
+                403, "ACCESS_DENIED");
+        expectProblem(mvc.perform(json(patch(CATEGORIES + "/" + id), staleAdmin, "{\"active\": false}")),
+                403, "ACCESS_DENIED");
+        expectProblem(mvc.perform(delete(CATEGORIES + "/" + id)
+                .header(HttpHeaders.AUTHORIZATION, staleAdmin.bearer())), 403, "ACCESS_DENIED");
+
+        assertThat(jdbc.sql("SELECT is_active FROM categories WHERE id = ?").param(id).query(Boolean.class).single())
+                .isTrue();
+        assertThat(jdbc.sql("SELECT COUNT(*) FROM categories WHERE name = ?").param(name).query(Long.class).single())
+                .isZero();
+        assertThat(events.stream(CategoryChanged.class)).isEmpty();
+    }
+
     // ------------------------------------------------------------------------------------------------ helpers
 
     /** Creates a category through the API (slug generated) and tracks it for clean-up. */

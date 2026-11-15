@@ -25,6 +25,7 @@ import com.edumy.learning.repository.QuestionAnswerRepository;
 import com.edumy.shared.error.BusinessException;
 import com.edumy.shared.error.ErrorCode;
 import com.edumy.shared.security.RoleCode;
+import com.edumy.shared.text.LogSanitizer;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import org.slf4j.Logger;
@@ -85,7 +86,7 @@ public class ModerationService {
         review.hide(adminId, clock.instant());
         ReviewResponse response = flushAndRead(review);
         publish(review);
-        log.info("Review hidden: reviewId={}, by adminId={}, note={}", reviewId, adminId, note);
+        log.info("Review hidden: reviewId={}, by adminId={}, note={}", reviewId, adminId, LogSanitizer.clean(note));
         return response;
     }
 
@@ -96,7 +97,7 @@ public class ModerationService {
         review.restore(adminId, clock.instant());
         ReviewResponse response = flushAndRead(review);
         publish(review);
-        log.info("Review restored: reviewId={}, by adminId={}, note={}", reviewId, adminId, note);
+        log.info("Review restored: reviewId={}, by adminId={}, note={}", reviewId, adminId, LogSanitizer.clean(note));
         return response;
     }
 
@@ -106,7 +107,7 @@ public class ModerationService {
         CourseQuestion question = lockQuestionAsAdmin(adminId, questionId);
         question.hide(adminId, clock.instant());
         QuestionThreadResponse response = flushAndReadThread(adminId, question);
-        log.info("Question hidden: questionId={}, by adminId={}, note={}", questionId, adminId, note);
+        log.info("Question hidden: questionId={}, by adminId={}, note={}", questionId, adminId, LogSanitizer.clean(note));
         return response;
     }
 
@@ -116,7 +117,7 @@ public class ModerationService {
         CourseQuestion question = lockQuestionAsAdmin(adminId, questionId);
         question.restore(adminId, clock.instant());
         QuestionThreadResponse response = flushAndReadThread(adminId, question);
-        log.info("Question restored: questionId={}, by adminId={}, note={}", questionId, adminId, note);
+        log.info("Question restored: questionId={}, by adminId={}, note={}", questionId, adminId, LogSanitizer.clean(note));
         return response;
     }
 
@@ -126,7 +127,7 @@ public class ModerationService {
         QuestionAnswer answer = lockAnswerAsAdmin(adminId, answerId);
         answer.hide(adminId, clock.instant());
         AnswerResponse response = flushAndReadAnswer(answer);
-        log.info("Answer hidden: answerId={}, by adminId={}, note={}", answerId, adminId, note);
+        log.info("Answer hidden: answerId={}, by adminId={}, note={}", answerId, adminId, LogSanitizer.clean(note));
         return response;
     }
 
@@ -136,7 +137,7 @@ public class ModerationService {
         QuestionAnswer answer = lockAnswerAsAdmin(adminId, answerId);
         answer.restore(adminId, clock.instant());
         AnswerResponse response = flushAndReadAnswer(answer);
-        log.info("Answer restored: answerId={}, by adminId={}, note={}", answerId, adminId, note);
+        log.info("Answer restored: answerId={}, by adminId={}, note={}", answerId, adminId, LogSanitizer.clean(note));
         return response;
     }
 

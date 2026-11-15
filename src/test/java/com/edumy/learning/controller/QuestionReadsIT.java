@@ -104,6 +104,10 @@ class QuestionReadsIT {
         as(6, "/api/v1/courses/3/questions?q=react 19").andExpect(jsonPath("$.content[*].id", contains(3)));
         as(6, "/api/v1/courses/3/questions?q=vue").andExpect(jsonPath("$.content", empty()));
         as(6, "/api/v1/courses/3/questions?q=100%25").andExpect(jsonPath("$.content", empty())); // % is literal
+        // P10 MINOR-4: a bare wildcard never lists every question (course 3 has visible questions)
+        as(6, "/api/v1/courses/3/questions").andExpect(jsonPath("$.content", org.hamcrest.Matchers.not(empty())));
+        as(6, "/api/v1/courses/3/questions?q=%25").andExpect(jsonPath("$.content", empty()));
+        as(6, "/api/v1/courses/3/questions?q=_").andExpect(jsonPath("$.content", empty()));
     }
 
     @Test

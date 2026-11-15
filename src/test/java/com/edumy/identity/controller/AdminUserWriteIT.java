@@ -279,6 +279,35 @@ class AdminUserWriteIT {
         assertThat(row.assignedBy()).isNull(); // not rewritten
     }
 
+    /** ADR-008 (Q-g, beyond the SRS): a locked account gains no rights — unlock first. Nothing is written. */
+    @Test
+    void grant_lockedAccount_409AccountLockedTarget_nothingChanges_ADR008() throws Exception {
+        Session admin = tokens.newUserSession(RoleCode.ADMIN);
+        TestUser target = users.create(RoleCode.STUDENT);
+        users.lock(target.id());
+
+        expectProblem(mvc.perform(put(USERS + target.id() + "/roles/instructor")
+                .header(HttpHeaders.AUTHORIZATION, admin.bearer())), 409, "ACCOUNT_LOCKED_TARGET");
+
+        assertThat(instructorRowCount(target.id())).isZero();
+        assertThat(userStatus(target.id())).isEqualTo("locked");
+    }
+
+    /** ADR-008 (Q-g): D-02 binds self-registration (UC-G13) only; the admin may grant to an unverified email. */
+    @Test
+    void grant_unverifiedEmail_allowed_adminOverride_ADR008() throws Exception {
+        Session admin = tokens.newUserSession(RoleCode.ADMIN);
+        TestUser target = users.create(RoleCode.STUDENT);
+        users.markEmailUnverified(target.id());
+
+        mvc.perform(put(USERS + target.id() + "/roles/instructor").header(HttpHeaders.AUTHORIZATION, admin.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.emailVerified").value(false))
+                .andExpect(jsonPath("$.roles", containsInAnyOrder("student", "instructor")));
+
+        assertThat(instructorRow(target.id()).active()).isTrue();
+    }
+
     // ---------------------------------------------------------------------------------------------- UC-A05 revoke
 
     @Test

@@ -3,22 +3,27 @@ package com.edumy.authoring.service;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 import com.edumy.authoring.api.CategoryChanged;
 import com.edumy.authoring.entity.Category;
 import com.edumy.authoring.repository.CategoryRepository;
 import com.edumy.authoring.repository.CourseRepository;
+import com.edumy.identity.api.RoleQueryApi;
 import com.edumy.shared.error.BusinessException;
 import com.edumy.shared.error.ErrorCode;
 import com.edumy.shared.error.FieldViolation;
+import com.edumy.shared.security.RoleCode;
 import com.edumy.shared.text.SlugGenerator;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Category administration (UC-A06 create, UC-A07 update, UC-A08 delete or deactivate). The caller was checked as an
- * admin by the controller (route rule + {@code hasRole('ADMIN')}; admin roles never change through the API, D-01).
+ * Category administration (UC-A06 create, UC-A07 update, UC-A08 delete or deactivate). The controller required the
+ * {@code admin} JWT role (route rule + {@code hasRole('ADMIN')}); every write re-checks that the caller still holds an
+ * active admin role in the database (BR-26, like every other admin write: a token issued before the role was removed
+ * → 403 {@code ACCESS_DENIED}, nothing changes).
  * Name and slug are unique (SRS "trùng tên hoặc slug" → 409 {@code CATEGORY_ALREADY_EXISTS}): a pre-check names the
  * field, and {@code uq_categories_name} / {@code uq_categories_slug} map to the same code under concurrency. Every
  * successful change publishes {@link CategoryChanged} (catalog cache of active categories, evicted after commit).
@@ -31,13 +36,15 @@ public class CategoryService {
 
     private final CategoryRepository categories;
     private final CourseRepository courses;
+    private final RoleQueryApi roles;
     private final ApplicationEventPublisher events;
     private final Clock clock;
 
-    public CategoryService(CategoryRepository categories, CourseRepository courses, ApplicationEventPublisher events,
-                           Clock clock) {
+    public CategoryService(CategoryRepository categories, CourseRepository courses, RoleQueryApi roles,
+                           ApplicationEventPublisher events, Clock clock) {
         this.categories = categories;
         this.courses = courses;
+        this.roles = roles;
         this.events = events;
         this.clock = clock;
     }
@@ -47,7 +54,8 @@ public class CategoryService {
      * {@code null} → generated from the name. Returns the new id.
      */
     @Transactional
-    public Long create(String name, String slug, Boolean active) {
+    public Long create(Long adminId, String name, String slug, Boolean active) {
+        requireActiveAdmin(adminId);
         String validName = requireName(name);
         String validSlug = slug != null ? slug : generatedSlug(validName);
         requireUnique(validName, validSlug, null);
@@ -66,7 +74,8 @@ public class CategoryService {
      * → 404.
      */
     @Transactional
-    public void update(Long categoryId, String name, String slug, Boolean active) {
+    public void update(Long adminId, Long categoryId, String name, String slug, Boolean active) {
+        requireActiveAdmin(adminId);
         Category category = categories.findByIdForUpdate(categoryId).orElseThrow(BusinessException::notFound);
         if (name == null && slug == null && active == null) {
             return;
@@ -95,7 +104,8 @@ public class CategoryService {
      * (and fails on the foreign key if the row was deleted).
      */
     @Transactional
-    public boolean deleteOrDeactivate(Long categoryId) {
+    public boolean deleteOrDeactivate(Long adminId, Long categoryId) {
+        requireActiveAdmin(adminId);
         Category category = categories.findByIdForUpdate(categoryId).orElseThrow(BusinessException::notFound);
         boolean deleted;
         if (courses.existsByCategoryId(categoryId)) {
@@ -108,6 +118,14 @@ public class CategoryService {
         categories.flush();
         events.publishEvent(new CategoryChanged(categoryId));
         return deleted;
+    }
+
+    /** BR-26: the acting admin must still hold the admin role in the database at the time of the action. */
+    private void requireActiveAdmin(Long adminId) {
+        Objects.requireNonNull(adminId, "adminId");
+        if (!roles.hasActiveRole(adminId, RoleCode.ADMIN)) {
+            throw new BusinessException(ErrorCode.ACCESS_DENIED);
+        }
     }
 
     private void requireUnique(String name, String slug, Long ownId) {

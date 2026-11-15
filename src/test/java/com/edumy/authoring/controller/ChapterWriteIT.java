@@ -255,6 +255,23 @@ class ChapterWriteIT {
         assertThat(position("chapters", foreign)).isEqualTo(1);
     }
 
+    /** P10 MINOR-5: at most 500 ids, refused by Bean Validation before any query or lock. */
+    @Test
+    void reorder_moreThan500Ids_400_beforeAnyLookup() throws Exception {
+        long a = fixtures.chapter(course, 1);
+        long[] many = java.util.stream.LongStream.rangeClosed(1, 501).toArray();
+
+        MvcResult result = expectProblem(mvc.perform(json(put(chaptersOf(course) + "/order"), instructor,
+                ids(many))), 400, "VALIDATION_FAILED");
+        jsonPath("$.errors[*].field", org.hamcrest.Matchers.hasItem("ids")).match(result);
+        jsonPath("$.errors[*].message", org.hamcrest.Matchers.hasItem(
+                "Danh sách sắp xếp tối đa 500 phần tử")).match(result);
+        // exactly 500 distinct ids pass validation (then fail the permutation check of the service)
+        expectField(mvc.perform(json(put(chaptersOf(course) + "/order"), instructor,
+                ids(java.util.stream.LongStream.rangeClosed(1, 500).toArray()))), "ids");
+        assertThat(sortOrders(course)).containsExactly(a);
+    }
+
     // ------------------------------------------------------------------------------------------------ D-14 events
 
     @ParameterizedTest

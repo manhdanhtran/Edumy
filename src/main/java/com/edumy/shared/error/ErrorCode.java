@@ -37,6 +37,7 @@ public enum ErrorCode {
     ACCOUNT_NOT_LOCKED(HttpStatus.CONFLICT),                         // UC-A03: target not locked
     INSTRUCTOR_ROLE_ALREADY_ACTIVE(HttpStatus.CONFLICT),             // UC-A04 E1
     INSTRUCTOR_ROLE_NOT_ACTIVE(HttpStatus.CONFLICT),                 // UC-A05 E1
+    ACCOUNT_LOCKED_TARGET(HttpStatus.CONFLICT),                      // UC-A04 (ADR-008): no grant to a locked account
 
     // authoring
     COURSE_NOT_EDITABLE(HttpStatus.CONFLICT),

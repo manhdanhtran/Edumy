@@ -20,9 +20,12 @@ import com.edumy.support.TestUsers;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -269,6 +272,22 @@ class QaModerationIT {
 
         assertThat(questionRow().get("visibility_status")).isEqualTo("visible");
         assertThat(answerRow().get("visibility_status")).isEqualTo("visible");
+    }
+
+    /** P10 MINOR-3: the admin's free-text reason is logged on one line (CR/LF/control characters replaced). */
+    @Test
+    @ExtendWith(OutputCaptureExtension.class)
+    void reason_withCrLf_isLoggedOnOneLine_noForgedEntry_logInjection(CapturedOutput output) throws Exception {
+        // JSON escapes: the reason received by the server holds a real CR, LF and BEL
+        String forgedJson = "Spam\\r\\nFORGED-ENTRY INFO Payment success orderCode=ORD-X\\u0007";
+        mvc.perform(moderate(admin, "questions", question, "hide", "{\"reason\": \"" + forgedJson + "\"}"))
+                .andExpect(status().isOk());
+
+        String line = output.getOut().lines().filter(l -> l.contains("Question hidden: questionId=" + question))
+                .findFirst().orElseThrow();
+        assertThat(line).contains("note=Spam__FORGED-ENTRY INFO Payment success orderCode=ORD-X_");
+        assertThat(output.getOut().lines().filter(l -> l.startsWith("FORGED-ENTRY"))).isEmpty();
+        assertThat(line).doesNotContain("\r").doesNotContain(String.valueOf((char) 7));
     }
 
     @Test

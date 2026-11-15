@@ -11,6 +11,7 @@ import java.util.regex.Pattern;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import com.edumy.shared.text.LogSanitizer;
 import org.springframework.stereotype.Component;
 
 /**
@@ -126,15 +127,20 @@ public class ConstraintViolationTranslator {
 
     /**
      * Unmapped UNIQUE / FK → WARN; anything ending in INTERNAL_ERROR (unmapped CHECK or trigger, or a key mapped to it)
-     * → ERROR, because the application should have prevented it. The full cause is the last argument.
+     * → ERROR, because the application should have prevented it, with the full cause as the last argument.
+     * <p>Log injection (P10 MINOR-3): a 1062 message echoes the user's value ({@code Duplicate entry '<value>' for key
+     * …}), so the MySQL message is always passed through {@link LogSanitizer} and the WARN line carries the exception
+     * class instead of the stack trace (whose message would repeat the raw value). CHECK / trigger / FK messages hold
+     * constraint names and fixed texts only, so the ERROR line keeps the stack trace.
      */
     private static void logOutcome(Kind kind, int vendor, String key, boolean mapped, ErrorCode code,
             SQLException root, Throwable ex) {
         if (code == ErrorCode.INTERNAL_ERROR) {
             log.error("Database {} violation the application should have prevented: vendorCode={}, key={}, message={}",
-                    kind, vendor, key, root.getMessage(), ex);
+                    kind, vendor, key, LogSanitizer.clean(root.getMessage()), ex);
         } else if (!mapped) {
-            log.warn("Unmapped {} violation: vendorCode={}, key={}, message={}", kind, vendor, key, root.getMessage(), ex);
+            log.warn("Unmapped {} violation: vendorCode={}, key={}, message={}, exception={}", kind, vendor, key,
+                    LogSanitizer.clean(root.getMessage()), ex.getClass().getName());
         }
     }
 

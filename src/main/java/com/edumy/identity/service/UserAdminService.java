@@ -114,13 +114,19 @@ public class UserAdminService {
     /**
      * UC-A04: creates the instructor role row, or reactivates the one revoked earlier (one row per user and role,
      * never a duplicate; D-04: only an admin can re-grant), with {@code assigned_by} = the admin and
-     * {@code assigned_at} = now. Already active → 409 {@code INSTRUCTOR_ROLE_ALREADY_ACTIVE} (E1). The SRS sets no
-     * other precondition (email verification and account status are not checked).
+     * {@code assigned_at} = now. Already active → 409 {@code INSTRUCTOR_ROLE_ALREADY_ACTIVE} (E1).
+     * <p>Beyond the SRS (ADR-008, Q-g): a <b>locked</b> target is refused with 409 {@code ACCOUNT_LOCKED_TARGET} (a
+     * locked account must not gain rights; unlock it first), checked under the row lock so it cannot race UC-A02. An
+     * <b>unverified email</b> does not block the grant: D-02 restricts self-registration (UC-G13) only, the admin
+     * overrides it.
      */
     @Transactional
     public AdminUserResponse grantInstructor(Long adminId, Long userId) {
         requireActiveAdmin(adminId);
         User user = lockUser(userId);
+        if (!user.isActive()) {
+            throw new BusinessException(ErrorCode.ACCOUNT_LOCKED_TARGET);
+        }
         Optional<UserRole> existing = userRoles.findByUserIdAndRoleCode(userId, RoleCode.INSTRUCTOR);
         if (existing.isPresent() && existing.get().isActive()) {
             throw new BusinessException(ErrorCode.INSTRUCTOR_ROLE_ALREADY_ACTIVE);

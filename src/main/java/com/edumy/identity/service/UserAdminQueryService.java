@@ -13,6 +13,7 @@ import com.edumy.identity.repository.UserRoleRepository;
 import com.edumy.identity.repository.UserRoleRepository.UserRoleCodeView;
 import com.edumy.shared.jpa.CodeEnum;
 import com.edumy.shared.security.RoleCode;
+import com.edumy.shared.text.LikePattern;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -54,7 +55,8 @@ public class UserAdminQueryService {
         RoleCode role = roleCode == null ? null : CodeEnum.fromCode(RoleCode.class, roleCode);
         Pageable page = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), NEWEST_FIRST);
 
-        Page<AdminUserView> found = users.searchForAdmin(q, status, role, page);
+        // MINOR-4 (P10): % and _ typed by the admin are literals, not wildcards
+        Page<AdminUserView> found = users.searchForAdmin(q == null ? null : LikePattern.contains(q), status, role, page);
         Map<Long, List<RoleCode>> rolesByUser = found.isEmpty() ? Map.of()
                 : userRoles.findActiveRoleCodesByUserIdIn(found.map(AdminUserView::getId).getContent()).stream()
                         .collect(Collectors.groupingBy(UserRoleCodeView::getUserId,

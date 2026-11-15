@@ -148,6 +148,26 @@ class ReviewWriteIT {
         assertThat(changed()).isEmpty();
     }
 
+    /**
+     * P10 403/404 principle (MINOR-2): without enrollment, a course that is not public (draft, pending, rejected,
+     * hidden) answers exactly like an unknown id — 403 {@code ENROLLMENT_REQUIRED} is kept for published courses only.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"draft", "pending_review", "rejected", "hidden"})
+    void create_notEnrolled_nonPublicCourse_404IdenticalToUnknown_nothingWritten_NFR01(String status)
+            throws Exception {
+        fixtures.setStatus(course, status, false);
+        Session other = tokens.newUserSession(RoleCode.STUDENT);
+
+        assertSameNotFound(mvc, create(other, course, "{\"rating\": 5}"),
+                create(other, Long.MAX_VALUE, "{\"rating\": 5}"));
+        assertSameNotFound(mvc, create(instructor, course, "{\"rating\": 5}"),
+                create(instructor, Long.MAX_VALUE, "{\"rating\": 5}"));
+
+        assertThat(reviewCount()).isZero();
+        assertThat(changed()).isEmpty();
+    }
+
     @Test
     void create_instructorWithoutEnrollment_403() throws Exception {
         expectProblem(mvc.perform(create(instructor, course, "{\"rating\": 5}")), 403, "ENROLLMENT_REQUIRED");

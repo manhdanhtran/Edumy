@@ -23,6 +23,7 @@ import com.edumy.commerce.repository.PaymentTransactionRepository;
 import com.edumy.shared.error.BusinessException;
 import com.edumy.shared.error.ErrorCode;
 import com.edumy.shared.error.FieldViolation;
+import com.edumy.shared.text.LogSanitizer;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.Validator;
 import org.slf4j.Logger;
@@ -124,7 +125,8 @@ public class PaymentService {
             throw BusinessException.withErrors(ErrorCode.VALIDATION_FAILED, errors);
         }
         log.info("Payment webhook received (stub, ignored): transactionRef={}, orderCode={}, status={}",
-                request.transactionRef(), request.orderCode(), request.status());
+                LogSanitizer.clean(request.transactionRef()), LogSanitizer.clean(request.orderCode()),
+                request.status());
         return new PaymentWebhookResponse(true, request.transactionRef());
     }
 }
