@@ -38,7 +38,7 @@ All five confirmed and fixed in P10-fix-a (`7a8ee8e`); proofs in `security.md`.
 ## Data, tests, phase (`data-tests-phase.md`) — 1 BLOCKER · 1 MAJOR · 6 MINOR
 | ID | Verdict | Notes |
 |---|---|---|
-| DT-B1 lost updates: plain read fixes the REPEATABLE READ snapshot before the course lock, later reads are stale | **fix** P10-fix-e | confirmed on `CoInstructorService.accept` (scalar course-id read → `FOR UPDATE` → `findById` reads the old snapshot → accept overwrites a concurrent remove) and `LessonService.update`. Fix: READ COMMITTED as the connection default (ADR-009) + concurrency ITs |
+| DT-B1 lost updates: plain read fixes the REPEATABLE READ snapshot before the course lock, later reads are stale | **fix** P10-fix-e | confirmed on `CoInstructorService.accept` (scalar course-id read → `FOR UPDATE` → `findById` reads the old snapshot → accept overwrites a concurrent remove) and `LessonService.update`. Fix: READ COMMITTED as the connection default (ADR-010) + concurrency ITs |
 | DT-M1 same cause in chapter / lesson create / delete / reorder | **fix** P10-fix-e | same fix |
 | DT-m1 same cause in identity (cooldown, concurrent role change) | **fix** P10-fix-e | same fix |
 | DT-m2 catalog list aggregates every visible review on a cache miss | backlog | performance only; NFR-05 load testing is out of scope (P14 list) |
