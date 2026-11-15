@@ -83,6 +83,7 @@ P10 review + P10-fix-a (security minors + Q-g identity) · P10-fix-b (authoring:
 | P10-fix-e reviewer BLOCKER/MAJOR: DT-B1 READ COMMITTED, AC-14, ex-instructor answers, BR-32 in learning, CORS, type mismatch | done | b1ddcdf | 2285 tests green (+11), suite 7 min 31 s; ADR-010; lost updates reproduced red first (`support/LockWaits`, test user gets `PROCESS`); triage in `docs/ai/reviews/triage.md` — 0 BLOCKER / 0 MAJOR open |
 | P11-a commerce: PaymentGateway port + FakeQrPaymentGateway, T2 `PaymentResultApplier`, real webhook, `EnrollmentApi.grantForPaidOrder`, `OrderPaid`, SC-M4 (admin search criteria), 3 new codes | done | 3c856d3 | 2303 tests green (+18 net: PaymentWebhookIT 18, FakeQrPaymentGatewayTest 6, LearningModuleIT +1; 7 webhook stub tests removed), suite 8 min 23 s; ADR-011, ADR-010 approval conditions; see `## P11` |
 | P11-b commerce: T1 create order + UC-S16 cancel with lookup, PendingPaymentSettler, code generator, BR-32 batch relation | done | f951350 | 2334 tests green (+31: OrderWriteIT 21, CommerceCodeGeneratorTest 22; 12 create / cancel stub tests removed), suite 8 min 08 s; see `### P11-b` |
+| P11-c commerce: real create QR (UC-S05 steps 1–2) with lookup of the expired attempt, R3 order re-check | done | 71681f4 | 2340 tests green (+6 net: PaymentQrIT 12; 6 QR stub tests removed), suite 8 min 10 s; see `### P11-c` |
 
 ## P11 — commerce (plan approved 2026-11-15 with Q1–Q5 + R1–R3; ADR-011)
 Units P11-a … P11-f. Plan: lock order cart → order → attempt → enrollments / cart lines; scalar-first reads (R1);
@@ -125,6 +126,17 @@ then 409 `ORDER_ALREADY_PAID`.
   or 200; stub markers removed from create and cancel; stub preview mapper methods deleted.
 - Tests: `OrderWriteIT` (21), `CommerceCodeGeneratorTest` (22 incl. 20 repetitions); create / cancel stub tests removed
   from `CommerceStubsIT`; `IdorIT` owner rows: QR before cancel (owner rows share one world in table order).
+### P11-c
+- `PaymentService.createQr` real (TransactionTemplate, tx-timeout): scalar id → order `FOR UPDATE` → R3 a (older than
+  `order-ttl` → settle + cancel `expired`, commit, 409 `DATA_CONFLICT`) → R3 b (owned course → settle + cancel
+  `replaced`, commit, 409 `ORDER_CART_CHANGED`) → pending attempt `FOR UPDATE`: valid → 200; expired QR → settle (paid →
+  409 `ORDER_ALREADY_PAID`), flush → new reference (pre-check + `uq_payment_ref`) → `gateway.createQr` (down → 503,
+  rollback) → insert → 201. Stub marker removed.
+- Test lesson: moving the `MutableClock` past 15 min expires the access token (401); `PaymentQrIT` moves the QR
+  expiry in the database instead. Two more VS Code `target/` artefacts ("Failed to introspect class", "ClassSelector
+  resolution failed"): narrow runs now use `./mvnw clean test -Dtest=…` too.
+- Tests: `PaymentQrIT` (12: 201 format, 200 reuse, AC-10, expired+paid, AC-02, E1 ×2, R3 a ×2, R3 b, concurrency,
+  409 / 404 / 401); QR stub tests removed from `CommerceStubsIT` (only UC-A18 left).
 
 ## P09 summary
 - **P09-a** constraint coverage: `docs/ai/09-constraint-coverage.md` maps DDD §8 rows 1-31 (+ one valid-row test per table) to the existing `*SchemaIT` tests; only gap (row 5 NOT NULL) closed with 2 tests. No separate `ConstraintsIT`.

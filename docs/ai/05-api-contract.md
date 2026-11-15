@@ -512,7 +512,7 @@ kept by submit / approve / unhide (DDD "lý do từ chối hoặc ẩn gần nh�
 | POST `/orders` (T1) | S04 | R (P11-b) |
 | GET `/orders` · GET `/orders/{orderCode}` | S06, S07 | R |
 | POST `/orders/{orderCode}/cancel` | S16 | R (P11-b) |
-| POST `/orders/{orderCode}/payments` (create QR) | S05 | **S** |
+| POST `/orders/{orderCode}/payments` (create QR) | S05 | R (P11-c) |
 | GET `/orders/{orderCode}/payments/current` (polling) | S05 | R |
 | POST `/webhooks/payments/fake` (dev only, HMAC header) | S05 | R (P11-a) |
 | GET `/admin/orders` · GET `/admin/payments?status=` | A13, A14 | R |
@@ -565,11 +565,7 @@ Commerce stubs (P07-commerce, ADR-005 phase 1): every response carries `X-Edumy-
 these handlers); nothing is written, no payment provider is called; the controllers are final, phase 2 replaces the
 bodies of `OrderService` / `PaymentService` / `ReconciliationService`.
 - `POST /orders` and `POST /orders/{orderCode}/cancel` — **real since P11-b**, see "Commerce payments (P11)" below.
-- `POST /orders/{orderCode}/payments` (UC-S05) → **201** `PaymentQrResponse {orderCode,transactionRef,status,amount,qrData,
-  qrExpiresAt,createdAt}`: sample attempt `FAKEPAY-<yyyyMMdd>-STUB`, `qrData` `FAKEQR|EDUMY|<orderCode>|<amount>`,
-  `amount` = order total (BR-14), `qrExpiresAt` = now + 15 min (BR-13, `edumy.payment.qr-ttl`), `status` `pending`; when
-  the order already has a still-valid pending attempt, that stored attempt is returned instead with **200** (UC-S05
-  precondition). 404 as above; order not `pending` → 409 `DATA_CONFLICT`.
+- `POST /orders/{orderCode}/payments` — **real since P11-c**, see "Commerce payments (P11)" below.
 - `POST /webhooks/payments/fake` — **real since P11-a**, see "Commerce payments (P11)" below.
 
 Commerce payments (P11, ADR-011):
@@ -605,6 +601,16 @@ Commerce payments (P11, ADR-011):
   `failed`). Cart untouched. 404 unknown / another student's (identical) · 409 `DATA_CONFLICT` not pending · 409
   `ORDER_ALREADY_PAID` (lookup found it paid: recorded, order `paid`, E1) · 503 `PAYMENT_PROVIDER_UNAVAILABLE` (lookup
   failed, the order stays pending, E2).
+- `POST /orders/{orderCode}/payments` (UC-S05 steps 1–2, create QR) → **201** `PaymentQrResponse {orderCode,
+  transactionRef, status pending, amount = order total (BR-14), qrData, qrExpiresAt = createdAt + 15 min (BR-13),
+  createdAt}`, no `X-Edumy-Stub`; `transactionRef` = 15 digits (new per attempt, D-27; the provider receives this
+  reference, never the order code); or **200** with the still-valid pending attempt (precondition; BR-16: one pending
+  attempt per order, also under concurrency). A pending attempt whose QR expired is looked up first: not paid / failed →
+  closed and a new attempt is made (A1, AC-10: one order, several attempts — BR-23); paid → 409 `ORDER_ALREADY_PAID`
+  (recorded). Before any QR (P11 R3): an order older than 24 h is looked up and cancelled as `expired` → 409
+  `DATA_CONFLICT`; an order holding a course the student owns now is looked up and cancelled as `replaced` → 409
+  `ORDER_CART_CHANGED` (order again from the cart). 404 unknown / foreign (identical) · 409 `DATA_CONFLICT` not pending ·
+  503 `PAYMENT_PROVIDER_UNAVAILABLE` (no QR, nothing changed, E1).
 - `POST /admin/payments/{id}/resolve` `ResolvePaymentRequest {action activated|refund_outside, note}` (note required,
   trimmed, ≤16 383 chars; the SRS names no limit) (UC-A18) → **200** `AdminPaymentResponse` as it WOULD look after handling
   (`handledBy`, `handledAction`, `handledNote`, `handledAt`; `activated` → `status` `success` + `confirmedAt`;
