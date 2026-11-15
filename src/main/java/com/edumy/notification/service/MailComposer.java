@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -33,7 +34,7 @@ import org.springframework.web.util.HtmlUtils;
  * {@code /instructor/invitations} (no code: the invitee logs in and answers there); review results (UC-A10…A12):
  * {@code /courses/{slug}} (public course page) and {@code /instructor/courses/{courseId}} (the instructor's course);
  * answered question (UC-I21, D-42): {@code /courses/{slug}/learn?question={id}} (the learning page of the course with
- * the question thread open).
+ * the question thread open); purchase and reconciliation (UC-S05 step 9, UC-A18 step 6): {@code /orders/{orderCode}}.
  */
 @Service
 public class MailComposer {
@@ -48,6 +49,10 @@ public class MailComposer {
     static final String COURSE_REJECTED = "course-rejected";
     static final String COURSE_HIDDEN = "course-hidden";
     static final String QUESTION_ANSWERED = "question-answered";
+    static final String PURCHASE_CONFIRMED = "purchase-confirmed";
+    static final String PAYMENT_RECONCILED = "payment-reconciled";
+    /** SPA order page (UC-S07), commerce mails (P11). */
+    static final String ORDER_PATH = "/orders/";
     /** SPA public course page (UC-G04), docs/ai/05 "Front-end routes". */
     static final String PUBLIC_COURSE_PATH = "/courses/";
     /** SPA page of one course of the instructor (UC-I02 / UC-I03 / UC-I18), docs/ai/05 "Front-end routes". */
@@ -71,7 +76,9 @@ public class MailComposer {
                 COURSE_APPROVED, load(COURSE_APPROVED),
                 COURSE_REJECTED, load(COURSE_REJECTED),
                 COURSE_HIDDEN, load(COURSE_HIDDEN),
-                QUESTION_ANSWERED, load(QUESTION_ANSWERED));
+                QUESTION_ANSWERED, load(QUESTION_ANSWERED),
+                PURCHASE_CONFIRMED, load(PURCHASE_CONFIRMED),
+                PAYMENT_RECONCILED, load(PAYMENT_RECONCILED));
     }
 
     /** UC-G05 step 6 / UC-G06: link with the 24 h email-verification code. */
@@ -150,6 +157,53 @@ public class MailComposer {
                 "courseTitle", courseTitle,
                 "questionUrl", baseUrl + PUBLIC_COURSE_PATH + Objects.requireNonNull(slug, "slug") + "/learn?question="
                         + Objects.requireNonNull(questionId, "questionId")));
+    }
+
+    /**
+     * UC-S05 step 9 (SRS §7 "Xác nhận mua hàng", BR-20): order code, total (VND) and the course titles of the paid
+     * order; links to the order page ({@code orderCode} is {@code [A-Z0-9-]}, no encoding needed).
+     */
+    public MailMessage purchaseConfirmed(String to, String fullName, String orderCode, long totalAmount,
+                                         List<String> courseTitles) {
+        return compose(PURCHASE_CONFIRMED, to, "Xác nhận thanh toán đơn hàng " + orderCode + " trên Edumy", Map.of(
+                "fullName", fullName,
+                "orderCode", orderCode,
+                "totalAmount", vnd(totalAmount),
+                "courseTitles", quoted(courseTitles),
+                "orderUrl", orderUrl(orderCode)));
+    }
+
+    /**
+     * UC-A18 step 6 (SRS §7 "Kết quả đối soát"): {@code activated} → the payment is recognised and {@code courseTitles}
+     * were added; otherwise → refunded outside Edumy, no access. The admin's note is internal and stays out of the mail.
+     */
+    public MailMessage paymentReconciled(String to, String fullName, String orderCode, boolean activated,
+                                         List<String> courseTitles) {
+        String title = activated ? "Thanh toán của bạn đã được xác nhận" : "Giao dịch của bạn đã được hoàn tiền";
+        String text = activated
+                ? (courseTitles.isEmpty() ? "Thanh toán đã được ghi nhận; bạn đã sở hữu các khóa học của đơn này."
+                        : "Thanh toán đã được ghi nhận và các khóa học sau đã được thêm vào danh sách của bạn: "
+                                + quoted(courseTitles) + ".")
+                : "Khoản thanh toán được hoàn trả cho bạn ngoài hệ thống Edumy; đơn hàng không cấp thêm quyền học.";
+        return compose(PAYMENT_RECONCILED, to, "Kết quả đối soát đơn hàng " + orderCode + " trên Edumy", Map.of(
+                "fullName", fullName,
+                "orderCode", orderCode,
+                "resultTitle", title,
+                "resultText", text,
+                "orderUrl", orderUrl(orderCode)));
+    }
+
+    private String orderUrl(String orderCode) {
+        return baseUrl + ORDER_PATH + Objects.requireNonNull(orderCode, "orderCode");
+    }
+
+    /** 1250000 → "1.250.000 đ" (Vietnamese grouping). */
+    static String vnd(long amount) {
+        return String.format(java.util.Locale.ROOT, "%,d", amount).replace(',', '.') + " đ";
+    }
+
+    private static String quoted(List<String> titles) {
+        return titles.stream().map(title -> "“" + title + "”").collect(java.util.stream.Collectors.joining(", "));
     }
 
     private String instructorCourseUrl(Long courseId) {

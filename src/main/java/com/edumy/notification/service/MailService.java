@@ -104,6 +104,42 @@ public class MailService {
     }
 
     /**
+     * UC-S05 step 9 / BR-20: purchase confirmation to the buyer (name, email and course titles read now through the
+     * owners' {@code api/}). A buyer gone → {@link IllegalStateException} without personal data (logged by the
+     * listener); a course gone keeps its line out of the list.
+     */
+    public void sendPurchaseConfirmed(Long studentId, String orderCode, long totalAmount, List<Long> courseIds) {
+        UserSummary student = recipient(studentId, "Purchase mail");
+        gateway.send(composer.purchaseConfirmed(student.email(), student.fullName(), orderCode, totalAmount,
+                titles(courseIds)));
+    }
+
+    /** UC-A18 step 6: reconciliation result to the buyer ({@code grantedCourseIds} = the courses just enrolled). */
+    public void sendReconciliationResult(Long studentId, String orderCode, boolean activated,
+                                         List<Long> grantedCourseIds) {
+        UserSummary student = recipient(studentId, "Reconciliation mail");
+        gateway.send(composer.paymentReconciled(student.email(), student.fullName(), orderCode, activated,
+                titles(grantedCourseIds)));
+    }
+
+    private UserSummary recipient(Long userId, String mail) {
+        UserSummary user = users.findSummaries(List.of(userId)).get(userId);
+        if (user == null) {
+            throw new IllegalStateException(mail + ": recipient no longer exists");
+        }
+        return user;
+    }
+
+    private List<String> titles(List<Long> courseIds) {
+        if (courseIds.isEmpty()) {
+            return List.of();
+        }
+        Map<Long, CourseSummary> found = courses.findSummaries(courseIds);
+        return courseIds.stream().map(found::get).filter(java.util.Objects::nonNull).map(CourseSummary::title)
+                .toList();
+    }
+
+    /**
      * The course and its main instructor (two statements, through the owners' {@code api/}); a course or user gone
      * since → {@link IllegalStateException} without personal data (logged by the listener).
      */

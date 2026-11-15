@@ -113,6 +113,18 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
             """)
     Page<AdminPaymentView> findReviewQueue(Pageable pageable);
 
+    /** UC-A18 (P11-d): one attempt as an admin row (resolve answer, {@code GET /admin/payments/{id}}). */
+    @Query("""
+            select p.id as id, o.id as orderId, o.orderCode as orderCode, o.studentId as studentId,
+                   p.transactionRef as transactionRef, p.amount as amount, p.qrExpiresAt as qrExpiresAt,
+                   p.status as status, p.confirmedAt as confirmedAt, p.handledBy as handledBy,
+                   p.handledAction as handledAction, p.handledNote as handledNote, p.handledAt as handledAt,
+                   p.createdAt as createdAt
+            from PaymentTransaction p join p.order o
+            where p.id = :id
+            """)
+    Optional<AdminPaymentView> findAdminViewById(@Param("id") Long id);
+
     /** Row of the admin payment list and the reconciliation queue (UC-A14, UC-A18). */
     interface AdminPaymentView {
         Long getId();

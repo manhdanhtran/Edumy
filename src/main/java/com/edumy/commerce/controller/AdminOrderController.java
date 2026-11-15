@@ -4,17 +4,17 @@ import com.edumy.commerce.dto.request.AdminOrderSearchRequest;
 import com.edumy.commerce.dto.request.AdminPaymentSearchRequest;
 import com.edumy.commerce.dto.request.ResolvePaymentRequest;
 import com.edumy.commerce.dto.response.AdminOrderResponse;
+import com.edumy.commerce.dto.response.AdminPaymentDetailResponse;
 import com.edumy.commerce.dto.response.AdminPaymentResponse;
 import com.edumy.commerce.service.OrderQueryService;
 import com.edumy.commerce.service.OrderSearchCriteria;
 import com.edumy.commerce.service.PaymentQueryService;
 import com.edumy.commerce.service.PaymentSearchCriteria;
 import com.edumy.commerce.service.ReconciliationService;
+import com.edumy.commerce.service.ResolvePaymentCommand;
 import com.edumy.shared.security.CurrentUserId;
-import com.edumy.shared.web.StubSupport;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
@@ -69,19 +69,26 @@ public class AdminOrderController {
     }
 
     /**
-     * Phase-1 stub, header {@code X-Edumy-Stub: true}: 200 + the attempt as it WOULD look once handled (handler, action,
-     * note, time); nothing is saved. 403 when the admin role is no longer active in the database · 404 unknown id · 409
-     * {@code DATA_CONFLICT} when the attempt is not an unhandled {@code needs_review} (E1) or {@code activated} but every
-     * course is already owned (E2).
+     * UC-A18 step 1 (P11 decision Q4): the attempt, its order lines, the courses the student already owns and the amount
+     * the provider reports as paid now ({@code null} when nothing / unreachable). 404 unknown id.
+     */
+    @GetMapping("/payments/{id}")
+    @Operation(summary = "UC-A18 Xem chi tiết giao dịch cần đối soát (dòng đơn, khóa đã sở hữu, số tiền nhận được)")
+    public AdminPaymentDetailResponse payment(@PathVariable Long id) {
+        return payments.getAdminDetail(id);
+    }
+
+    /**
+     * UC-A18 (P11-d): 200 + the attempt once handled ({@code handledBy}, {@code handledAction}, {@code handledNote},
+     * {@code handledAt}; {@code activated} → {@code success} + {@code confirmedAt}, order paid, enrollments;
+     * {@code refund_outside} keeps {@code needs_review}). 403 when the admin role is no longer active in the database
+     * (BR-26) · 404 unknown id · 409 {@code DATA_CONFLICT} when the attempt is not an unhandled {@code needs_review}
+     * (E1) or {@code activated} with every course already owned (E2) · 400 blank note (E3).
      */
     @PostMapping("/payments/{id}/resolve")
-    @Operation(summary = "UC-A18 Xử lý giao dịch cần đối soát (STUB-P1: trả kết quả như sau khi xử lý, không ghi dữ liệu)",
-            description = "Phase-1 stub: returns the payment as it would look after handling (X-Edumy-Stub: true), nothing is saved.")
+    @Operation(summary = "UC-A18 Xử lý giao dịch cần đối soát (kích hoạt hoặc hoàn tiền ngoài hệ thống, ghi chú bắt buộc)")
     public AdminPaymentResponse resolve(@PathVariable Long id, @CurrentUserId Long adminId,
-                                        @Valid @RequestBody ResolvePaymentRequest request,
-                                        HttpServletResponse response) {
-        StubSupport.mark(response);
-        // STUB-P1: replace with ReconciliationService.resolve (activate / refund outside, enroll, mail) — UC-A18, BR-26, BR-30
-        return reconciliation.resolve(adminId, id, request);
+                                        @Valid @RequestBody ResolvePaymentRequest request) {
+        return reconciliation.resolve(new ResolvePaymentCommand(adminId, id, request.action(), request.note()));
     }
 }

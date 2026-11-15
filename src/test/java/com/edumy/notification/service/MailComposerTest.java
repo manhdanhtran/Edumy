@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 import com.edumy.notification.integration.MailMessage;
@@ -183,7 +184,10 @@ class MailComposerTest {
                 composer.courseApproved("a@edumy.test", HOSTILE_NAME, "K", "k"),
                 composer.courseRejected("a@edumy.test", HOSTILE_NAME, "K", 1L, "R"),
                 composer.courseHidden("a@edumy.test", HOSTILE_NAME, "K", 1L, "R"),
-                composer.questionAnswered("a@edumy.test", HOSTILE_NAME, "G", "Q", "K", "k", 1L)}) {
+                composer.questionAnswered("a@edumy.test", HOSTILE_NAME, "G", "Q", "K", "k", 1L),
+                composer.purchaseConfirmed("a@edumy.test", HOSTILE_NAME, "ORD-1", 1, List.of("K")),
+                composer.paymentReconciled("a@edumy.test", HOSTILE_NAME, "ORD-1", true, List.of("K")),
+                composer.paymentReconciled("a@edumy.test", HOSTILE_NAME, "ORD-1", false, List.of())}) {
             assertThat(mail.htmlBody()).as(mail.template())
                     .contains("Xin chào " + ESCAPED_NAME + ",")
                     .doesNotContain("<script>")
@@ -237,6 +241,41 @@ class MailComposerTest {
                 .isEqualTo("<a href=\"https://x/?a=1&amp;b=&quot;2&quot;\">&lt;b&gt;</a>");
     }
 
+    @Test
+    void purchaseConfirmed_orderCodeTotalInVndTitlesAndOrderLink_UCS05Step9_BR20() {
+        MailMessage mail = composer.purchaseConfirmed("a@edumy.test", "Nguyễn Văn A", "ORD-20261115-7K3M9QXA",
+                1_250_000, List.of("Java <cơ bản>", "Spring Boot"));
+
+        assertThat(mail.template()).isEqualTo("purchase-confirmed");
+        assertThat(mail.subject()).isEqualTo("Xác nhận thanh toán đơn hàng ORD-20261115-7K3M9QXA trên Edumy");
+        assertThat(mail.htmlBody())
+                .contains("Xin chào Nguyễn Văn A,")
+                .contains("<strong>ORD-20261115-7K3M9QXA</strong>")
+                .contains("<strong>1.250.000 đ</strong>")
+                .contains("“Java &lt;cơ bản&gt;”, “Spring Boot”")
+                .contains("href=\"https://app.edumy.vn/orders/ORD-20261115-7K3M9QXA\"")
+                .doesNotContain("${");
+    }
+
+    @Test
+    void paymentReconciled_activatedListsTheGrantedCourses_refundSaysNoAccess_noteNeverInTheMail_UCA18Step6() {
+        MailMessage activated = composer.paymentReconciled("a@edumy.test", "A", "ORD-1", true, List.of("Java"));
+        MailMessage refunded = composer.paymentReconciled("a@edumy.test", "A", "ORD-1", false, List.of());
+
+        assertThat(activated.template()).isEqualTo("payment-reconciled");
+        assertThat(activated.subject()).isEqualTo("Kết quả đối soát đơn hàng ORD-1 trên Edumy");
+        assertThat(activated.htmlBody()).contains("Thanh toán của bạn đã được xác nhận").contains("“Java”")
+                .contains("href=\"https://app.edumy.vn/orders/ORD-1\"");
+        assertThat(refunded.htmlBody()).contains("Giao dịch của bạn đã được hoàn tiền")
+                .contains("không cấp thêm quyền học");
+    }
+
+    @Test
+    void vnd_groupsThousandsWithDots() {
+        assertThat(MailComposer.vnd(0)).isEqualTo("0 đ");
+        assertThat(MailComposer.vnd(450_000)).isEqualTo("450.000 đ");
+        assertThat(MailComposer.vnd(12_345_678)).isEqualTo("12.345.678 đ");
+    }
     @Test
     void mailMessageToString_hidesBodyAndRecipient_NFR08() {
         MailMessage mail = composer.passwordReset("a@edumy.test", "A", CODE);

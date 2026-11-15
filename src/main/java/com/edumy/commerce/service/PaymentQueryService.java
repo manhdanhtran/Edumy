@@ -1,16 +1,23 @@
 package com.edumy.commerce.service;
 
+import com.edumy.authoring.api.CourseQueryApi;
+import com.edumy.authoring.api.CourseSummary;
+import com.edumy.commerce.dto.response.AdminPaymentDetailResponse;
 import com.edumy.commerce.dto.response.AdminPaymentResponse;
 import com.edumy.commerce.dto.response.PaymentStatusResponse;
 import com.edumy.commerce.entity.Order;
 import com.edumy.commerce.entity.PaymentStatus;
 import com.edumy.commerce.entity.PaymentTransaction;
+import com.edumy.commerce.integration.PaymentGateway;
+import com.edumy.commerce.integration.PaymentGatewayException;
+import com.edumy.commerce.integration.PaymentLookup;
 import com.edumy.commerce.mapper.PaymentMapper;
 import com.edumy.commerce.repository.OrderRepository;
 import com.edumy.commerce.repository.PaymentTransactionRepository;
 import com.edumy.commerce.repository.PaymentTransactionRepository.AdminPaymentView;
 import com.edumy.identity.api.UserQueryApi;
 import com.edumy.identity.api.UserSummary;
+import com.edumy.learning.api.EnrollmentApi;
 import com.edumy.shared.error.BusinessException;
 import com.edumy.shared.jpa.CodeEnum;
 import java.util.ArrayList;
@@ -34,13 +41,20 @@ public class PaymentQueryService {
     private final PaymentTransactionRepository payments;
     private final UserQueryApi users;
     private final PaymentMapper mapper;
+    private final CourseQueryApi courses;
+    private final EnrollmentApi enrollments;
+    private final PaymentGateway gateway;
 
     public PaymentQueryService(OrderRepository orders, PaymentTransactionRepository payments, UserQueryApi users,
-                               PaymentMapper mapper) {
+                               PaymentMapper mapper, CourseQueryApi courses, EnrollmentApi enrollments,
+                               PaymentGateway gateway) {
         this.orders = orders;
         this.payments = payments;
         this.users = users;
         this.mapper = mapper;
+        this.courses = courses;
+        this.enrollments = enrollments;
+        this.gateway = gateway;
     }
 
     /**
@@ -75,5 +89,41 @@ public class PaymentQueryService {
         });
         Map<Long, UserSummary> names = users.findSummaries(userIds);
         return page.map(payment -> mapper.toAdmin(payment, names));
+    }
+
+    /** UC-A18 (P11-d): one attempt as an admin row; unknown id → 404. */
+    public AdminPaymentResponse getAdmin(Long paymentId) {
+        AdminPaymentView view = payments.findAdminViewById(paymentId).orElseThrow(BusinessException::notFound);
+        Map<Long, UserSummary> names = users.findSummaries(java.util.Arrays.asList(view.getStudentId(),
+                view.getHandledBy()));
+        return mapper.toAdmin(view, names);
+    }
+
+    /**
+     * UC-A18 step 1 (P11 Q4): the attempt, its order lines (locked prices, titles read now), the courses the student
+     * already owns, and the amount the provider reports as paid now ({@code null} if nothing paid or the provider is
+     * unreachable — the page still opens). Unknown id → 404.
+     */
+    public AdminPaymentDetailResponse getAdminDetail(Long paymentId) {
+        AdminPaymentResponse payment = getAdmin(paymentId);
+        Order order = orders.findById(payment.orderId()).orElseThrow(BusinessException::notFound);
+        List<Long> courseIds = order.courseIds();
+        Map<Long, CourseSummary> titles = courses.findSummaries(courseIds);
+        List<AdminPaymentDetailResponse.Item> items = order.getItems().stream()
+                .map(item -> new AdminPaymentDetailResponse.Item(item.getCourseId(),
+                        titles.containsKey(item.getCourseId()) ? titles.get(item.getCourseId()).title() : null,
+                        item.getUnitPrice()))
+                .toList();
+        List<Long> owned = courseIds.stream()
+                .filter(enrollments.findOwnedCourseIds(order.getStudentId(), courseIds)::contains).toList();
+        return new AdminPaymentDetailResponse(payment, items, owned, receivedAmount(payment.transactionRef()));
+    }
+
+    private Long receivedAmount(String reference) {
+        try {
+            return gateway.query(reference) instanceof PaymentLookup.Paid paid ? paid.amount() : null;
+        } catch (PaymentGatewayException e) {
+            return null; // the provider is down: the admin decides from the other facts or later
+        }
     }
 }

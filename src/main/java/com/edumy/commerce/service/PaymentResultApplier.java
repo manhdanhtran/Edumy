@@ -107,14 +107,26 @@ class PaymentResultApplier {
         }
         payment.markSuccess(now);
         order.markPaid(now);
-        Set<Long> granted = enrollments.grantForPaidOrder(
-                new GrantEnrollmentCommand(order.getStudentId(), order.getId(), courseIds, now));
-        carts.findIdByStudentId(order.getStudentId())
-                .ifPresent(cartId -> cartItems.deleteByCartIdAndCourseIds(cartId, courseIds));
+        Set<Long> granted = fulfil(order, now);
         events.publishEvent(new OrderPaid(order.getId(), code, order.getStudentId(), order.getTotalAmount(),
                 courseIds, now));
         log.info("Order paid: transactionRef={}, orderCode={}, late={}, grantedCourseIds={}", ref, code, !onTime,
                 granted);
         return Outcome.PAID;
+    }
+
+    /**
+     * UC-S05 step 7 / UC-A18 step 4 (a), the part after the status changes: purchase enrollments for the order's courses
+     * not owned yet (same transaction, ADR-004) and those courses leave the student's cart (plain cart-id read, no
+     * {@code carts} lock — ADR-011). Returns the newly enrolled course ids.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    Set<Long> fulfil(Order order, Instant now) {
+        List<Long> courseIds = order.courseIds();
+        Set<Long> granted = enrollments.grantForPaidOrder(
+                new GrantEnrollmentCommand(order.getStudentId(), order.getId(), courseIds, now));
+        carts.findIdByStudentId(order.getStudentId())
+                .ifPresent(cartId -> cartItems.deleteByCartIdAndCourseIds(cartId, courseIds));
+        return granted;
     }
 }
