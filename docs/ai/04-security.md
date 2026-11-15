@@ -143,7 +143,8 @@ limitations".
 - Logs: user free text only through `shared.text.LogSanitizer` (CR/LF/control characters → `_`, ≤200 characters;
   P10). LIKE keywords only through `shared.text.LikePattern` / the equivalent catalog and Q&A helpers (`ESCAPE '!'`).
 - CORS: allowed origins from `edumy.cors.allowed-origins` (dev: `http://localhost:5173,http://localhost:3000`),
-  `allowCredentials=true` (refresh cookie).
+  `allowCredentials=true` (refresh cookie). Exposed response headers (readable by the SPA, P10 SC-M3): `Retry-After`,
+  `Location`, `Content-Disposition`, `X-Trace-Id`, `X-Edumy-Stub` (`WebConfigCorsTest`).
 - CSRF: disabled for bearer-token endpoints; `/auth/refresh` and `/auth/logout` rely on `SameSite=Strict` cookie +
   `Origin` header check against the CORS allow-list.
 - Stateless: `SessionCreationPolicy.STATELESS`. HTTPS is terminated in front of the app in production.

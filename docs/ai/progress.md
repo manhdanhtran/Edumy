@@ -70,12 +70,17 @@ P10 review + P10-fix-a (security minors + Q-g identity) · P10-fix-b (authoring:
 - Q-b: default `unanswered`, new `all`, oldest first; the UC-S18 list keeps newest first (asserted in the same test class).
 - Q-c: see ADR-009; statement counts of the two reads grew by 1 (+1 with a partially completed enrollment without certificate), tests updated with the reason.
 
+### P10-fix-e
+- One red run surfaced an IDE artefact: the VS Code Java extension had compiled `QaQueryService` with an error (`q` parameter shadowed by a lambda `q`) into `target/classes` while Maven's incremental compile reported nothing; fixed the code and recompiled from scratch. Lesson: after a red context start with 'Unresolved compilation problems', delete `target/classes` before trusting the result.
+- P10 done: 4 reviewers have reports, 0 BLOCKER / 0 MAJOR open (SC-M4 commerce part is part of P11).
+
 ## P09 summary` |
 | P10-review 4 reviewers (security, structure/contract, business correctness, data/tests/phase) | done | — | reports in `docs/ai/reviews/` (security restated from the previous session); triage of every finding: `docs/ai/reviews/triage.md` (P10-fix-e) |
 | P10-fix-a security MINOR-1..5 + Q-g grant to locked account | done | 7a8ee8e | 2248 tests green (+21), suite 7 min 06 s; ADR-008; new `ACCOUNT_LOCKED_TARGET` (409); `shared.text.LogSanitizer` / `LikePattern`; review create on a non-published course without enrollment → 404 (403/404 principle); category writes re-check the admin role in the DB; `ReorderRequest.ids` ≤500 + unique. See `### P10` |
 | P10-fix-b authoring: Q-e resend invitation, Q-f revocation impact, Q-g locked invitee, Q-h lesson content | done | 42015b5 | 2265 tests green (+17), suite 6 min 34 s; new 429 `INVITATION_RESEND_TOO_SOON`, 422 `LESSON_CONTENT_REQUIRED`; two additive endpoints (docs/ai/05 'Authoring additions (P10-fix-b)'); IdorIT admin row for the impact preview |
 | P10-fix-c learning access: 403/404 principle incl. UC-S09, SC-M1 | done | 3bc5fdc | 2266 tests green (+1 net: 6 learning tests rewritten, IdorIT +1), suite 7 min 04 s; published course without relation → 403 `ENROLLMENT_REQUIRED` (one body), hidden / draft / pending / rejected → 404; IdorIT world's main course now hidden |
 | P10-fix-d Q-a hidden course list eviction, Q-b UC-I22 queue, Q-c certificate catch-up | done | 6fd049a | 2274 tests green (+8), suite 7 min 27 s (one red run first: 2 ordering assertions still expected newest-first, fixed in the tests); ADR-009; `status=all` added to UC-I22 |
+| P10-fix-e reviewer BLOCKER/MAJOR: DT-B1 READ COMMITTED, AC-14, ex-instructor answers, BR-32 in learning, CORS, type mismatch | done | b1ddcdf | 2285 tests green (+11), suite 7 min 31 s; ADR-010; lost updates reproduced red first (`support/LockWaits`, test user gets `PROCESS`); triage in `docs/ai/reviews/triage.md` — 0 BLOCKER / 0 MAJOR open |
 
 ## P09 summary
 - **P09-a** constraint coverage: `docs/ai/09-constraint-coverage.md` maps DDD §8 rows 1-31 (+ one valid-row test per table) to the existing `*SchemaIT` tests; only gap (row 5 NOT NULL) closed with 2 tests. No separate `ConstraintsIT`.

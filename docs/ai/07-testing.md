@@ -36,6 +36,10 @@ Rules
   `support/TestSecurityContext.authenticate(userId, jwtRoles...)` and mock `RoleQueryApi` for the database roles.
 - `*IT` classes run via surefire in `./mvnw test` (decision in V1); if the suite gets too slow they move to failsafe/`verify`.
 - Never delete or `@Disabled` a failing test to finish a task; report it.
+- Transactions run READ COMMITTED (ADR-010). Lost-update / lock-order scenarios: `support/LockWaits.whileLockedThenCommit`
+  (a holder transaction takes a row lock and changes data, the request under test starts, the helper waits until
+  `information_schema.innodb_trx` shows `LOCK WAIT` — the test user has `PROCESS` — then lets the holder commit). Never
+  `Thread.sleep`; every `Future.get` of a concurrency test has a timeout.
 
 ## How to write a MySQL IT
 One `mysql:8.4` container is started per `./mvnw test` run (`support/SharedMySql`, removed by Ryuk at JVM exit) and shared

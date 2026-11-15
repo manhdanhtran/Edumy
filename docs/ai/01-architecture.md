@@ -290,7 +290,9 @@ notification/
 Consequences:
 - `authoring` never depends on `learning`/`commerce`. So UC-I19 (student list) lives in `learning`
   (`InstructorStudentController`, `GET /api/v1/instructor/courses/{courseId}/students`) and checks access through
-  `authoring::api.CourseAccessApi`.
+  `authoring::api.CourseAccessApi` (P10: `@enrollmentAccess.isActiveInstructor()` / `isCourseInstructor(#courseId)`,
+  never authoring's internal `@courseAccess` bean). BR-32 relation independent of the role:
+  `CourseAccessApi.hasInstructorRelation` (learning `OwnCourseGuard`).
 - UC-A12 hide course → `authoring` publishes `CourseHidden` → `commerce.listener.CourseHiddenListener` flags cart items.
 - Revoking the instructor role (UC-A05, D-07) only changes `identity`; `authoring` re-checks the role at action time via
   `identity::api.RoleQueryApi` (BR-26).
