@@ -71,7 +71,9 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     /**
      * Scheduler claim (NFR-09, ADR-011): one pending order whose pending attempt's QR expired at {@code now}, oldest
-     * expiry first (ix_payment_pending_expiry), locked {@code FOR UPDATE OF o SKIP LOCKED} — a row another instance (or a
+     * expiry first, locked {@code FOR UPDATE OF o SKIP LOCKED}. The sort uses only columns of {@code ix_payment_pending_expiry}
+     * (status, qr_expires_at, implicit id), so MySQL walks the index and stops at the first free row instead of reading,
+     * locking and sorting every candidate (review P11-R-01; {@code ClaimQueryPlanIT} checks the plan) — a row another instance (or a
      * student request) holds is skipped, never waited for. Only the {@code orders} row is locked here (the attempt is
      * locked next, after it: lock order). {@code seen} = ids already handled in this run; never empty (sentinel
      * {@code -1}), so no {@code IN ()} is generated.
@@ -79,14 +81,14 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query(nativeQuery = true, value = """
             SELECT o.id FROM orders o JOIN payment_transactions p ON p.order_id = o.id
             WHERE p.status = 'pending' AND p.qr_expires_at <= :now AND o.status = 'pending' AND o.id NOT IN (:seen)
-            ORDER BY p.qr_expires_at, o.id
+            ORDER BY p.qr_expires_at, p.id
             LIMIT 1
             FOR UPDATE OF o SKIP LOCKED""")
     Optional<Long> claimOrderWithExpiredQr(@Param("now") Instant now, @Param("seen") java.util.Collection<Long> seen);
 
     /**
      * Scheduler claim (BR-29, AC-22): one pending order created at or before {@code cutoff} (now − 24 h), oldest first
-     * (ix_orders_pending_created), {@code FOR UPDATE SKIP LOCKED}; {@code seen} as above (never empty).
+     * in the order of ix_orders_pending_created (status, created_at, implicit id), {@code FOR UPDATE SKIP LOCKED}; {@code seen} as above (never empty).
      */
     @Query(nativeQuery = true, value = """
             SELECT o.id FROM orders o
