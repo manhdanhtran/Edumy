@@ -42,9 +42,9 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * The remaining phase-1 commerce stubs (ADR-005, P07-commerce) on the dev seed, read-only: POST
- * /orders/{code}/payments (UC-S05) and POST /admin/payments/{id}/resolve (UC-A18); POST /orders and cancel are real since
- * P11-b ({@code OrderWriteIT}), the webhook since P11-a ({@code PaymentWebhookIT}). Every call that reaches a stub goes through {@link #stub}: it proves that the
+ * The remaining phase-1 commerce stub (ADR-005, P07-commerce) on the dev seed, read-only:
+ * POST /admin/payments/{id}/resolve (UC-A18); POST /orders, cancel (P11-b, {@code OrderWriteIT}) and create QR (P11-c,
+ * {@code PaymentQrIT}) are real, the webhook since P11-a ({@code PaymentWebhookIT}). Every call that reaches a stub goes through {@link #stub}: it proves that the
  * row counts of carts, cart_items, orders, order_items, payment_transactions and enrollments are unchanged and that no
  * INSERT / UPDATE / DELETE / locking statement ran.
  * <p>Seed: cart 4 = student 16 (course 1, 799 000), cart 2 = student 11 (hidden course 10 + course 3), cart 5 = student
@@ -107,63 +107,6 @@ class CommerceStubsIT {
 
     private ResultActions stubbedOrderPost(long userId, String path) throws Exception {
         return stub(asUser(userId, post(path)));
-    }
-
-    // ---- POST /orders/{code}/payments (UC-S05 create QR)
-
-    @Test
-    void createQr_sample_201_UCS05() throws Exception {
-        clock.setInstant(Instant.parse("2026-11-20T10:00:00Z")); // the seed attempt 6 expired on 2026-11-01
-        MvcResult result = stubbedOrderPost(8, "/api/v1/orders/" + ORDER_4 + "/payments")
-                .andExpect(status().isCreated())
-                .andExpect(header().string("X-Edumy-Stub", "true"))
-                .andExpect(jsonPath("$.orderCode").value(ORDER_4))
-                .andExpect(jsonPath("$.status").value("pending"))
-                .andExpect(jsonPath("$.amount").value(849000)) // = order total (BR-14)
-                .andExpect(jsonPath("$.transactionRef", matchesPattern("FAKEPAY-20261120-STUB")))
-                .andExpect(jsonPath("$.qrData").value("FAKEQR|EDUMY|" + ORDER_4 + "|849000"))
-                .andReturn();
-        String body = result.getResponse().getContentAsString(StandardCharsets.UTF_8);
-        Instant created = Instant.parse(JsonPath.read(body, "$.createdAt"));
-        Instant expires = Instant.parse(JsonPath.read(body, "$.qrExpiresAt"));
-        assertThat(Duration.between(created, expires)).isEqualTo(Duration.ofMinutes(15)); // BR-13
-        assertThat(created).isBetween(Instant.parse("2026-11-20T10:00:00Z"), Instant.parse("2026-11-20T10:05:00Z"));
-    }
-
-    @Test
-    void createQr_stillValidPendingQr_isShownAgain_200_UCS05() throws Exception {
-        clock.setInstant(Instant.parse("2026-11-01T08:30:00Z")); // attempt 6 is valid until 08:35
-        stubbedOrderPost(8, "/api/v1/orders/" + ORDER_4 + "/payments")
-                .andExpect(status().isOk())
-                .andExpect(header().string("X-Edumy-Stub", "true"))
-                .andExpect(jsonPath("$.transactionRef").value("FAKEPAY-20261101-0006"))
-                .andExpect(jsonPath("$.qrExpiresAt").value("2026-11-01T08:35:00Z"))
-                .andExpect(jsonPath("$.qrData").value("FAKEQR|EDUMY|ORD-20261101-0004|849000"))
-                .andExpect(jsonPath("$.status").value("pending"));
-    }
-
-    @Test
-    void createQr_orderWithoutPendingAttempt_201_UCS05() throws Exception {
-        stubbedOrderPost(12, "/api/v1/orders/" + ORDER_10 + "/payments")
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.amount").value(450000));
-    }
-
-    @Test
-    void createQr_orderNotPending_409_UCS05() throws Exception {
-        expectProblem(stubbedOrderPost(8, "/api/v1/orders/" + ORDER_3 + "/payments"), 409, "DATA_CONFLICT");
-        expectProblem(stubbedOrderPost(6, "/api/v1/orders/" + ORDER_1 + "/payments"), 409, "DATA_CONFLICT");
-    }
-
-    @Test
-    void createQr_otherStudentsOrder_isTheSame404AsAnUnknownOne_UCS05() throws Exception {
-        assertSameNotFound(mvc, asUser(7, post("/api/v1/orders/" + ORDER_4 + "/payments")),
-                asUser(7, post("/api/v1/orders/" + UNKNOWN_ORDER + "/payments")));
-    }
-
-    @Test
-    void createQr_withoutToken_401() throws Exception {
-        expectProblem(stub(post("/api/v1/orders/" + ORDER_4 + "/payments")), 401, "UNAUTHENTICATED");
     }
 
     // ---- POST /admin/payments/{id}/resolve (UC-A18)

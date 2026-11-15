@@ -5,10 +5,8 @@ import com.edumy.commerce.dto.response.PaymentStatusResponse;
 import com.edumy.commerce.service.PaymentQueryService;
 import com.edumy.commerce.service.PaymentService;
 import com.edumy.shared.security.CurrentUserId;
-import com.edumy.shared.web.StubSupport;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -38,17 +36,16 @@ public class PaymentController {
     }
 
     /**
-     * Phase-1 stub, header {@code X-Edumy-Stub: true}: 201 + a sample pending QR (amount = order total, expires in 15 min,
-     * BR-13), or 200 + the stored attempt when the order still has a valid pending QR; nothing is inserted, no provider
-     * is called. 404 for an unknown or foreign code · 409 {@code DATA_CONFLICT} when the order is not pending.
+     * UC-S05 steps 1–2 (P11-c): 201 + a new pending QR attempt (reference = transaction reference, amount = order total,
+     * valid 15 min, BR-13 / BR-14), or 200 + the still-valid pending attempt (precondition). 404 unknown / foreign code ·
+     * 409 {@code DATA_CONFLICT} order not pending (also: just cancelled as expired, older than 24 h) · 409
+     * {@code ORDER_CART_CHANGED} (the order holds a course owned now: cancelled, order again from the cart) · 409
+     * {@code ORDER_ALREADY_PAID} (the previous attempt was found paid: recorded) · 503
+     * {@code PAYMENT_PROVIDER_UNAVAILABLE} (no QR, nothing changed, E1).
      */
     @PostMapping
-    @Operation(summary = "UC-S05 Tạo mã QR thanh toán cho đơn chờ (STUB-P1: QR mẫu, không ghi dữ liệu, không gọi cổng thanh toán)",
-            description = "Phase-1 stub: returns a sample QR (X-Edumy-Stub: true), nothing is inserted.")
-    public ResponseEntity<PaymentQrResponse> createQr(@PathVariable String orderCode, @CurrentUserId Long userId,
-                                                      HttpServletResponse response) {
-        StubSupport.mark(response);
-        // STUB-P1: replace with PaymentService.createQr (gateway QR + insert pending attempt) — UC-S05, BR-13, BR-16
+    @Operation(summary = "UC-S05 Tạo mã QR thanh toán cho đơn chờ (hoặc hiển thị lại QR còn hạn)")
+    public ResponseEntity<PaymentQrResponse> createQr(@PathVariable String orderCode, @CurrentUserId Long userId) {
         PaymentService.QrOutcome outcome = payments.createQr(userId, orderCode);
         return ResponseEntity.status(outcome.reused() ? HttpStatus.OK : HttpStatus.CREATED).body(outcome.qr());
     }
