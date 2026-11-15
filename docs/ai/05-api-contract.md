@@ -65,6 +65,7 @@
 | `ACCOUNT_NOT_LOCKED` | 409 | UC-A03 precondition "tài khoản bị khóa": target is active |
 | `INSTRUCTOR_ROLE_ALREADY_ACTIVE` | 409 | UC-A04 E1: target already holds an active instructor role |
 | `INSTRUCTOR_ROLE_NOT_ACTIVE` | 409 | UC-A05 E1: target holds no active instructor role (none, or already revoked) |
+| `ACCOUNT_LOCKED_TARGET` | 409 | UC-A04, ADR-008 (beyond the SRS, P10): the target account is locked — no instructor role is granted to it; unlock first (UC-A03). Title "Tài khoản đang bị khóa" |
 | `ACCOUNT_TOKEN_INVALID` | 422 | UC-G06 / UC-G08 E1: emailed code unknown, wrong type, used or expired — never says which (BR-34); also reset of a locked account |
 | `PASSWORD_INCORRECT` | 422 | UC-G12: wrong current password |
 | `PASSWORD_SAME_AS_OLD` | 422 | UC-G12: new password = current password |
@@ -126,6 +127,10 @@
 
   A CHECK or trigger violation reaching the database means the application skipped a validation, so it is a server
   error. The constraint name, BR code and MySQL message are only logged, **never** put in the response.
+- **Log hygiene (P10, MINOR-3)**: free text typed by a user (moderation reasons, webhook references, the value a MySQL
+  1062 message echoes) is logged only through `shared.text.LogSanitizer.clean` — CR, LF and every control character
+  become `_`, the text is cut at 200 characters — so it cannot forge a log entry (CWE-117). Log ids and codes instead
+  whenever they are enough (NFR-08).
 - ErrorCode naming: `UPPER_SNAKE`, module-meaningful, e.g. `AUTH_INVALID_CREDENTIALS`, `AUTH_LOGIN_TEMPORARILY_BLOCKED`,
   `EMAIL_NOT_VERIFIED`, `COURSE_NOT_EDITABLE`, `COURSE_SUBMIT_CHECKLIST_FAILED`, `CART_COURSE_ALREADY_OWNED`,
   `CART_OWN_COURSE`, `CART_ITEM_DUPLICATE`, `COURSE_CO_INSTRUCTOR_IS_MAIN`, `COURSE_DELETE_FORBIDDEN`,
@@ -203,6 +208,7 @@ Admin user list (P05):
 - `GET /admin/users?q=&status=&role=&page=&size=` → **200** `PagedModel<AdminUserResponse {id,email,fullName,emailVerified,status,roles,createdAt}>`;
   `status` = `active`/`locked`, `roles` = lower-case codes **active** in the database (revoked ones not listed).
   `q` (trimmed) = substring of the email (case-insensitive) or of the full name (case- and accent-insensitive, ai_ci);
+  `%` / `_` in `q` match literally (escaped with `ESCAPE '!'`, P10: `q=%` or `q=_` never lists every account);
   `role` keeps users holding that role actively. Blank parameter = no filter; an unknown `status`/`role` → 400
   `VALIDATION_FAILED` (`errors[].field` = `status`/`role`). Order fixed: newest account first (`createdAt` desc, `id`
   desc); `sort` is ignored. `size` default 20, values above 100 are clamped to 100 (every paged endpoint, §5.1).
@@ -220,7 +226,9 @@ transaction. Preconditions that do not hold are refused with 409 and change noth
   ended (the user logs in again). Error: 409 `ACCOUNT_NOT_LOCKED`.
 - `PUT /admin/users/{id}/roles/instructor` (UC-A04) → instructor role active: a new `user_roles` row or the revoked row
   reactivated (never a duplicate), `assigned_by` = the admin, `assigned_at` = now; `identity.active-roles` evicted.
-  No email-verified / account-status precondition (none in the SRS). Error: 409 `INSTRUCTOR_ROLE_ALREADY_ACTIVE` (E1).
+  ADR-008 (P10): a **locked** target → 409 `ACCOUNT_LOCKED_TARGET` (nothing written); an **unverified email** is no
+  obstacle (D-02 binds self-registration UC-G13 only; the admin overrides it). Error: 409
+  `INSTRUCTOR_ROLE_ALREADY_ACTIVE` (E1).
 - `DELETE /admin/users/{id}/roles/instructor` (UC-A05) → row set `is_active = false` (kept, BR-28);
   `identity.active-roles` evicted → instructor actions refused (403) on the next request (D-07); sessions, published
   courses and enrollments untouched. Error: 409 `INSTRUCTOR_ROLE_NOT_ACTIVE` (E1). The SRS step 1 "impact preview"
@@ -349,6 +357,8 @@ Authoring writes (P06-G1, UC-A06…A08, UC-I01, I03, I04). Bodies are JSON; PATC
 - `DELETE /admin/categories/{id}` (D-21) → **204** deleted (no course of any status uses it) · **200**
   `AdminCategoryResponse` with `active:false` when courses use it (only deactivated, they keep it) · 409
   `DATA_CONFLICT` used and already inactive · 404 unknown id.
+- Every category write re-checks the caller's admin role **in the database** (BR-26, P10: a token still claiming
+  `admin` after the role was removed → 403 `ACCESS_DENIED`, nothing changes), like every other admin write.
 - Every category change publishes `CategoryChanged(categoryId)` (catalog cache, P08). Admin only (route rule +
   `hasRole('ADMIN')`): 401 without token, 403 `ACCESS_DENIED` for other roles.
 - `POST /instructor/courses` `CreateCourseRequest {title, description?, thumbnailUrl?, categoryId, price}` → **201** +
@@ -385,7 +395,8 @@ chapters/lessons go at the end (max + 1); positions always stay 1..n (a delete m
   become course-level (`lesson_id` SET NULL); progress % is derived (D-33). 409 `COURSE_LAST_LESSON_DELETE_FORBIDDEN`
   when the chapter holds every lesson of a published / hidden course (an empty chapter may always go).
 - `PUT /instructor/courses/{id}/chapters/order` `ReorderRequest {ids:[…]}` → **200** `[ChapterResponse]` (whole outline,
-  new order). `ids` must list every chapter of the course exactly once; missing / foreign (other course or unknown — same
+  new order). `ids`: at most 500 ids, no id twice (Bean Validation before any query, P10 — `edumy.reorder.ids.too-many`
+  / `edumy.reorder.ids.duplicate`). `ids` must list every chapter of the course exactly once; missing / foreign (other course or unknown — same
   text) / duplicate id, empty or absent list → 400 `VALIDATION_FAILED`, `errors[].field = "ids"` (status principle:
   the request does not describe a permutation, so it is invalid input; no new code). Two-phase update (docs/ai/03 §3.4).
 - `POST /instructor/chapters/{id}/lessons` `CreateLessonRequest {title, contentType, videoUrl?, articleContent?,
@@ -592,9 +603,9 @@ bodies of `OrderService` / `PaymentService` / `ReconciliationService`.
 - Certificate (BR-39/BR-40): issued by the completion that reaches 100 % of the lessons existing now, once per enrollment (free or purchase), snapshot of student name, course title, main instructor name; `EDU-XXXX-XXXX-XXXX` from `SecureRandom`. Event `CertificateIssued(certificateId, enrollmentId, studentId, courseId)` → `learning.listener.CertificateIssuedListener` logs ids after commit (NFR-08). UC-S20 step 1 / UC-S11 "issue a missing certificate on read" is NOT implemented (see progress.md).
 
 **P06-G7 (reviews, implemented)** — `ReviewController`, `AdminModerationController` (UC-S12…S14, A15, A17; docs/ai/02 §2.2). Responses carry `ReviewResponse {id, courseId, rating, comment, status (visible|withdrawn|hidden), createdAt, updatedAt}`; there is no GET of the caller's own review (the SPA reads the visible list `GET /catalog/courses/{slug}/reviews`).
-- `POST /courses/{courseId}/reviews` `CreateReviewRequest {rating 1–5 required, comment ≤2000 optional}` (login only) → **201** new review · **200** the withdrawn review of the enrollment re-rated (same row, UC-S12 step 3). 404 unknown course · 403 `ENROLLMENT_REQUIRED` (existing course, no enrollment; hidden / unpublished courses can still be reviewed by their students, BR-31) · 409 `DATA_CONFLICT` already `visible` (BR-18) · 409 `REVIEW_HIDDEN_BY_ADMIN` (BR-35) · 400 `VALIDATION_FAILED`. Concurrent double POST: one row (201 + 409).
+- `POST /courses/{courseId}/reviews` `CreateReviewRequest {rating 1–5 required, comment ≤2000 optional}` (login only) → **201** new review · **200** the withdrawn review of the enrollment re-rated (same row, UC-S12 step 3). 404 unknown course · 403 `ENROLLMENT_REQUIRED` (**published** course, no enrollment: the SPA sends the caller to the course page) · 404 identical to an unknown id for a draft / pending / rejected / hidden course without enrollment (P10 403/404 principle, docs/ai/04 §4.3; their enrolled students can still review hidden courses, BR-31) · 409 `DATA_CONFLICT` already `visible` (BR-18) · 409 `REVIEW_HIDDEN_BY_ADMIN` (BR-35) · 400 `VALIDATION_FAILED`. Concurrent double POST: one row (201 + 409).
 - `PATCH /reviews/{id}` `UpdateReviewRequest {rating required, comment}` (full replacement, an absent comment clears it) → **200** · `DELETE /reviews/{id}` → **204** (`withdrawn`, not deleted). Not the author's / unknown → 404 identical · 409 `REVIEW_HIDDEN_BY_ADMIN` (hidden) · 409 `DATA_CONFLICT` (PATCH or DELETE of a withdrawn review).
-- `POST /admin/reviews/{id}/hide` · `/restore` (admin JWT role + role re-checked in the DB, BR-26; optional body `ModerationRequest {reason ≤500}`, only logged — SRS/DDD have no reason) → **200** `ReviewResponse`. 404 unknown · 409 `DATA_CONFLICT` hide of a hidden / restore of a non-hidden review · 403 `ACCESS_DENIED` role revoked in the DB.
+- `POST /admin/reviews/{id}/hide` · `/restore` (admin JWT role + role re-checked in the DB, BR-26; optional body `ModerationRequest {reason ≤500}`, only logged (sanitized, P10) — SRS/DDD have no reason; D-36 / D-41 ask only for who and when: `moderated_by` / `moderated_at`) → **200** `ReviewResponse`. 404 unknown · 409 `DATA_CONFLICT` hide of a hidden / restore of a non-hidden review · 403 `ACCESS_DENIED` role revoked in the DB.
 - Event `ReviewChanged(courseId, slug)` after every create, re-rate, edit, withdraw, hide, restore (catalog: `catalog.rating` by courseId, `catalog.course-detail` by slug — P08). No mail (SRS §7).
 
 **P06-G8 (Q&A writes, implemented)** — `QuestionController` (ask, edit, delete, resolve), `AnswerController` (reply, edit, delete), `AdminModerationController` (UC-S17, S19, I21, A19; docs/ai/02 §2.2). Question writes answer the `QuestionThreadResponse` the asker sees, answer writes `AnswerResponse`; 201 carries `Location` = the thread.
@@ -602,5 +613,5 @@ bodies of `OrderService` / `PaymentService` / `ReconciliationService`.
 - `PATCH /questions/{id}` `UpdateQuestionRequest {title, content}` (full replacement) → **200** · `DELETE /questions/{id}` → **204** (`deleted`, final, the whole thread is 404 for everybody) · `POST /questions/{id}/resolve` optional body `ResolveQuestionRequest {resolved}` (absent / `true` = resolved, `false` = unmark, UC-S19 "đánh dấu hoặc bỏ đánh dấu"; idempotent) → **200**. Not the asker / deleted / unknown → 404 identical (`@qaAccess.isQuestionAuthor`) · 409 `QA_CONTENT_HIDDEN_BY_ADMIN` hidden by an admin (BR-41).
 - `POST /questions/{id}/answers` `CreateAnswerRequest {content ≤5000}` (`@qaAccess.canReply`) → **201** `AnswerResponse`. Only the asker and the course instructors (main or accepted co, active role, checked at send time) reply: another enrolled student or an admin → 403 `QA_REPLY_NOT_ALLOWED`; who cannot see the question (stranger, pending co-instructor, instructor of another course, revoked instructor) → 404; hidden question → 409 `QA_CONTENT_HIDDEN_BY_ADMIN` (only the asker gets that far); deleted → 404. `authorType` is set by the server from the caller's relation now (instructor wins over student) and never changes (D-43).
 - `PATCH /answers/{id}` `UpdateAnswerRequest {content}` → **200** · `DELETE /answers/{id}` → **204** (`deleted`, final): the author's own answer only (404 identical otherwise, also for admins and other instructors); 409 `QA_CONTENT_HIDDEN_BY_ADMIN` when hidden; an answer of a deleted question → 404.
-- `POST /admin/questions/{id}/hide` · `/restore` → **200** `QuestionThreadResponse`; `POST /admin/answers/{id}/hide` · `/restore` → **200** `AnswerResponse` (admin JWT role + role re-checked in the DB, BR-26 → 403 `ACCESS_DENIED`; optional `ModerationRequest {reason ≤500}`, only logged). 404 unknown **or deleted** (deleted is final and invisible to everybody, the admin included; an answer of a deleted question too) · 409 `DATA_CONFLICT` hide of a hidden / restore of a visible item. Hidden content is read by its author and admins only, leaves the lists and the UC-I22 queue; hiding the only instructor answer makes the question "unanswered" again.
+- `POST /admin/questions/{id}/hide` · `/restore` → **200** `QuestionThreadResponse`; `POST /admin/answers/{id}/hide` · `/restore` → **200** `AnswerResponse` (admin JWT role + role re-checked in the DB, BR-26 → 403 `ACCESS_DENIED`; optional `ModerationRequest {reason ≤500}`, only logged, sanitized). 404 unknown **or deleted** (deleted is final and invisible to everybody, the admin included; an answer of a deleted question too) · 409 `DATA_CONFLICT` hide of a hidden / restore of a visible item. Hidden content is read by its author and admins only, leaves the lists and the UC-I22 queue; hiding the only instructor answer makes the question "unanswered" again.
 - Event `QuestionAnsweredByInstructor(questionId, answerId, courseId, askerId, instructorId, questionTitle)` only for an instructor-type answer (not a follow-up, not edits) → notification mail to the asker (route table above); a mail failure never touches the answer (UC-I21 E3).

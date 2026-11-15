@@ -4,6 +4,11 @@ Rule (NFR-01, docs/ai/04 §4.3): a protected endpoint with a path id that names 
 resource answers a caller **with no relation to it** exactly what it answers for an id that **does not exist**: 404
 `RESOURCE_NOT_FOUND`, bodies equal except `traceId` / `instance`, no data of the owner in the body.
 
+**403/404 principle (P10, ADR-008 §2):** only a resource every outsider may know exists — a **published** course — may
+answer a missing relation with 403 and a business code (`ENROLLMENT_REQUIRED`, so the SPA shows the course page,
+UC-S09); every non-public resource (draft / pending / rejected / hidden course, other users' data) answers 404 as
+above; a missing role is 403 `ACCESS_DENIED` before any lookup.
+
 The suite is `src/test/java/com/edumy/security/IdorIT.java` (`@MySqlSpringBootTest`, one table of endpoints, every test
 parameterized over it). Existing P05-P07 ITs prove the same per feature (column "Existing test"); `IdorIT` proves it for
 all of them in one place, with the same fixtures for every caller, and adds the missing layers (the control request of
@@ -35,7 +40,8 @@ group D mappings are covered by their own ITs only.
 | `adminRoute_nonAdmin_403_sameForMissing` | 17 | `/admin/**` rows with an id: student, instructor, the data's owner -> 403, identical for an existing and a missing id |
 | `publicCatalog_unpublishedOrNonPreview_404` | 5 | anonymous and a student: a draft / pending course, its reviews, its lesson preview, a non-preview lesson of a published course -> 404 identical to unknown; `publicCatalog_publishedCourse_isReadable_control` proves a published one reads |
 | `answer_visibleButNotAllowed_403_QA_REPLY_NOT_ALLOWED_BR38` | 1 | see §4 |
-| `reviewCreate_noEnrollmentInPublishedCourse_403_ENROLLMENT_REQUIRED_E1` | 1 | see §4 and the finding in §6 |
+| `reviewCreate_noEnrollmentInPublishedCourse_403_ENROLLMENT_REQUIRED_E1` | 1 | see §4 |
+| `reviewCreate_noEnrollmentInNonPublicCourse_404IdenticalToMissing_NFR01` | 1 | draft / pending course, 4 callers: 404 identical to an unknown id (P10, §6) |
 
 Callers used as strangers: a student with no enrollment; a classmate (enrolled in the same course, so a "stranger" only
 for the question / answer / review / order of another student); the course's main instructor on student-owned
@@ -85,7 +91,7 @@ main-only endpoints (BR-06) and on invitations of somebody else; a revoked instr
 | DELETE `/answers/{id}` | answer | its author only | same |
 | PATCH `/reviews/{id}` | review | its author only | `learning/controller/ReviewWriteIT#update_someoneElsesReview_404_identicalToUnknown_IDOR_NFR01` |
 | DELETE `/reviews/{id}` | review | its author only | `ReviewWriteIT#delete_someoneElsesReview_404_identicalToUnknown_IDOR_NFR01` |
-| POST `/courses/{courseId}/reviews` | course | enrolled; no enrollment -> 403 `ENROLLMENT_REQUIRED` (§4, §6) | `ReviewWriteIT#create_notEnrolled_403_enrollmentRequired_nothingWritten_E1` |
+| POST `/courses/{courseId}/reviews` | course | enrolled; no enrollment -> 403 `ENROLLMENT_REQUIRED` on a published course (§4), 404 identical to unknown on any other status (§6) | `ReviewWriteIT#create_notEnrolled_403_enrollmentRequired_nothingWritten_E1`, `#create_notEnrolled_nonPublicCourse_404IdenticalToUnknown_nothingWritten_NFR01` |
 | GET `/me/certificates/{code}/pdf` | certificate | its student | `learning/controller/CertificatePdfStubIT#anotherUsersCode_unknownCode_identical404_IDOR`, `#malformedCodes_sameNotFound_noWrites` |
 | GET `/orders/{orderCode}` | order | its student | `commerce/controller/StudentCommerceReadsIT#orderDetail_otherStudentsOrder_sameNotFoundAsUnknown_IDOR` |
 | GET `/orders/{orderCode}/payments/current` | order -> payment | its student | `StudentCommerceReadsIT#currentPayment_otherStudentsOrder_sameNotFoundAsUnknown_IDOR` |
@@ -108,7 +114,7 @@ Access beans are additionally proved through the probe controller (`authoring/se
 | every `/instructor/**` mapping, caller without an **active instructor role in the database** (student only, or stale JWT after revoke) | 403 `ACCESS_DENIED` | decided from the caller's own roles **before** any lookup (`@courseAccess.*` returns `false`); the body is identical for an existing and a missing id (`noInstructorRole_403_beforeAnyLookup`) |
 | every `/admin/**` mapping with an id, non-admin | 403 `ACCESS_DENIED` | route rule `hasRole('ADMIN')` (admins see all users' data by design); identical for existing and missing (`adminRoute_nonAdmin_403_sameForMissing`); revoked-admin / stale token: `AdminUserWriteIT`, `QaModerationIT`, `ReviewWriteIT`, `AdminCourseReviewWriteIT` |
 | POST `/questions/{id}/answers`, a caller who **can already read the thread** (classmate, admin) but neither asked it nor instructs the course | 403 `QA_REPLY_NOT_ALLOWED` (BR-38) | the same caller gets the whole question from `GET /questions/{id}` (200), so "it exists" is already known to them; a caller who cannot see it gets the 404 of §3 (`answer_visibleButNotAllowed_403_QA_REPLY_NOT_ALLOWED_BR38` asserts both the 200 and the 403 and that nothing was written) |
-| POST `/courses/{courseId}/reviews`, no enrollment | 403 `ENROLLMENT_REQUIRED` (UC-S12 E1) | for a **published** course the id is public (catalog, cards), nothing owned by another user is disclosed; unknown id -> 404. Residual for non-published ids: §6 |
+| POST `/courses/{courseId}/reviews`, no enrollment | 403 `ENROLLMENT_REQUIRED` (UC-S12 E1) | only for a **published** course: its id is public (catalog, cards), nothing owned by another user is disclosed; unknown **or non-published** id -> 404 identical (P10) |
 | `POST /courses/{id}/enrollments` on a published course | 409 / 422 by course state (`ENROLLMENT_OWN_COURSE`, `ENROLLMENT_COURSE_NOT_FREE`) | only for published (public) courses and only after the caller's own state is evaluated |
 | `PATCH`/`DELETE` on a `pending_review` course's chapters / lessons / chapter create | 409 `COURSE_NOT_EDITABLE` | only for a course instructor; a stranger gets 404 first (`IdorIT` pending rows) |
 | accept / decline of an invitation already answered or revoked | 409 `INVITATION_NOT_PENDING` | only for the invitee; any other caller gets 404 |
@@ -147,12 +153,10 @@ Access beans are additionally proved through the probe controller (`authoring/se
 
 ## 6. Findings
 
-- **Review create reveals that a non-published course id exists** (`ReviewService.create`): `POST /courses/{id}/reviews`
-  with no enrollment answers 404 for an unknown id but 403 `ENROLLMENT_REQUIRED` for any existing course, including a
-  draft / pending / rejected one of another instructor (the lookup `findSummaries` ignores the status, BR-31 lets
-  enrolled students review hidden courses). It discloses only that a course id exists (ids are sequential `BIGINT`s
-  and published ones are public), no content. It is the documented contract (docs/ai/05 P06-G7: "403 `ENROLLMENT_REQUIRED`
-  (existing course, no enrollment ...)"), so it was **not changed** here; a one-line guard (no enrollment and
-  `!course.published()` -> 404) would close it and narrows the contract text. `IdorIT` pins only the published case.
+- **Closed in P10 (security MINOR-2):** review create used to answer 403 `ENROLLMENT_REQUIRED` for any existing course,
+  so a draft / pending / rejected course id of another instructor could be told apart from an unknown id. Now
+  `ReviewService.create` answers the unknown-id 404 when the caller has no enrollment and the course is not published
+  (`IdorIT#reviewCreate_noEnrollmentInNonPublicCourse_404IdenticalToMissing_NFR01`,
+  `ReviewWriteIT#create_notEnrolled_nonPublicCourse_404IdenticalToUnknown_nothingWritten_NFR01`).
 - No other endpoint of the matrix answered 200 with another user's data, a differing 404 body, or a 403 / 409 that
   depends on whether a foreign id exists.

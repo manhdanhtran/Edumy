@@ -1,0 +1,13 @@
+# P10 review — security (snapshot 0374f3d)
+
+The security reviewer finished in the previous session (0 BLOCKER, 0 MAJOR, 5 MINOR), but its report was not saved in
+the repository. This file restates the five findings as the P10 brief handed them over and records how each was
+resolved. All five were fixed in **P10-fix-a** (commit `7a8ee8e`).
+
+| ID | Finding | Resolution | Proof |
+|---|---|---|---|
+| SEC-m1 | Category writes (UC-A06…A08) trusted the JWT `admin` claim; every other admin write re-checks the admin role in the database (BR-26) | `CategoryService` re-checks `RoleQueryApi.hasActiveRole(ADMIN)` on create / update / delete → 403 `ACCESS_DENIED`, nothing changes | `AdminCategoryWriteIT#writes_adminRoleRevokedInDatabase_staleJwt_403_nothingChanges_BR26` |
+| SEC-m2 | `POST /courses/{id}/reviews` without enrollment answered 403 for any existing course, so a non-published course id of another instructor was distinguishable from an unknown one | 403/404 principle (ADR-008 §2): 403 `ENROLLMENT_REQUIRED` only for a published course, otherwise the unknown-id 404 | `ReviewWriteIT#create_notEnrolled_nonPublicCourse_404IdenticalToUnknown_nothingWritten_NFR01`, `IdorIT#reviewCreate_noEnrollmentInNonPublicCourse_404IdenticalToMissing_NFR01` |
+| SEC-m3 | Log injection: the admin's free-text moderation reason was logged raw | `shared.text.LogSanitizer` (control characters → `_`, ≤200 characters). Repo-wide check of every `log.*` call: the other user-controlled values are the webhook `transactionRef` / `orderCode` (sanitized) and the value a MySQL 1062 message echoes (sanitized, and the WARN line no longer prints the stack trace). Everything else logs ids, codes or enum values | `LogSanitizerTest`, `QaModerationIT#reason_withCrLf_isLoggedOnOneLine_noForgedEntry_logInjection` |
+| SEC-m4 | `GET /admin/users?q=` passed `%` / `_` to LIKE unescaped (`q=%` listed every account) | `shared.text.LikePattern` + `ESCAPE '!'`. Other LIKE queries checked: catalog search and Q&A search already escape with `!` (tests extended for `_` and bare `%`); the course slug lookup builds its pattern from a generated `[a-z0-9-]` slug | `LikePatternTest`, `IdentityRepositoryIT#searchForAdmin_filters_qStatusRole_UCA01`, `AdminUserControllerIT#list_likeWildcardsInQ_areLiterals_neverTheWholeList_UCA01`, `QuestionReadsIT#courseList_filters_lessonMineUnansweredKeyword_UCS18`, `CatalogCourseControllerIT` (`%`, `_` rows) |
+| SEC-m5 | `ReorderRequest.ids` had no size bound or duplicate check before the database work | `@Size(max = 500)` + `@UniqueElements` (Vietnamese messages); the permutation check of the service is unchanged | `ChapterWriteIT#reorder_moreThan500Ids_400_beforeAnyLookup`, `#reorder_notExactlyTheCoursesChapters_400_nothingChanges_UCI08` |

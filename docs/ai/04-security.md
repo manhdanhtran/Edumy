@@ -75,6 +75,16 @@ Two layers, both server-side:
 | `@enrollmentAccess` (learning) | `isEnrolled(#courseId)`, `canViewContent(#courseId)` (enrolled OR course instructor OR admin, D-32), `canViewLesson(#lessonId)`, `isEnrolledForLesson(#lessonId)` | UC-S09…S20 |
 | `@qaAccess` (learning) | `canView(#questionId)` (thread read: not deleted, hidden only asker/admin, visible = `canViewContent`; else 404), `canReply(#questionId)` (asker or course instructor, BR-38), `isQuestionAuthor(#questionId)`, `isAnswerAuthor(#answerId)` | Q&A |
 
+**403 vs 404 principle (approved in P10, applies to every endpoint):**
+1. A resource every outsider may know exists — a **published** course — whose relation the caller lacks → 403 with a
+   specific business code (e.g. `ENROLLMENT_REQUIRED`), so the SPA can send the user to the course page (UC-S09
+   "Không có quyền → trang giới thiệu khóa").
+2. A resource that is **not public** — a draft / pending / rejected / hidden course, someone else's order, question,
+   answer, review, enrollment, invitation — for a caller with no relation → 404 `RESOURCE_NOT_FOUND`, body identical to
+   an unknown id (NFR-01, UC-G04 E1).
+3. A missing **role** → 403 `ACCESS_DENIED`, decided before any lookup.
+Inventory and proofs: docs/ai/10.
+
 Outcomes (Q7, P04-e): **`false` → 403 `ACCESS_DENIED`** only when the caller lacks the needed role in the database
 (`@courseAccess`/`@chapterAccess`/`@lessonAccess`: no active instructor role — checked before any lookup, so ids cannot be
 probed). Unknown resource, or no relation to it → **`RESOURCE_NOT_FOUND` (404, identical body)**. State conflicts are not
@@ -127,6 +137,8 @@ If the app is ever scaled to >1 instance, move these to Redis (new ADR); see ADR
 limitations".
 
 ## 4.5 Transport & headers
+- Logs: user free text only through `shared.text.LogSanitizer` (CR/LF/control characters → `_`, ≤200 characters;
+  P10). LIKE keywords only through `shared.text.LikePattern` / the equivalent catalog and Q&A helpers (`ESCAPE '!'`).
 - CORS: allowed origins from `edumy.cors.allowed-origins` (dev: `http://localhost:5173,http://localhost:3000`),
   `allowCredentials=true` (refresh cookie).
 - CSRF: disabled for bearer-token endpoints; `/auth/refresh` and `/auth/logout` rely on `SameSite=Strict` cookie +
