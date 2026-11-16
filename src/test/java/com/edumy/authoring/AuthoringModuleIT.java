@@ -45,6 +45,8 @@ class AuthoringModuleIT {
     RoleQueryApi roles;
     @MockitoBean
     UserQueryApi userQuery;
+    @MockitoBean
+    com.edumy.authoring.api.EnrollmentCountPort enrollmentCounts; // implemented by learning (P13)
 
     @Autowired
     CourseModerationService moderation;

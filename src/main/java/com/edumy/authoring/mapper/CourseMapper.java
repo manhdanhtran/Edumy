@@ -31,7 +31,7 @@ public interface CourseMapper {
     /** UC-I02 list row; {@code relation} {@code main}/{@code co}; counts of the course outline. */
     @Mapping(target = "isFree", expression = "java(course.getPrice() == 0)")
     InstructorCourseSummaryResponse toSummary(InstructorCourseView course, String relation, long chapterCount,
-                                              long lessonCount);
+                                              long lessonCount, long studentCount);
 
     /** UC-I02 detail for an instructor of the course; {@code course.category} must be loaded. */
     @Mapping(target = "id", source = "course.id")

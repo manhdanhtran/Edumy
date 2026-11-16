@@ -34,6 +34,18 @@ public interface EnrollmentRepository extends JpaRepository<Enrollment, Long> {
     boolean existsByStudentIdAndCourseId(Long studentId, Long courseId);
 
     /** {@code EnrollmentApi.findOwnedCourseIds}: which of these courses the student owns, one statement. */
+    /** UC-I02 via {@code authoring::api.EnrollmentCountPort} (P13): enrollments per course, one grouped query. */
+    @Query("select e.courseId as courseId, count(e) as students from Enrollment e where e.courseId in :courseIds "
+            + "group by e.courseId")
+    List<CourseStudentCount> countByCourseIdIn(@Param("courseIds") Collection<Long> courseIds);
+
+    /** Row of {@link #countByCourseIdIn}. */
+    interface CourseStudentCount {
+        Long getCourseId();
+
+        long getStudents();
+    }
+
     @Query("select e.courseId from Enrollment e where e.studentId = :studentId and e.courseId in :courseIds")
     List<Long> findCourseIdsByStudentIdAndCourseIdIn(@Param("studentId") Long studentId,
                                                      @Param("courseIds") Collection<Long> courseIds);

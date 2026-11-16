@@ -139,8 +139,8 @@ class InstructorCourseControllerIT {
         perform(SeedUserTokens.INSTRUCTOR_2, "?size=3").andExpect(jsonPath("$.content", hasSize(3)));
         int large = sql.count();
 
-        // page + count + chapter/lesson counts of the page
-        assertThat(small).as(smallStatements).isEqualTo(3);
+        // page + count + chapter/lesson counts of the page + enrolled students of the page (P13, EnrollmentCountPort)
+        assertThat(small).as(smallStatements).isEqualTo(4);
         assertThat(large).as(sql.statements().toString()).isEqualTo(small);
     }
 

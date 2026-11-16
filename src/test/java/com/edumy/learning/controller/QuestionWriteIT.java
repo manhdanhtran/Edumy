@@ -58,6 +58,8 @@ class QuestionWriteIT {
     @Autowired
     JdbcClient jdbc;
     @Autowired
+    com.edumy.support.MutableClock clock;
+    @Autowired
     ApplicationEvents events;
 
     CourseFixtures fixtures;
@@ -413,6 +415,49 @@ class QuestionWriteIT {
 
     // ---------------------------------------------------------------------------------------------------- helpers
 
+    // ---- UC-S17 E3 (P13): repeated submission
+
+    @Test
+    void ask_sameTitleAndContentWithin60s_409Duplicate_oneRow_otherContentOrLaterAllowed_UCS17E3() throws Exception {
+        String body = "{\"title\": \"Lỗi cài JDK\", \"content\": \"Em không cài được\"}";
+        mvc.perform(ask(student, course, body)).andExpect(status().isCreated());
+
+        expectProblem(mvc.perform(ask(student, course,
+                "{\"title\": \"  Lỗi cài JDK \", \"content\": \"Em không cài được  \"}")), 409, "QA_QUESTION_DUPLICATE");
+        assertThat(questionCount()).isEqualTo(1);
+
+        mvc.perform(ask(student, course, "{\"title\": \"Lỗi cài JDK\", \"content\": \"Em cài lại vẫn lỗi\"}"))
+                .andExpect(status().isCreated()); // other content
+        mvc.perform(ask(student, course, "{\"title\": \"lỗi cài jdk\", \"content\": \"Em không cài được\"}"))
+                .andExpect(status().isCreated()); // other title (exact comparison, not the ai_ci collation)
+        clock.advance(java.time.Duration.ofSeconds(61));
+        mvc.perform(ask(student, course, body)).andExpect(status().isCreated()); // the window has passed
+        assertThat(questionCount()).isEqualTo(4);
+    }
+
+    @Test
+    void ask_twoIdenticalSubmissionsAtOnce_201And409_oneRow_UCS17E3() throws Exception {
+        String body = "{\"title\": \"Bấm gửi hai lần\", \"content\": \"Nội dung\"}";
+        java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(2);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+        try {
+            java.util.List<java.util.concurrent.Future<Integer>> futures = new java.util.ArrayList<>();
+            for (int i = 0; i < 2; i++) {
+                futures.add(pool.submit(() -> {
+                    start.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                    return mvc.perform(ask(student, course, body)).andReturn().getResponse().getStatus();
+                }));
+            }
+            java.util.List<Integer> statuses = new java.util.ArrayList<>();
+            for (java.util.concurrent.Future<Integer> future : futures) {
+                statuses.add(future.get(30, java.util.concurrent.TimeUnit.SECONDS));
+            }
+            assertThat(statuses).containsExactlyInAnyOrder(201, 409);
+        } finally {
+            pool.shutdownNow();
+        }
+        assertThat(questionCount()).isEqualTo(1);
+    }
     private long questionCount() {
         return jdbc.sql("SELECT COUNT(*) FROM course_questions WHERE enrollment_id = ?").param(enrollment)
                 .query(Long.class).single();

@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 
 import com.edumy.authoring.dto.response.ChapterResponse;
 import com.edumy.authoring.dto.response.InstructorCourseDetailResponse;
+import com.edumy.authoring.api.EnrollmentCountPort;
 import com.edumy.authoring.dto.response.InstructorCourseSummaryResponse;
 import com.edumy.authoring.dto.response.LessonResponse;
 import com.edumy.authoring.dto.response.PendingCourseResponse;
@@ -52,12 +53,14 @@ public class CourseQueryService {
     private final CourseCoInstructorRepository coInstructors;
     private final UserQueryApi users;
     private final CourseMapper courseMapper;
+    private final EnrollmentCountPort enrollmentCounts;
     private final ChapterMapper chapterMapper;
     private final LessonMapper lessonMapper;
 
     public CourseQueryService(CourseRepository courses, ChapterRepository chapters, LessonRepository lessons,
                               CourseCoInstructorRepository coInstructors, UserQueryApi users,
-                              CourseMapper courseMapper, ChapterMapper chapterMapper, LessonMapper lessonMapper) {
+                              CourseMapper courseMapper, ChapterMapper chapterMapper, LessonMapper lessonMapper,
+                              EnrollmentCountPort enrollmentCounts) {
         this.courses = courses;
         this.chapters = chapters;
         this.lessons = lessons;
@@ -66,22 +69,27 @@ public class CourseQueryService {
         this.courseMapper = courseMapper;
         this.chapterMapper = chapterMapper;
         this.lessonMapper = lessonMapper;
+        this.enrollmentCounts = enrollmentCounts;
     }
 
     /**
      * UC-I02: courses where {@code instructorId} is the main instructor or an accepted co-instructor (BR-03; pending,
      * declined and removed invitations do not count), any status, newest first (fixed order, client sort ignored).
-     * Statements: page + count (skipped by Spring Data when the first page is not full) + outline counts of the page.
+     * Statements: page + count (skipped by Spring Data when the first page is not full) + outline counts of the page +
+     * enrolled students of the page (UC-I02 "số học viên", P13, through {@code EnrollmentCountPort}).
      */
     public Page<InstructorCourseSummaryResponse> listMine(Long instructorId, Pageable pageable) {
         Page<InstructorCourseView> page = courses.findInstructorCourses(instructorId, null, unsorted(pageable));
+        List<Long> ids = page.map(InstructorCourseView::getId).getContent();
         Map<Long, OutlineCountView> counts = page.isEmpty() ? Map.of()
-                : chapters.countOutlineByCourseIdIn(page.map(InstructorCourseView::getId).getContent()).stream()
+                : chapters.countOutlineByCourseIdIn(ids).stream()
                         .collect(Collectors.toMap(OutlineCountView::getCourseId, Function.identity()));
+        Map<Long, Long> students = enrollmentCounts.countStudents(ids); // P13, port implemented by learning
         return page.map(course -> {
             OutlineCountView count = counts.get(course.getId());
             return courseMapper.toSummary(course, relation(course.getMainInstructorId(), instructorId),
-                    count == null ? 0 : count.getChapterCount(), count == null ? 0 : count.getLessonCount());
+                    count == null ? 0 : count.getChapterCount(), count == null ? 0 : count.getLessonCount(),
+                    students.getOrDefault(course.getId(), 0L));
         });
     }
 

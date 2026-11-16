@@ -1,5 +1,7 @@
 package com.edumy.learning.service;
 
+import java.time.Instant;
+
 import java.time.Clock;
 
 import com.edumy.authoring.api.LessonQueryApi;
@@ -28,6 +30,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class QuestionService {
 
+    /** UC-S17 E3 (P13): the same title and content again within this window is a repeated submission. */
+    static final java.time.Duration DUPLICATE_WINDOW = java.time.Duration.ofSeconds(60);
+
     private static final Logger log = LoggerFactory.getLogger(QuestionService.class);
 
     private final CourseQuestionRepository questions;
@@ -55,17 +60,26 @@ public class QuestionService {
      * unknown course); a lesson that is not a lesson of this course (or does not exist) → 422
      * {@code LESSON_COURSE_MISMATCH} (BR-37; trigger {@code trg_course_questions_lesson_course} is the backstop). An
      * instructor of the course who is also enrolled answers, not asks → 422 {@code ENROLLMENT_OWN_COURSE} (BR-32, P10).
+     * The same title and content again from the same enrollment within 60 s → 409 {@code QA_QUESTION_DUPLICATE} (UC-S17
+     * E3, P13; the enrollment row lock serialises double submissions).
      */
     @Transactional
     public QuestionThreadResponse ask(Long studentId, Long courseId, Long lessonId, String title, String content) {
-        Enrollment enrollment = enrollments.findByStudentIdAndCourseId(studentId, courseId)
+        // row lock (P13): two submissions of one enrollment queue up, so the second sees the first (UC-S17 E3)
+        Enrollment enrollment = enrollments.findByStudentIdAndCourseIdForUpdate(studentId, courseId)
                 .orElseThrow(BusinessException::notFound);
         ownCourse.requireNotInstructor(studentId, courseId); // BR-32 / RBAC §3.3
         if (lessonId != null && !courseId.equals(lessons.findCourseId(lessonId).orElse(null))) {
             throw new BusinessException(ErrorCode.LESSON_COURSE_MISMATCH);
         }
-        CourseQuestion question = questions.save(CourseQuestion.ask(enrollment, lessonId, title, content,
-                clock.instant()));
+        Instant now = clock.instant();
+        CourseQuestion candidate = CourseQuestion.ask(enrollment, lessonId, title, content, now);
+        for (CourseQuestion recent : questions.findRecentByEnrollment(enrollment.getId(), now.minus(DUPLICATE_WINDOW))) {
+            if (recent.getTitle().equals(candidate.getTitle()) && recent.getContent().equals(candidate.getContent())) {
+                throw new BusinessException(ErrorCode.QA_QUESTION_DUPLICATE); // UC-S17 E3 (P13)
+            }
+        }
+        CourseQuestion question = questions.save(candidate);
         QuestionThreadResponse response = flushAndRead(studentId, question);
         log.info("Question asked: questionId={}, courseId={}, userId={}", question.getId(), courseId, studentId);
         return response;

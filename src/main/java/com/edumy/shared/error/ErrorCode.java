@@ -73,6 +73,7 @@ public enum ErrorCode {
     ENROLLMENT_COURSE_NOT_FREE(HttpStatus.UNPROCESSABLE_CONTENT),     // UC-S15, BR-09: only free courses are enrolled directly
     ENROLLMENT_OWN_COURSE(HttpStatus.UNPROCESSABLE_CONTENT),          // UC-S15 E2, BR-32: instructors view as instructors
     REVIEW_HIDDEN_BY_ADMIN(HttpStatus.CONFLICT),
+    QA_QUESTION_DUPLICATE(HttpStatus.CONFLICT),                       // UC-S17 E3 (P13): same title + content within 60 s
     QA_CONTENT_HIDDEN_BY_ADMIN(HttpStatus.CONFLICT),                  // BR-41: hidden question / answer is read-only for its author
     QA_REPLY_NOT_ALLOWED(HttpStatus.FORBIDDEN),
     CERTIFICATE_PDF_FAILED(HttpStatus.INTERNAL_SERVER_ERROR);         // UC-S20 E2 (P12): the PDF could not be produced, retry

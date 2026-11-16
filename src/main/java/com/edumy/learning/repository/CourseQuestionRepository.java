@@ -22,6 +22,18 @@ import org.springframework.data.repository.query.Param;
 public interface CourseQuestionRepository extends JpaRepository<CourseQuestion, Long> {
 
     /**
+     * UC-S17 E3 (P13): the enrollment's non-deleted questions asked since {@code since} (a handful at most), to refuse a
+     * repeated submission; compared exactly in Java (the ai_ci collation would also match other accents / cases).
+     */
+    @Query("""
+            select q from CourseQuestion q
+            where q.enrollment.id = :enrollmentId and q.createdAt >= :since
+              and q.visibilityStatus <> com.edumy.learning.entity.ContentStatus.DELETED
+            """)
+    java.util.List<CourseQuestion> findRecentByEnrollment(@Param("enrollmentId") Long enrollmentId,
+                                                         @Param("since") java.time.Instant since);
+
+    /**
      * UC-S17 {@code GET /courses/{courseId}/questions}: questions of a course, newest first; {@code lessonId} null =
      * every lesson and course-level questions. Visible only, plus hidden ones when {@code includeHidden} (admin).
      */
