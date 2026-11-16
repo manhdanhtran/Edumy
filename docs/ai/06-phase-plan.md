@@ -32,7 +32,7 @@ A stub endpoint:
 
 Stub list (phase 1): POST `/orders` (T1) · POST `/orders/{code}/cancel` · POST `/orders/{code}/payments` · POST
 `/webhooks/payments/fake` · POST `/admin/payments/{id}/resolve` · GET `/me/certificates/{code}/pdf` · all schedulers.
-**Since P11** only GET `/me/certificates/{code}/pdf` is left (P12); the commerce endpoints and the schedulers are real
+**Since P11** only GET `/me/certificates/{code}/pdf` was left; it is real since P12 (ADR-013), so no endpoint is a stub; the commerce endpoints and the schedulers are real
 (ADR-011; schedulers on with `edumy.scheduler.enabled=true`).
 
 ## Phase 2 — business logic

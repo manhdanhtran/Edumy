@@ -92,6 +92,7 @@
 | `AUTH_LOGIN_TEMPORARILY_BLOCKED` | 429 | NFR-03: 5 consecutive failed logins for the email → every login for it blocked 15 min (correct password too); header `Retry-After` (docs/ai/04 §4.4) |
 | `TOKEN_RESEND_TOO_SOON` | 429 | D-03: resend of the verification code within 60 s of the last one (forgot password never shows it, Q3) |
 | `RATE_LIMITED` | 429 | NFR-03: certificate verification over 30 req/min per IP; header `Retry-After` (docs/ai/04 §4.4) |
+| `CERTIFICATE_PDF_FAILED` | 500 | UC-S20 E2 (P12, additive): the certificate PDF could not be produced; nothing changed, retry |
 | `INTERNAL_ERROR` | 500 | generic Vietnamese detail, never the exception message; also unmapped CHECK / trigger violations |
 - `ConstraintViolationTranslator`: walks the cause chain down to the root `java.sql.SQLException` and decides by
   **vendor error code**, never by the Spring/Hibernate exception type (Spring JDBC 7.0 does not map CHECK error 3819 to
@@ -116,7 +117,8 @@
   | `uq_users_email` | `EMAIL_ALREADY_REGISTERED` | 409 |
   | `uq_categories_name`, `uq_categories_slug` | `CATEGORY_ALREADY_EXISTS` | 409 |
   | `uq_cci_course_instructor` | `COURSE_CO_INSTRUCTOR_ALREADY_INVITED` | 409 |
-  | `ck_lessons_type` + `ck_lessons_content_match`; `ck_orders_status` + `ck_orders_state`; `ck_enrollments_source` + `ck_enrollments_source_order` | `INTERNAL_ERROR` | 500 |
+  | `ck_lessons_type` + `ck_lessons_content_match`; `ck_orders_status` + `ck_orders_state`; `ck_enrollments_source` + `ck_enrollments_source_order` | `CERTIFICATE_PDF_FAILED` | 500 | UC-S20 E2 (P12, additive): the certificate PDF could not be produced; nothing changed, retry |
+| `INTERNAL_ERROR` | 500 |
 
   An unknown value in these columns breaks two overlapping CHECKs and MySQL reports only one of them, so **both names of
   a pair are listed** and always give the same result.
@@ -128,8 +130,10 @@
   | 1062 UNIQUE | `DATA_CONFLICT` | 409 | WARN, full cause |
   | 1451 FK, parent still referenced | `DATA_CONFLICT` | 409 | WARN |
   | 1452 FK, missing parent | `RESOURCE_NOT_FOUND` | 404, body identical to every other 404 (NFR-01) | WARN |
-  | 3819 CHECK | `INTERNAL_ERROR` | 500 | ERROR, full cause |
-  | 1644 / SQLState `45000` trigger | `INTERNAL_ERROR` | 500 | ERROR, full cause |
+  | 3819 CHECK | `CERTIFICATE_PDF_FAILED` | 500 | UC-S20 E2 (P12, additive): the certificate PDF could not be produced; nothing changed, retry |
+| `INTERNAL_ERROR` | 500 | ERROR, full cause |
+  | 1644 / SQLState `45000` trigger | `CERTIFICATE_PDF_FAILED` | 500 | UC-S20 E2 (P12, additive): the certificate PDF could not be produced; nothing changed, retry |
+| `INTERNAL_ERROR` | 500 | ERROR, full cause |
 
   A CHECK or trigger violation reaching the database means the application skipped a validation, so it is a server
   error. The constraint name, BR code and MySQL message are only logged, **never** put in the response.
@@ -647,7 +651,7 @@ Commerce payments (P11, ADR-011):
 | GET `/instructor/courses/{courseId}/students` | I19 | R |
 | POST `/admin/questions/{id}/hide` · `/restore` · `/admin/answers/{id}/hide` · `/restore` | A19 | R |
 | GET `/me/certificates` | S20 | R |
-| GET `/me/certificates/{code}/pdf` | S20 | **S** (static sample PDF) |
+| GET `/me/certificates/{code}/pdf` | S20 | R (P12, ADR-013) |
 
 **Learning access (P10, 403/404 principle, docs/ai/04 §4.3)** — `/learn/courses/{id}`, `/learn/lessons/{id}` (+ `/visit`, `/completion`), `GET`/`POST /courses/{id}/questions`: a caller without the needed relation (enrollment; for reads also course instructor or admin, D-32) gets **403 `ENROLLMENT_REQUIRED`** when the course is **published** (one body for every caller; the SPA shows the course page, UC-S09), and **404 `RESOURCE_NOT_FOUND`** identical to an unknown id for a hidden / draft / pending / rejected course. Question threads, answers, reviews, certificates and orders stay 404 for strangers (not public). Instructor views (`/instructor/questions`, `/instructor/courses/{id}/students`) are guarded by `@enrollmentAccess.isActiveInstructor()` / `isCourseInstructor(#courseId)`: no active instructor role → 403, not an instructor of the course → 404.
 
@@ -662,6 +666,8 @@ Commerce payments (P11, ADR-011):
 - `GET /me/certificates` → **200** `PagedModel<CertificateResponse {id,certificateCode,enrollmentId,courseId,courseTitle,studentName,instructorName,issuedAt}>`, newest first; 2 statements + the D-48 catch-up (UC-S20 step 1, ADR-009): the caller's enrollments at 100 % without a certificate (100 % reached because a lesson was deleted) get it first — idempotent, race-safe (enrollment row lock; two concurrent reads → one certificate), +1 statement (+1 when the caller has a partially completed enrollment without certificate).
 
 **P07-learning (certificate PDF stub, ADR-005 phase 1)** — `GET /me/certificates/{code}/pdf` (login only, scoped by the caller's id; UC-S20 step 3): **200** `Content-Type: application/pdf`, `Content-Disposition: attachment; filename="<code>.pdf"`, `Cache-Control: no-store`, `X-Edumy-Stub: true` (also on its error responses), body = the static sample `classpath:static/sample/certificate-sample.pdf` (one page, "SAMPLE CERTIFICATE - Edumy (phase 1 stub)"; phase 2 renders the stored snapshot on demand, never stored, D-48). Another student's code, unknown code and a code not matching `EDU-XXXX-XXXX-XXXX` (lowercase, suffix, over-long) → 404 `RESOURCE_NOT_FOUND`, identical bodies; dot segments / percent-escapes in the code are refused by the servlet firewall with an empty 400 before the handler. 1 statement (read-only). The sample is not publicly reachable at `/sample/certificate-sample.pdf` (401 without a token: `anyRequest().authenticated()`).
+
+**P12 (certificate PDF, real)** — `GET /me/certificates/{code}/pdf` replaces the stub above: **200** `application/pdf`, `Content-Disposition: attachment; filename="<code>.pdf"` (the code is `[A-Z0-9-]`), `Cache-Control: no-store`, no `X-Edumy-Stub`. The PDF is rendered now from the stored snapshot (student name, course title, main instructor, issue date dd/MM/yyyy in Vietnam time, code; BR-40 — later renames never change it) plus the verification link `{edumy.frontend.base-url}/certificates/{code}`; never stored (D-48). Unknown, malformed or another student's code → 404 `RESOURCE_NOT_FOUND` (identical, NFR-01); rendering failure → 500 `CERTIFICATE_PDF_FAILED` (E2, nothing changed).
 
 **BR-32 inside learning (P10, business review BC-M3)** — an instructor of a course (main or accepted co-instructor, whatever the role state: e.g. a student who enrolled first and was invited later) has no student rights on it: review create / edit, lesson completion (hence no certificate) and asking a question → 422 `ENROLLMENT_OWN_COURSE`; the visit records nothing (D-32). Removed from the course (UC-I16), the person is a plain student again.
 

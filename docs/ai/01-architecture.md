@@ -227,7 +227,7 @@ learning/
 │                 QuestionAnswerRepository, CertificateRepository
 ├── security/     EnrollmentAccess ("enrollmentAccess"), QaAccess ("qaAccess")
 ├── listener/     CertificateIssuedListener            # logs CertificateIssued after commit (P06-G6)
-└── integration/  CertificatePdfRenderer (interface), SampleCertificatePdfRenderer   # STUB-P1
+└── integration/  CertificatePdfRenderer (port), CertificatePdfData, OpenPdfCertificateRenderer, CertificateRenderingException   # P12, ADR-013
 ```
 
 ### notification — no tables, no HTTP

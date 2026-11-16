@@ -92,6 +92,7 @@ P10 review + P10-fix-a (security minors + Q-g identity) · P10-fix-b (authoring:
 | P11-fix-c R-03 concurrency tests force real interleavings; mutation checks | done | 2d9c545 | 2373 tests green (+6 net: rewrites + scenarios c, d, e, g, j), suite 20 min 13 s (machine slow; same tests ran 8-10 min before); see `### P11-fix-c` |
 | P11-fix-d R-05 paid orders keep no pending attempt; R-06 timeouts + lookup outside the transaction | done | 0d3e9f2 | 2379 tests green (+6: PaymentWebhookIT 1, ReconciliationIT 2, PaymentPropertiesTest 3), suite 14 min 33 s; see `### P11-fix-d` |
 | P11-fix-e daily code cleanup (ADR-012), ORDER_EXPIRED, example.com test addresses, VS Code note | done | fb96241 | 2379 tests green (no count change), wall time 7 h 31 min because the machine slept (not a measurement); see `### P11-fix-e` |
+| P12 certificate PDF (OpenPDF 2.2.5, Noto Sans, ADR-013) | done | eb14bc1 | 2378 tests green (+9 new, −10 stub tests), suite 15 min 46 s; see `## P12` |
 
 ## P11 — commerce (plan approved 2026-11-15 with Q1–Q5 + R1–R3; ADR-011)
 Units P11-a … P11-f. Plan: lock order cart → order → attempt → enrollments / cart lines; scalar-first reads (R1);
@@ -273,6 +274,21 @@ Commerce is real: T1 (P11-b), create QR (P11-c), webhook + T2 (P11-a), cancel (P
 | P11-fix-d — `PaymentWebhookIT#lateResultOfQr1PaysTheOrder_qr2IsClosed…R05`, `ReconciliationIT#activated_closesTheOrdersOtherPendingAttempt_R05` | `closeOtherPendingAttempts` call removed | RED — 2 tests |
 | P11-fix-d — `ReconciliationIT#detail_providerCalledOutsideTheTransaction…R06` | `getAdminDetail` back inside `@Transactional(readOnly = true)` | RED — 1 test (1 active connection during the lookup) |Every mutation was applied in the working tree only, the file restored byte for byte afterwards (`git diff` checked), never
 committed. Note: the M3 run took 5.8 h wall time because the machine slept; the result is unaffected.
+
+## P12 — certificate PDF (UC-S20, §7, NFR-05; ADR-013)
+- OpenPDF **2.2.5** (published 2026-03-09; LGPL 2.1 / MPL 2.0) — not 3.0.5: its mandatory `brotli4j` dependency ships
+  native libraries (not approved). Noto Sans Regular / Bold (OFL 1.1) in `resources/fonts` with the licence text;
+  `.gitattributes` `*.ttf binary`; docs/ai/third-party-licenses.md.
+- Port `CertificatePdfRenderer#render(CertificatePdfData)` (snapshot + verification link
+  `{edumy.frontend.base-url}/certificates/{code}`); `OpenPdfCertificateRenderer` (A4 landscape, Identity-H embedded
+  fonts, fonts read once at start-up); rendering failure → 500 `CERTIFICATE_PDF_FAILED` (new, additive), logged with the
+  code and stack trace, nothing written. Stub marker removed; `SampleCertificatePdfRenderer`, the static sample PDF and
+  their tests deleted.
+- Tests: `OpenPdfCertificateRendererTest` (4: Vietnamese text "Nguyễn Thị Ánh", course, instructor, date in Vietnam
+  time, code and link extracted with `PdfTextExtractor`; one landscape page; < 5 s per PDF), `CertificatePdfIT` (3:
+  owner PDF of the snapshot after a rename, headers, identical 404 for foreign / unknown / malformed, 401),
+  `CertificateQueryServiceTest` (2: data passed to the renderer, E2 → `CERTIFICATE_PDF_FAILED`). Removed:
+  `CertificatePdfStubIT` (8), `SampleCertificatePdfRendererTest` (2).
 
 ## P09 summary
 - **P09-a** constraint coverage: `docs/ai/09-constraint-coverage.md` maps DDD §8 rows 1-31 (+ one valid-row test per table) to the existing `*SchemaIT` tests; only gap (row 5 NOT NULL) closed with 2 tests. No separate `ConstraintsIT`.
