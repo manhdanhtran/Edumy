@@ -47,6 +47,7 @@ public class FakeQrPaymentGateway implements PaymentGateway {
     private final Map<String, PaymentLookup> outcomes = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> queries = new ConcurrentHashMap<>();
     private volatile boolean unavailable;
+    private final Set<String> failingReferences = ConcurrentHashMap.newKeySet();
     private final java.util.concurrent.atomic.AtomicReference<Hold> queryHold = new java.util.concurrent.atomic.AtomicReference<>();
     private final java.util.concurrent.atomic.AtomicReference<Hold> createQrHold = new java.util.concurrent.atomic.AtomicReference<>();
 
@@ -70,7 +71,7 @@ public class FakeQrPaymentGateway implements PaymentGateway {
     public PaymentLookup query(String reference) {
         queries.computeIfAbsent(reference, r -> new AtomicInteger()).incrementAndGet();
         Hold.pass(queryHold.getAndSet(null));
-        if (unavailable) {
+        if (unavailable || failingReferences.contains(reference)) {
             throw new PaymentGatewayException("fake_unavailable");
         }
         return outcomes.getOrDefault(reference, new PaymentLookup.NotPaid());
@@ -123,6 +124,11 @@ public class FakeQrPaymentGateway implements PaymentGateway {
     /** Every call ({@link #createQr}, {@link #query}) throws {@link PaymentGatewayException} while {@code true}. */
     public void setUnavailable(boolean unavailable) {
         this.unavailable = unavailable;
+    }
+
+    /** Every {@link #query} of {@code reference} throws {@link PaymentGatewayException} (one broken order). */
+    public void failQueriesFor(String reference) {
+        failingReferences.add(reference);
     }
 
     /** Number of {@link #query} calls for {@code reference} since the last {@link #reset}. */
@@ -187,6 +193,7 @@ public class FakeQrPaymentGateway implements PaymentGateway {
 
     public void reset() {
         queryHold.set(null);
+        failingReferences.clear();
         createQrHold.set(null);
         outcomes.clear();
         queries.clear();

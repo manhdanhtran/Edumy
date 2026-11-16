@@ -20,7 +20,6 @@ import com.edumy.commerce.integration.FakeQrPaymentGateway;
 import com.edumy.shared.security.RoleCode;
 import com.edumy.support.CommerceFixtures;
 import com.edumy.support.CommerceFixtures.FixtureOrder;
-import com.edumy.support.Concurrently;
 import com.edumy.support.CourseFixtures;
 import com.edumy.support.JwtTestTokens;
 import com.edumy.support.JwtTestTokens.Session;
@@ -62,6 +61,21 @@ class OrderWriteIT {
     JdbcClient jdbc;
     @Autowired
     FakeQrPaymentGateway gateway;
+    @Autowired
+    com.edumy.support.PaymentTestHooks hooks;
+    @org.springframework.beans.factory.annotation.Value("${edumy.payment.webhook-secret}")
+    String secret;
+
+    int webhook(String ref, String orderCode, long amount) throws Exception {
+        String body = "{\"transactionRef\":\"" + ref + "\",\"orderCode\":\"" + orderCode + "\",\"amount\":" + amount
+                + ",\"status\":\"success\"}";
+        javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+        mac.init(new javax.crypto.spec.SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        return mvc.perform(post("/api/v1/webhooks/payments/fake").contentType(MediaType.APPLICATION_JSON)
+                        .content(body).header("X-Signature",
+                                java.util.HexFormat.of().formatHex(mac.doFinal(body.getBytes(StandardCharsets.UTF_8)))))
+                .andReturn().getResponse().getStatus();
+    }
 
     CourseFixtures courses;
     CommerceFixtures commerce;
@@ -320,36 +334,56 @@ class OrderWriteIT {
                 .andExpect(status().isCreated());
     }
 
+    /**
+     * UC-S04 E3 / AC-21, forced interleaving (review P11-R-03): the first request stops inside the lookup of the old
+     * order's attempt while it holds the student's cart; the second must wait for that lock, then finds the order the
+     * first one created and returns it (200) — one replacement, one lookup, one pending order.
+     */
     @Test
-    void create_twoConcurrentRequests_onePendingOrder_201And200_UCS04E3() throws Exception {
-        commerce.cart(student.userId(), courseA, courseB);
-
-        List<MvcResult> results = Concurrently.times(2, () -> mvc.perform(create(student, null)).andReturn());
-
-        assertThat(results).extracting(r -> r.getResponse().getStatus()).containsExactlyInAnyOrder(201, 200);
-        assertThat(results).extracting(r -> (String) JsonPath.read(
-                r.getResponse().getContentAsString(StandardCharsets.UTF_8), "$.orderCode")).containsOnly(
-                jdbc.sql("SELECT order_code FROM orders WHERE student_id = ?").param(student.userId())
-                        .query(String.class).single());
-        assertThat(allOrders()).isEqualTo(1);
-    }
-
-    @Test
-    void create_twoConcurrentRequestsReplacingAnOldOrder_replacedOnce_onePendingOrder_AC21() throws Exception {
+    void create_secondRequestWaitsForTheCart_thenGetsTheOrderTheFirstCreated_201And200_UCS04E3_AC21()
+            throws Exception {
         String ref = CommerceFixtures.newReference();
         FixtureOrder old = pendingOrder(ref, courseA);
         commerce.cart(student.userId(), courseA, courseB);
 
-        List<Integer> statuses = Concurrently.times(2,
-                () -> mvc.perform(create(student, null)).andReturn().getResponse().getStatus());
+        com.edumy.support.Interleave.Results<MvcResult, MvcResult> results =
+                com.edumy.support.Interleave.secondWaitsForTheFirst(jdbc, gateway.holdNextQuery(),
+                        () -> mvc.perform(create(student, null)).andReturn(),
+                        () -> mvc.perform(create(student, null)).andReturn());
 
-        assertThat(statuses).containsExactlyInAnyOrder(201, 200);
-        assertThat(orders("pending")).isEqualTo(1);
+        assertThat(results.first().getResponse().getStatus()).isEqualTo(201);
+        assertThat(results.second().getResponse().getStatus()).isEqualTo(200);
+        String created = JsonPath.read(results.first().getResponse().getContentAsString(StandardCharsets.UTF_8),
+                "$.orderCode");
+        assertThat((String) JsonPath.read(results.second().getResponse().getContentAsString(StandardCharsets.UTF_8),
+                "$.orderCode")).isEqualTo(created);
         assertThat(commerce.orderColumn(old.code(), "cancel_reason", String.class)).isEqualTo("replaced");
+        assertThat(commerce.paymentColumn(ref, "status", String.class)).isEqualTo("expired");
         assertThat(gateway.queryCount(ref)).isEqualTo(1);
+        assertThat(orders("pending")).isEqualTo(1);
         assertThat(allOrders()).isEqualTo(2);
     }
 
+    /** Same race with a webhook paying the old order while T1 holds it: T1 sees it paid (409), the webhook ignores. */
+    @Test
+    void create_webhookForTheOldOrderWaitsForT1_t1FindsItPaid409_oneEffect() throws Exception {
+        String ref = CommerceFixtures.newReference();
+        FixtureOrder old = pendingOrder(ref, courseA);
+        commerce.cart(student.userId(), courseA, courseB);
+        gateway.simulatePaid(ref, 300_000);
+
+        com.edumy.support.Interleave.Results<Integer, Integer> results =
+                com.edumy.support.Interleave.secondWaitsForTheFirst(jdbc, gateway.holdNextQuery(),
+                        () -> mvc.perform(create(student, null)).andReturn().getResponse().getStatus(),
+                        () -> webhook(ref, old.code(), 300_000));
+
+        assertThat(results.first()).isEqualTo(409); // ORDER_ALREADY_PAID, recorded by T1's lookup
+        assertThat(results.second()).isEqualTo(200); // the webhook found it applied
+        assertThat(commerce.orderColumn(old.code(), "status", String.class)).isEqualTo("paid");
+        assertThat(commerce.enrollments(student.userId())).containsOnlyKeys(courseA);
+        assertThat(hooks.published()).hasSize(1);
+        assertThat(allOrders()).isEqualTo(1);
+    }
     // ---- UC-S16 cancel
 
     @Test

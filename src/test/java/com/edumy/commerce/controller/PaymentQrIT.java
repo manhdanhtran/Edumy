@@ -18,7 +18,6 @@ import com.edumy.commerce.integration.FakeQrPaymentGateway;
 import com.edumy.shared.security.RoleCode;
 import com.edumy.support.CommerceFixtures;
 import com.edumy.support.CommerceFixtures.FixtureOrder;
-import com.edumy.support.Concurrently;
 import com.edumy.support.CourseFixtures;
 import com.edumy.support.JwtTestTokens;
 import com.edumy.support.JwtTestTokens.Session;
@@ -58,6 +57,20 @@ class PaymentQrIT {
     FakeQrPaymentGateway gateway;
     @Autowired
     MutableClock clock;
+    @org.springframework.beans.factory.annotation.Value("${edumy.payment.webhook-secret}")
+    String secret;
+
+    int webhook(String ref, String orderCode, long amount) throws Exception {
+        String body = "{\"transactionRef\":\"" + ref + "\",\"orderCode\":\"" + orderCode + "\",\"amount\":" + amount
+                + ",\"status\":\"success\"}";
+        javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+        mac.init(new javax.crypto.spec.SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        return mvc.perform(post("/api/v1/webhooks/payments/fake")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content(body)
+                        .header("X-Signature",
+                                java.util.HexFormat.of().formatHex(mac.doFinal(body.getBytes(StandardCharsets.UTF_8)))))
+                .andReturn().getResponse().getStatus();
+    }
 
     CourseFixtures courses;
     CommerceFixtures commerce;
@@ -244,23 +257,47 @@ class PaymentQrIT {
         assertThat(attempts()).isZero();
     }
 
+    /**
+     * BR-16 forced interleaving (review P11-R-03): the first request stops inside the provider's createQr while it holds
+     * the cart and the order; the second must wait, then shows the attempt the first one stored (200, same reference).
+     */
     @Test
-    void twoConcurrentRequests_onePendingAttempt_201And200_sameReference_BR16() throws Exception {
-        List<MvcResult> results = Concurrently.times(2, () -> qr(student, order.code()).andReturn());
+    void secondRequestWaitsForTheFirst_thenShowsItsQr_201And200_sameReference_BR16() throws Exception {
+        com.edumy.support.Interleave.Results<MvcResult, MvcResult> results =
+                com.edumy.support.Interleave.secondWaitsForTheFirst(jdbc, gateway.holdNextCreateQr(),
+                        () -> qr(student, order.code()).andReturn(), () -> qr(student, order.code()).andReturn());
 
-        assertThat(results).extracting(r -> r.getResponse().getStatus()).containsExactlyInAnyOrder(201, 200);
-        List<String> references = results.stream().map(r -> {
-            try {
-                return (String) JsonPath.read(r.getResponse().getContentAsString(StandardCharsets.UTF_8),
-                        "$.transactionRef");
-            } catch (java.io.UnsupportedEncodingException e) {
-                throw new IllegalStateException(e);
-            }
-        }).toList();
-        assertThat(references.get(0)).isEqualTo(references.get(1));
+        assertThat(results.first().getResponse().getStatus()).isEqualTo(201);
+        assertThat(results.second().getResponse().getStatus()).isEqualTo(200);
+        String first = JsonPath.read(results.first().getResponse().getContentAsString(StandardCharsets.UTF_8),
+                "$.transactionRef");
+        assertThat((String) JsonPath.read(results.second().getResponse().getContentAsString(StandardCharsets.UTF_8),
+                "$.transactionRef")).isEqualTo(first);
         assertThat(attempts()).isEqualTo(1);
     }
 
+    /**
+     * Review scenario (e): a new QR is being made (stopped inside the lookup of the expired attempt) when the webhook of
+     * that attempt arrives; the webhook waits. Released, the lookup sees the payment: create QR records it and answers
+     * 409 {@code ORDER_ALREADY_PAID}, no new attempt; the webhook finds it applied.
+     */
+    @Test
+    void webhookForTheExpiredAttemptWaitsWhileANewQrIsMade_qrFindsItPaid409_noNewAttempt() throws Exception {
+        String first = ref(qr(student, order.code()).andExpect(status().isCreated()));
+        expireQr(first);
+
+        com.edumy.support.Interleave.Results<Integer, Integer> results =
+                com.edumy.support.Interleave.secondWaitsForTheFirst(jdbc, gateway.holdNextQuery(),
+                        () -> qr(student, order.code()).andReturn().getResponse().getStatus(),
+                        () -> webhook(first, order.code(), 450_000));
+
+        assertThat(results.first()).isEqualTo(409); // ORDER_ALREADY_PAID
+        assertThat(results.second()).isEqualTo(200);
+        assertThat(attempts()).isEqualTo(1);
+        assertThat(commerce.paymentColumn(first, "status", String.class)).isEqualTo("success");
+        assertThat(commerce.orderColumn(order.code(), "status", String.class)).isEqualTo("paid");
+        assertThat(commerce.enrollments(student.userId())).containsOnlyKeys(courseA);
+    }
     @Test
     void notPending_409_foreign404IdenticalToUnknown_noToken401() throws Exception {
         FixtureOrder paid = commerce.order(student.userId()).line(courseA, 450_000).paid().insert();

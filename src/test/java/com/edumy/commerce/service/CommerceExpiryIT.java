@@ -17,7 +17,6 @@ import com.edumy.commerce.integration.FakeQrPaymentGateway;
 import com.edumy.shared.security.RoleCode;
 import com.edumy.support.CommerceFixtures;
 import com.edumy.support.CommerceFixtures.FixtureOrder;
-import com.edumy.support.Concurrently;
 import com.edumy.support.CourseFixtures;
 import com.edumy.support.MySqlSpringBootTest;
 import com.edumy.support.TestUsers;
@@ -49,6 +48,8 @@ class CommerceExpiryIT {
     JdbcClient jdbc;
     @Autowired
     PlatformTransactionManager txManager;
+    @Autowired
+    com.edumy.support.PaymentTestHooks hooks;
 
     CourseFixtures courses;
     CommerceFixtures commerce;
@@ -187,8 +188,13 @@ class CommerceExpiryIT {
 
     // ---- NFR-09: several instances
 
+    /**
+     * NFR-09 forced overlap (review P11-R-03): run A stops inside the lookup of its first order; run B, started while A
+     * holds it, must finish on its own, skipping that order. Every order is handled exactly once (one lookup each), both
+     * runs did work, and the counts add up to exactly 10.
+     */
     @Test
-    void twoRunsAtTheSameTime_everyOrderHandledOnce_oneLookupPerOrder_NFR09() throws Exception {
+    void twoRunsOverlapping_bothWork_everyOrderHandledOnce_oneLookupPerOrder_NFR09() throws Exception {
         List<FixtureOrder> orders = new ArrayList<>();
         List<String> refs = new ArrayList<>();
         for (int i = 0; i < 10; i++) {
@@ -199,16 +205,64 @@ class CommerceExpiryIT {
             orders.add(overdueOrder(buyer, ref));
         }
 
-        List<CommerceExpiryService.RunResult> results = Concurrently.times(2, expiry::cancelOverdueOrders);
+        com.edumy.support.Interleave.Results<CommerceExpiryService.RunResult, CommerceExpiryService.RunResult> runs =
+                com.edumy.support.Interleave.secondFinishesWhileFirstHeld(gateway.holdNextQuery(),
+                        expiry::cancelOverdueOrders, expiry::cancelOverdueOrders);
 
-        assertThat(results.get(0).processed() + results.get(1).processed()).isGreaterThanOrEqualTo(10);
-        assertThat(results).extracting(CommerceExpiryService.RunResult::failed).containsOnly(0);
+        assertThat(runs.first().processed()).isGreaterThanOrEqualTo(1);
+        assertThat(runs.second().processed()).isGreaterThanOrEqualTo(1);
+        assertThat(runs.first().processed() + runs.second().processed()).isEqualTo(10);
+        assertThat(runs.first().failed() + runs.second().failed()).isZero();
         for (int i = 0; i < 10; i++) {
             assertThat(status(orders.get(i))).isEqualTo("cancelled");
             assertThat(gateway.queryCount(refs.get(i))).as(refs.get(i)).isEqualTo(1);
         }
     }
 
+    /** Review scenario (j): one broken order is rolled back and counted as failed; the others of the run go through. */
+    @Test
+    void oneOrderFails_theOthersOfTheRunAreProcessed_theBrokenOneStaysPending() {
+        List<FixtureOrder> orders = new ArrayList<>();
+        String broken = null;
+        for (int i = 0; i < 3; i++) {
+            TestUser buyer = users.create(RoleCode.STUDENT);
+            commerce.track(buyer.id());
+            String ref = CommerceFixtures.newReference();
+            orders.add(overdueOrder(buyer, ref));
+            if (i == 1) {
+                broken = ref;
+            }
+        }
+        gateway.failQueriesFor(broken);
+
+        CommerceExpiryService.RunResult result = expiry.cancelOverdueOrders();
+
+        assertThat(result.failed()).isEqualTo(1);
+        assertThat(result.processed()).isGreaterThanOrEqualTo(2);
+        assertThat(status(orders.get(0))).isEqualTo("cancelled");
+        assertThat(status(orders.get(1))).isEqualTo("pending");
+        assertThat(status(orders.get(2))).isEqualTo("cancelled");
+        assertThat(gateway.queryCount(broken)).isEqualTo(1);
+    }
+
+    /** "Found paid" whose T2 fails afterwards: counted as failed, nothing kept, retried at the next run. */
+    @Test
+    void foundPaid_butTheT2Fails_nothingKept_retriedNextRun() {
+        String ref = CommerceFixtures.newReference();
+        FixtureOrder order = overdueOrder(student, ref);
+        gateway.simulatePaid(ref, 300_000);
+        hooks.failNextOrderPaid();
+
+        CommerceExpiryService.RunResult first = expiry.cancelOverdueOrders();
+
+        assertThat(first.failed()).isGreaterThanOrEqualTo(1);
+        assertThat(status(order)).isEqualTo("pending");
+        assertThat(commerce.paymentColumn(ref, "status", String.class)).isEqualTo("pending");
+        assertThat(commerce.enrollments(student.id())).isEmpty();
+
+        expiry.cancelOverdueOrders();
+        assertThat(status(order)).isEqualTo("paid");
+    }
     @Test
     void anOrderLockedElsewhere_isSkippedNotWaitedFor_SKIP_LOCKED() throws Exception {
         FixtureOrder held = overdueOrder(student, null);

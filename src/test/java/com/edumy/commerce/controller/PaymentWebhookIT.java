@@ -23,7 +23,6 @@ import com.edumy.commerce.integration.PaymentLookup;
 import com.edumy.shared.security.RoleCode;
 import com.edumy.support.CommerceFixtures;
 import com.edumy.support.CommerceFixtures.FixtureOrder;
-import com.edumy.support.Concurrently;
 import com.edumy.support.CourseFixtures;
 import com.edumy.support.JwtTestTokens;
 import com.edumy.support.JwtTestTokens.Session;
@@ -208,22 +207,72 @@ class PaymentWebhookIT {
         assertThat(hooks.published()).hasSize(1);
     }
 
+    /** AC-11 / NFR-04 in parallel (review P11-R-03): 10 deliveries released together by a barrier → one effect. */
     @Test
-    void twoConcurrentDeliveries_oneEffect_AC11() throws Exception {
+    void tenParallelDeliveries_startedTogether_oneEffect_AC11() throws Exception {
         String ref = CommerceFixtures.newReference();
         FixtureOrder order = pendingOrderAB(ref);
         String body = body(ref, order.code(), 500_000, "success");
         String signature = sign(secret, body);
+        java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(10);
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(10);
+        List<Integer> statuses = new java.util.ArrayList<>();
+        try {
+            List<java.util.concurrent.Future<Integer>> futures = new java.util.ArrayList<>();
+            for (int i = 0; i < 10; i++) {
+                futures.add(pool.submit(() -> {
+                    start.await(10, java.util.concurrent.TimeUnit.SECONDS);
+                    return deliver(body, signature).andReturn().getResponse().getStatus();
+                }));
+            }
+            for (java.util.concurrent.Future<Integer> future : futures) {
+                statuses.add(future.get(60, java.util.concurrent.TimeUnit.SECONDS));
+            }
+        } finally {
+            pool.shutdownNow();
+        }
 
-        List<Integer> statuses = Concurrently.times(4,
-                () -> deliver(body, signature).andReturn().getResponse().getStatus());
-
-        assertThat(statuses).containsOnly(200);
+        assertThat(statuses).hasSize(10).containsOnly(200);
         assertThat(commerce.enrollments(student.userId())).hasSize(2);
         assertThat(orderStatus(order)).isEqualTo("paid");
         assertThat(hooks.published()).hasSize(1);
     }
 
+    /**
+     * AC-11 forced: the first delivery stops at the end of T2 holding its locks; 7 more must all wait, then ignore. (7, not
+     * 9: the test pool has 10 connections and the LOCK WAIT poll needs one.)
+     */
+    @Test
+    void sevenDeliveriesWaitWhileTheFirstHoldsItsLocks_thenAreIgnored_oneEffect_AC11() throws Exception {
+        String ref = CommerceFixtures.newReference();
+        FixtureOrder order = pendingOrderAB(ref);
+        String body = body(ref, order.code(), 500_000, "success");
+        String signature = sign(secret, body);
+        com.edumy.commerce.integration.FakeQrPaymentGateway.Hold hold = hooks.holdNextOrderPaid();
+        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(10);
+        try {
+            java.util.concurrent.Future<Integer> first =
+                    pool.submit(() -> deliver(body, signature).andReturn().getResponse().getStatus());
+            assertThat(hold.awaitReached()).isTrue();
+            List<java.util.concurrent.Future<Integer>> others = new java.util.ArrayList<>();
+            for (int i = 0; i < 7; i++) {
+                others.add(pool.submit(() -> deliver(body, signature).andReturn().getResponse().getStatus()));
+            }
+            org.awaitility.Awaitility.await().atMost(java.time.Duration.ofSeconds(20))
+                    .until(() -> LockWaits.lockWaits(jdbc) >= 7);
+            hold.release();
+            assertThat(first.get(30, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(200);
+            for (java.util.concurrent.Future<Integer> other : others) {
+                assertThat(other.get(30, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(200);
+            }
+        } finally {
+            hold.release();
+            pool.shutdownNow();
+        }
+
+        assertThat(commerce.enrollments(student.userId())).hasSize(2);
+        assertThat(hooks.published()).hasSize(1);
+    }
     /**
      * ADR-011 R1: the delivery reads the reference (scalar) while another transaction holds the order lock and pays the
      * order; once it gets the lock it loads the attempt for the first time and sees {@code success} — no second

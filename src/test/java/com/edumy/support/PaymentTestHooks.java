@@ -4,6 +4,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.edumy.commerce.api.OrderPaid;
+import com.edumy.commerce.api.PaymentReconciled;
 import com.edumy.commerce.integration.FakeQrPaymentGateway;
 import org.springframework.boot.test.context.TestComponent;
 import org.springframework.context.event.EventListener;
@@ -22,6 +23,21 @@ public class PaymentTestHooks {
     private final CopyOnWriteArrayList<OrderPaid> published = new CopyOnWriteArrayList<>();
     private final java.util.concurrent.atomic.AtomicReference<FakeQrPaymentGateway.Hold> hold =
             new java.util.concurrent.atomic.AtomicReference<>();
+    private final java.util.concurrent.atomic.AtomicReference<FakeQrPaymentGateway.Hold> reconciledHold =
+            new java.util.concurrent.atomic.AtomicReference<>();
+
+    /** UC-A18 stops at its {@link PaymentReconciled} (end of the transaction, locks held) when armed. */
+    @EventListener
+    void on(PaymentReconciled event) {
+        FakeQrPaymentGateway.Hold.pass(reconciledHold.getAndSet(null));
+    }
+
+    /** The next UC-A18 decision stops at its {@link PaymentReconciled} until the hold is released. */
+    public FakeQrPaymentGateway.Hold holdNextReconciliation() {
+        FakeQrPaymentGateway.Hold next = new FakeQrPaymentGateway.Hold();
+        reconciledHold.set(next);
+        return next;
+    }
 
     @EventListener
     void on(OrderPaid event) {
@@ -55,6 +71,7 @@ public class PaymentTestHooks {
     public void reset() {
         failNext.set(false);
         hold.set(null);
+        reconciledHold.set(null);
         published.clear();
     }
 }

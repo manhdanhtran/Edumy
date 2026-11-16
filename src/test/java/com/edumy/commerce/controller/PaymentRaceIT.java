@@ -208,4 +208,48 @@ class PaymentRaceIT {
         assertThat(jdbc.sql("SELECT COUNT(*) FROM orders WHERE student_id = ?").param(student.userId())
                 .query(Long.class).single()).isEqualTo(1);
     }
+
+    /**
+     * Review scenario (d): cancel stops inside its lookup; the webhook (verified, so the provider now reports the payment)
+     * waits for the student's cart. Released, the lookup sees the payment: cancel records it and answers 409 (UC-S16 E1);
+     * the webhook then finds it applied. One effect.
+     */
+    @Test
+    void cancelHoldsTheOrderInItsLookup_webhookWaits_cancelFindsItPaid409_webhookIgnored_oneEffect_UCS16E1()
+            throws Exception {
+        String ref = CommerceFixtures.newReference();
+        FixtureOrder order = commerce.order(student.userId()).line(courseA, 300_000).insert();
+        commerce.pendingPayment(order, ref);
+
+        Interleave.Results<Integer, Integer> results = Interleave.secondWaitsForTheFirst(jdbc, gateway.holdNextQuery(),
+                () -> mvc.perform(post("/api/v1/orders/" + order.code() + "/cancel")
+                        .header(HttpHeaders.AUTHORIZATION, student.bearer())).andReturn().getResponse().getStatus(),
+                () -> deliver(ref, order.code(), 300_000));
+
+        assertThat(results.first()).isEqualTo(409); // ORDER_ALREADY_PAID
+        assertThat(results.second()).isEqualTo(200);
+        assertThat(orderStatus(order)).isEqualTo("paid");
+        assertThat(commerce.orderColumn(order.code(), "cancel_reason", String.class)).isNull();
+        assertThat(paymentStatus(ref)).isEqualTo("success");
+        assertThat(commerce.enrollments(student.userId())).containsOnlyKeys(courseA);
+        assertThat(hooks.published()).hasSize(1);
+    }
+
+    /** Review scenario (g): the timer stops inside its lookup; the webhook waits for the order, then is applied. */
+    @Test
+    void timerHoldsTheOrderInItsLookup_webhookWaits_thenApplied_oneEffect() throws Exception {
+        String ref = CommerceFixtures.newReference();
+        FixtureOrder order = commerce.order(student.userId()).line(courseA, 300_000).insert();
+        Instant created = Instant.now().minus(20, ChronoUnit.MINUTES);
+        commerce.payment(order, ref, "pending", created, created.plus(15, ChronoUnit.MINUTES));
+
+        Interleave.Results<CommerceExpiryService.RunResult, Integer> results = Interleave.secondWaitsForTheFirst(jdbc,
+                gateway.holdNextQuery(), expiry::expireQrAttempts, () -> deliver(ref, order.code(), 300_000));
+
+        assertThat(results.first().failed()).isZero();
+        assertThat(results.second()).isEqualTo(200);
+        assertThat(orderStatus(order)).isEqualTo("paid"); // the lookup saw it paid: T2 after the claim, webhook ignored
+        assertThat(paymentStatus(ref)).isEqualTo("success");
+        assertThat(hooks.published()).hasSize(1);
+    }
 }

@@ -27,7 +27,6 @@ import com.edumy.shared.security.RoleCode;
 import com.edumy.support.CapturingMailGateway;
 import com.edumy.support.CommerceFixtures;
 import com.edumy.support.CommerceFixtures.FixtureOrder;
-import com.edumy.support.Concurrently;
 import com.edumy.support.CourseFixtures;
 import com.edumy.support.JwtTestTokens;
 import com.edumy.support.JwtTestTokens.Session;
@@ -68,6 +67,8 @@ class ReconciliationIT {
     FakeQrPaymentGateway gateway;
     @Autowired
     CapturingMailGateway mails;
+    @Autowired
+    com.edumy.support.PaymentTestHooks hooks;
     @Value("${edumy.payment.webhook-secret}")
     String secret;
 
@@ -219,20 +220,36 @@ class ReconciliationIT {
         expectProblem(resolve(admin, pendingPayment, "activated", "Không phải đối soát"), 409, "DATA_CONFLICT");
     }
 
+    /**
+     * E1 forced (review P11-R-03): admin 1 activates and stops at the end of the decision holding the locks; admin 2's
+     * refund must wait, then sees the attempt handled → 409. The stored decision, the order, the enrollments and the
+     * single mail are admin 1's.
+     */
     @Test
-    void twoAdminsAtOnce_oneDecision_200And409_E1() throws Exception {
+    void secondAdminWaitsForTheFirstDecision_thenGets409_theFirstDecisionStands_E1() throws Exception {
         long payment = needsReview(CommerceFixtures.newReference());
         Session second = tokens.newUserSession(RoleCode.ADMIN);
 
-        List<Integer> statuses = Concurrently.run(List.of(
-                () -> resolve(admin, payment, "activated", "Admin 1").andReturn().getResponse().getStatus(),
-                () -> resolve(second, payment, "refund_outside", "Admin 2").andReturn().getResponse().getStatus()));
+        com.edumy.support.Interleave.Results<Integer, Integer> results =
+                com.edumy.support.Interleave.secondWaitsForTheFirst(jdbc, hooks.holdNextReconciliation(),
+                        () -> resolve(admin, payment, "activated", "Admin 1").andReturn().getResponse().getStatus(),
+                        () -> resolve(second, payment, "refund_outside", "Admin 2").andReturn().getResponse()
+                                .getStatus());
 
-        assertThat(statuses).containsExactlyInAnyOrder(200, 409);
-        assertThat(jdbc.sql("SELECT COUNT(*) FROM payment_transactions WHERE id = ? AND handled_at IS NOT NULL")
-                .param(payment).query(Long.class).single()).isEqualTo(1);
+        assertThat(results.first()).isEqualTo(200);
+        assertThat(results.second()).isEqualTo(409);
+        assertThat(jdbc.sql("SELECT handled_by FROM payment_transactions WHERE id = ?").param(payment)
+                .query(Long.class).single()).isEqualTo(admin.userId());
+        assertThat(jdbc.sql("SELECT handled_action FROM payment_transactions WHERE id = ?").param(payment)
+                .query(String.class).single()).isEqualTo("activated");
+        assertThat(jdbc.sql("SELECT handled_note FROM payment_transactions WHERE id = ?").param(payment)
+                .query(String.class).single()).isEqualTo("Admin 1");
+        assertThat(jdbc.sql("SELECT o.status FROM orders o JOIN payment_transactions p ON p.order_id = o.id "
+                + "WHERE p.id = ?").param(payment).query(String.class).single()).isEqualTo("paid");
+        assertThat(commerce.enrollments(student.userId())).containsOnlyKeys(courseA, courseB);
+        mails.awaitMail(student.user().email(), "payment-reconciled");
+        assertThat(mails.sentTo(student.user().email())).hasSize(1);
     }
-
     @Test
     void blankNoteOrBadAction_400_nothingStored_E3() throws Exception {
         long payment = needsReview(CommerceFixtures.newReference());
