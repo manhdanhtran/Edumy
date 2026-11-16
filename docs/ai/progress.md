@@ -94,6 +94,7 @@ P10 review + P10-fix-a (security minors + Q-g identity) · P10-fix-b (authoring:
 | P11-fix-e daily code cleanup (ADR-012), ORDER_EXPIRED, example.com test addresses, VS Code note | done | fb96241 | 2379 tests green (no count change), wall time 7 h 31 min because the machine slept (not a measurement); see `### P11-fix-e` |
 | P12 certificate PDF (OpenPDF 2.2.5, Noto Sans, ADR-013) | done | eb14bc1 | 2378 tests green (+9 new, −10 stub tests), suite 15 min 46 s; see `## P12` |
 | P13-a security hardening (anonymous public reads, 503, CORS ProblemDetail, account rate limits, reset before BCrypt) | done | bc2339e | 2388 tests green (+10), suite 8 min 52 s; see `### P13-a` |
+| P13-b UC-I02 student count (port), duplicate question guard, ADR-014 | done | bc85aae | 2391 tests green (+3), suite 9 min 10 s; see `### P13-b` |
 
 ## P11 — commerce (plan approved 2026-11-15 with Q1–Q5 + R1–R3; ADR-011)
 Units P11-a … P11-f. Plan: lock order cart → order → attempt → enrollments / cart lines; scalar-first reads (R1);
@@ -291,6 +292,17 @@ committed. Note: the M3 run took 5.8 h wall time because the machine slept; the 
   shared with `CertificateVerifyRateLimiter`.
 - Reset: `AccountTokenService.isUsable` before `passwordEncoder.encode` (no BCrypt for a wrong code).
 - Tests: `AuthHardeningFiltersTest` (8), `AuthServiceResetTest` (2), `CatalogCourseControllerIT` rewritten test.
+
+### P13-b — P10 backlog
+- UC-I02 "số học viên": `authoring.api.EnrollmentCountPort` (declared by authoring) implemented by
+  `learning.service.EnrollmentCountPortImpl` (one grouped count, `EnrollmentRepository.countByCourseIdIn`);
+  `InstructorCourseSummaryResponse.studentCount` (additive); list = 4 statements per page (was 3, test updated with the
+  reason); `AuthoringModuleIT` mocks the port (learning is not in the authoring module context). ModularityTest green.
+- UC-S17 E3: `QuestionService.ask` locks the enrollment row, then refuses the same title + content (trimmed, exact)
+  of a non-deleted question of the enrollment from the last 60 s → 409 `QA_QUESTION_DUPLICATE` (new, additive).
+- ADR-014: BC-m5 (enroll / cart ‖ hide window accepted, no cross-module lock) and BC-m6 (login lock-out reading kept).
+- Tests: `InstructorCourseStudentCountIT` (1), `QuestionWriteIT` +2 (duplicate window, exact comparison, after 61 s;
+  two identical submissions at once → 201 + 409, one row).
 
 ## P12 — certificate PDF (UC-S20, §7, NFR-05; ADR-013)
 - OpenPDF **2.2.5** (published 2026-03-09; LGPL 2.1 / MPL 2.0) — not 3.0.5: its mandatory `brotli4j` dependency ships

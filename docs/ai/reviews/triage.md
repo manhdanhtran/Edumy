@@ -28,12 +28,12 @@ All five confirmed and fixed in P10-fix-a (`7a8ee8e`); proofs in `security.md`.
 | BC-M1 AC-14: create on a visible review answers 409 instead of updating | **fixed** P10-fix-e `b1ddcdf` | confirmed; AC-14 "Bản ghi hiện có được cập nhật" beats the P06-G7 decision. Turning a 409 into a 200 is a relaxation (no client request that worked before fails), so not a contract break |
 | BC-M2 removed / left / revoked instructor still edits or deletes old instructor answers | **fixed** P10-fix-e `b1ddcdf` | confirmed (`AnswerService.own` checks authorship only); UC-I21 E1, UC-I16 post-condition, UC-A05 step 4, D-43 "phản hồi cũ giữ nguyên" |
 | BC-M3 enrolled student later made co-instructor keeps student rights on that course | **fixed** P10-fix-e `b1ddcdf` | confirmed (`ReviewService`, `ProgressService`, `QuestionService` check only the enrollment). Refusing the invitation (option a) is impossible without authoring → learning (cycle), so learning refuses review / completion / question for a course instructor (option b) with 422 `ENROLLMENT_OWN_COURSE` (BR-32, RBAC §3.3) |
-| BC-m1 UC-I02 list has no student count | backlog | needs enrollment counts in authoring's list = authoring → learning dependency (cycle, docs/ai/01 §1.8); a learning-side endpoint would be a new contract not on the approved list |
-| BC-m2 UC-S17 E3 double-submit only in the front end | backlog | documented P06-G8 decision; server-side de-dup needs a new rule (time window) the SRS does not define |
+| BC-m1 UC-I02 list has no student count | **fixed** P13-b (`EnrollmentCountPort` in authoring::api, implemented by learning) | needs enrollment counts in authoring's list = authoring → learning dependency (cycle, docs/ai/01 §1.8); a learning-side endpoint would be a new contract not on the approved list |
+| BC-m2 UC-S17 E3 double-submit only in the front end | **fixed** P13-b (409 `QA_QUESTION_DUPLICATE` within 60 s) | documented P06-G8 decision; server-side de-dup needs a new rule (time window) the SRS does not define |
 | BC-m3 answer editable while its question is hidden | **fixed** P10-fix-e `b1ddcdf` | confirmed; BR-41 → 409 `QA_CONTENT_HIDDEN_BY_ADMIN` |
 | BC-m4 hidden course stays up to 60 s in the cached list | **fixed** P10-fix-d `6fd049a` (with Q-a) | confirmed; evict `catalog.course-list` on `CourseApproved` / `CourseHidden` / `CourseUnhidden` |
-| BC-m5 free enroll / cart add race with a concurrent hide | backlog → ADR in P13 | window of milliseconds; closing it needs a cross-module row lock (learning/commerce locking an authoring row) |
-| BC-m6 login lock-out "consecutive with gaps < 15 min" vs "5 in 15 min" | backlog → ADR in P13 | interpretation already documented in docs/ai/04 §4.4; recorded as a decision |
+| BC-m5 free enroll / cart add race with a concurrent hide | **ADR-014** (accepted, P13-b) | window of milliseconds; closing it needs a cross-module row lock (learning/commerce locking an authoring row) |
+| BC-m6 login lock-out "consecutive with gaps < 15 min" vs "5 in 15 min" | **ADR-014** (reading kept, P13-b) | interpretation already documented in docs/ai/04 §4.4; recorded as a decision |
 
 ## Data, tests, phase (`data-tests-phase.md`) — 1 BLOCKER · 1 MAJOR · 6 MINOR
 | ID | Verdict | Notes |

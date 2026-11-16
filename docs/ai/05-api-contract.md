@@ -58,6 +58,7 @@
 | `CART_ITEM_DUPLICATE` | 409 | BR-11; `uq_cart_items_cart_course` |
 | `COURSE_DELETE_FORBIDDEN` | 409 | BR-19; trigger: the course was published once |
 | `REVIEW_HIDDEN_BY_ADMIN` | 409 | BR-35 |
+| `QA_QUESTION_DUPLICATE` | 409 | UC-S17 E3 (P13, additive): the same title and content (after trimming, exact) from the same enrollment within 60 s; nothing stored |
 | `QA_CONTENT_HIDDEN_BY_ADMIN` | 409 | BR-41 / UC-S19, UC-I21 E2 (P06-G8): the author edits / deletes / resolves, or anyone replies to, a question or answer hidden by an admin |
 | `ADMIN_LAST_ACTIVE` | 409 | BR-36 "at least one active admin"; reserved — unreachable through UC-A02, because no admin can ever be locked (`ADMIN_LOCK_FORBIDDEN`) and admin roles are never granted/revoked through the API (D-01) |
 | `ADMIN_LOCK_FORBIDDEN` | 403 | BR-36 / AC-37: UC-A02 target is the caller or holds an active admin role |
@@ -344,6 +345,8 @@ Authoring reads (P05):
   publishedAt,createdAt,updatedAt}>`: every status; `relation` = `main` / `co`; newest course first (`createdAt` desc,
   `id` desc, `sort` ignored); no filter (UC-I02 describes none). `reviewNote` = latest rejection/hiding reason (UC-I18),
   `null` when none. 3 statements per page (page, count, outline counts).
+  P13: every row also carries `studentCount` (enrolled students, free + purchase; UC-I02 "số học viên") — read through
+  `authoring::api.EnrollmentCountPort` implemented by learning; one more statement per page (4).
 - `GET /instructor/courses/{id}` → **200** `InstructorCourseDetailResponse {id,title,slug,description,thumbnailUrl,
   price,isFree,status,relation,categoryId,categoryName,categoryActive,mainInstructor{id,fullName},
   coInstructors[{id,fullName,invitationStatus,invitedAt,respondedAt}],reviewNote,submittedAt,reviewedAt,publishedAt,

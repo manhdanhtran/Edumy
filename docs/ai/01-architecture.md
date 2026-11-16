@@ -297,6 +297,8 @@ Consequences:
   never authoring's internal `@courseAccess` bean). BR-32 relation independent of the role:
   `CourseAccessApi.hasInstructorRelation` (learning `OwnCourseGuard`).
 - UC-A12 hide course → `authoring` publishes `CourseHidden` → `commerce.listener.CourseHiddenListener` flags cart items.
+- UC-I02 student count (P13): authoring declares `api.EnrollmentCountPort`, learning implements it — authoring still
+  depends on nothing but identity::api; `ModularityTest` green.
 - Revoking the instructor role (UC-A05, D-07) only changes `identity`; `authoring` re-checks the role at action time via
   `identity::api.RoleQueryApi` (BR-26).
 
@@ -308,6 +310,7 @@ Consequences:
 | authoring | `CourseQueryApi` | `boolean exists(Long courseId)` (P04-e, admin content access D-32); `Map<Long, CourseSummary> findSummaries(Collection<Long>)` (P05-commerce: title, slug, thumbnail, price, `published`, mainInstructorId; any status, one query); later `Optional<SellableCourse> findSellable(Long courseId)` (published only, BR-31) |
 | authoring | `CourseAccessApi` | `isMainInstructor`, `isCourseInstructor` (main or accepted co **and** active instructor role); `Set<Long> findInstructedCourseIds(userId)` (P05-learning, one query, empty without an active instructor role); `Set<Long> findInstructorRelationCourseIds(userId, courseIds)` (P11-b, BR-32 by relation whatever the role, one query) |
 | authoring | `LessonQueryApi` | `Optional<Long> findCourseId(lessonId)`; `Map<Long,Integer> countLessons(Collection<Long>)` (one query); `List<ChapterOutline> findOutline(courseId)` (2 queries); `Optional<LessonContent> findContent(lessonId)` (P05-learning) |
+| authoring (port) | `EnrollmentCountPort` | P13 dependency inversion: declared in `authoring::api`, **implemented by learning** (`EnrollmentCountPortImpl`); `Map<Long,Long> countStudents(Collection<Long> courseIds)` for the UC-I02 list. Authoring never imports learning; the graph stays acyclic |
 | learning | `EnrollmentApi` | `boolean owns(studentId, courseId)`; `Set<Long> findOwnedCourseIds(studentId, Collection<Long>)` (P05-commerce, one query); `void grantForPaidOrder(GrantEnrollmentCommand)` — `@Transactional(propagation = MANDATORY)` (ADR-004) |
 
 ## 1.10 Events
