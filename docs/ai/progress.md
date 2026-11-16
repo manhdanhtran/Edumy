@@ -93,6 +93,7 @@ P10 review + P10-fix-a (security minors + Q-g identity) · P10-fix-b (authoring:
 | P11-fix-d R-05 paid orders keep no pending attempt; R-06 timeouts + lookup outside the transaction | done | 0d3e9f2 | 2379 tests green (+6: PaymentWebhookIT 1, ReconciliationIT 2, PaymentPropertiesTest 3), suite 14 min 33 s; see `### P11-fix-d` |
 | P11-fix-e daily code cleanup (ADR-012), ORDER_EXPIRED, example.com test addresses, VS Code note | done | fb96241 | 2379 tests green (no count change), wall time 7 h 31 min because the machine slept (not a measurement); see `### P11-fix-e` |
 | P12 certificate PDF (OpenPDF 2.2.5, Noto Sans, ADR-013) | done | eb14bc1 | 2378 tests green (+9 new, −10 stub tests), suite 15 min 46 s; see `## P12` |
+| P13-a security hardening (anonymous public reads, 503, CORS ProblemDetail, account rate limits, reset before BCrypt) | done | bc2339e | 2388 tests green (+10), suite 8 min 52 s; see `### P13-a` |
 
 ## P11 — commerce (plan approved 2026-11-15 with Q1–Q5 + R1–R3; ADR-011)
 Units P11-a … P11-f. Plan: lock order cart → order → attempt → enrollments / cart lines; scalar-first reads (R1);
@@ -274,6 +275,22 @@ Commerce is real: T1 (P11-b), create QR (P11-c), webhook + T2 (P11-a), cancel (P
 | P11-fix-d — `PaymentWebhookIT#lateResultOfQr1PaysTheOrder_qr2IsClosed…R05`, `ReconciliationIT#activated_closesTheOrdersOtherPendingAttempt_R05` | `closeOtherPendingAttempts` call removed | RED — 2 tests |
 | P11-fix-d — `ReconciliationIT#detail_providerCalledOutsideTheTransaction…R06` | `getAdminDetail` back inside `@Transactional(readOnly = true)` | RED — 1 test (1 active connection during the lookup) |Every mutation was applied in the working tree only, the file restored byte for byte afterwards (`git diff` checked), never
 committed. Note: the M3 run took 5.8 h wall time because the machine slept; the result is unaffected.
+
+## P13 — hardening (brief 2026-11-16)
+
+### P13-a — security
+- Public reads (`GET /api/v1/catalog/**`): `AuthEndpointBearerTokenResolver` decodes a presented token once and drops it
+  when it is expired / malformed / revoked / of a locked account → anonymous (200, `viewer: null`); a database failure
+  in that check is not swallowed. `CatalogCourseControllerIT` test rewritten (was "bad token → 401", a P05 decision now
+  reversed by the brief).
+- `AuthenticationUnavailableFilter` (before the bearer filter) + entry point: `AuthenticationServiceException` /
+  `DataAccessException` while checking a token → 503 `SERVICE_UNAVAILABLE` (new, additive) with `traceId`.
+- `CorsRejectionFilter` (before `CorsFilter`): foreign `Origin` → 403 `ACCESS_DENIED` ProblemDetail (no dependency).
+- `AuthEndpointRateLimiter` (Bucket4j, per IP; values in `AuthRateLimitProperties`, test profile raised): register
+  10 / h, forgot 5 / 15 min, reset 10 / 15 min → 429 `RATE_LIMITED` + `Retry-After`. `ClockTimeMeter` extracted and
+  shared with `CertificateVerifyRateLimiter`.
+- Reset: `AccountTokenService.isUsable` before `passwordEncoder.encode` (no BCrypt for a wrong code).
+- Tests: `AuthHardeningFiltersTest` (8), `AuthServiceResetTest` (2), `CatalogCourseControllerIT` rewritten test.
 
 ## P12 — certificate PDF (UC-S20, §7, NFR-05; ADR-013)
 - OpenPDF **2.2.5** (published 2026-03-09; LGPL 2.1 / MPL 2.0) — not 3.0.5: its mandatory `brotli4j` dependency ships

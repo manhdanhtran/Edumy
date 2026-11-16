@@ -91,8 +91,9 @@
 | `COURSE_LAST_LESSON_DELETE_FORBIDDEN` | 409 | D-14 / UC-I07 E "khóa đã công khai sẽ không còn bài" / UC-I11 E "khóa đã công khai chỉ còn một bài": deleting the only lesson, or a chapter holding every lesson, of a published or hidden course |
 | `AUTH_LOGIN_TEMPORARILY_BLOCKED` | 429 | NFR-03: 5 consecutive failed logins for the email → every login for it blocked 15 min (correct password too); header `Retry-After` (docs/ai/04 §4.4) |
 | `TOKEN_RESEND_TOO_SOON` | 429 | D-03: resend of the verification code within 60 s of the last one (forgot password never shows it, Q3) |
-| `RATE_LIMITED` | 429 | NFR-03: certificate verification over 30 req/min per IP; header `Retry-After` (docs/ai/04 §4.4) |
+| `RATE_LIMITED` | 429 | NFR-03: certificate verification over 30 req/min per IP; P13: register over 10 per hour, forgot-password over 5 per 15 min, reset-password over 10 per 15 min per IP; header `Retry-After` (docs/ai/04 §4.4, ADR-002) |
 | `CERTIFICATE_PDF_FAILED` | 500 | UC-S20 E2 (P12, additive): the certificate PDF could not be produced; nothing changed, retry |
+| `SERVICE_UNAVAILABLE` | 503 | P13 (additive): the database could not be reached while the access token was checked; retry |
 | `INTERNAL_ERROR` | 500 | generic Vietnamese detail, never the exception message; also unmapped CHECK / trigger violations |
 - `ConstraintViolationTranslator`: walks the cause chain down to the root `java.sql.SQLException` and decides by
   **vendor error code**, never by the Spring/Hibernate exception type (Spring JDBC 7.0 does not map CHECK error 3819 to
@@ -118,6 +119,7 @@
   | `uq_categories_name`, `uq_categories_slug` | `CATEGORY_ALREADY_EXISTS` | 409 |
   | `uq_cci_course_instructor` | `COURSE_CO_INSTRUCTOR_ALREADY_INVITED` | 409 |
   | `ck_lessons_type` + `ck_lessons_content_match`; `ck_orders_status` + `ck_orders_state`; `ck_enrollments_source` + `ck_enrollments_source_order` | `CERTIFICATE_PDF_FAILED` | 500 | UC-S20 E2 (P12, additive): the certificate PDF could not be produced; nothing changed, retry |
+| `SERVICE_UNAVAILABLE` | 503 | P13 (additive): the database could not be reached while the access token was checked; retry |
 | `INTERNAL_ERROR` | 500 |
 
   An unknown value in these columns breaks two overlapping CHECKs and MySQL reports only one of them, so **both names of
@@ -131,8 +133,10 @@
   | 1451 FK, parent still referenced | `DATA_CONFLICT` | 409 | WARN |
   | 1452 FK, missing parent | `RESOURCE_NOT_FOUND` | 404, body identical to every other 404 (NFR-01) | WARN |
   | 3819 CHECK | `CERTIFICATE_PDF_FAILED` | 500 | UC-S20 E2 (P12, additive): the certificate PDF could not be produced; nothing changed, retry |
+| `SERVICE_UNAVAILABLE` | 503 | P13 (additive): the database could not be reached while the access token was checked; retry |
 | `INTERNAL_ERROR` | 500 | ERROR, full cause |
   | 1644 / SQLState `45000` trigger | `CERTIFICATE_PDF_FAILED` | 500 | UC-S20 E2 (P12, additive): the certificate PDF could not be produced; nothing changed, retry |
+| `SERVICE_UNAVAILABLE` | 503 | P13 (additive): the database could not be reached while the access token was checked; retry |
 | `INTERNAL_ERROR` | 500 | ERROR, full cause |
 
   A CHECK or trigger violation reaching the database means the application skipped a validation, so it is a server

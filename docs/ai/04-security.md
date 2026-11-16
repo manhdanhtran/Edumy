@@ -149,3 +149,11 @@ limitations".
   `Origin` header check against the CORS allow-list.
 - Stateless: `SessionCreationPolicy.STATELESS`. HTTPS is terminated in front of the app in production.
 - Actuator: only `health` and `info` exposed (`application.yml`) and public. `caches` / `metrics` (Caffeine statistics) are exposed in the `dev` profile only, and `/actuator/**` other than health/info needs the admin role (401 without token, 403 for any other role; P08).
+
+## P13 hardening (summary; details in ADR-002)
+- Public reads `GET /api/v1/catalog/**` (lists, course page, preview lesson, certificate check): a bad token (expired,
+  malformed, revoked, locked account) is ignored → anonymous answer; protected paths keep 401.
+- Token check that cannot reach the database → 503 `SERVICE_UNAVAILABLE` ProblemDetail with `traceId`.
+- Foreign CORS `Origin` on `/api/**` (while an allow-list is configured) → 403 `ACCESS_DENIED` ProblemDetail.
+- Per-IP limits: register 10 / h, forgot-password 5 / 15 min, reset-password 10 / 15 min → 429 `RATE_LIMITED` +
+  `Retry-After`; reset rejects an unusable code before BCrypt.
