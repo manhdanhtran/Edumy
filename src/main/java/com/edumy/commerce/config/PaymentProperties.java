@@ -16,8 +16,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  *   <li>{@code qrTtl}: QR validity, 15 minutes (BR-13). {@code orderTtl}: a pending order is cancelled after 24 hours
  *   (BR-29, AC-22).</li>
  *   <li>{@code txTimeout}: timeout of the transactions that call the provider while they hold an order lock (ADR-011);
- *   {@code connectTimeout} / {@code readTimeout}: HTTP timeouts a real adapter must use (≤ 5 s, so a call ends well
- *   inside {@code txTimeout}); the fake ignores them.</li>
+ *   {@code connectTimeout} / {@code readTimeout}: HTTP timeouts a real adapter must use (default 2 s + 3 s; their sum
+ *   must stay below {@code txTimeout}, checked at start-up); the fake ignores them.</li>
  * </ul>
  */
 @ConfigurationProperties("edumy.payment")
@@ -27,13 +27,25 @@ public record PaymentProperties(
         @DefaultValue("15m") Duration qrTtl,
         @DefaultValue("24h") Duration orderTtl,
         @DefaultValue("10s") Duration txTimeout,
-        @DefaultValue("5s") Duration connectTimeout,
-        @DefaultValue("5s") Duration readTimeout) {
+        @DefaultValue("2s") Duration connectTimeout,
+        @DefaultValue("3s") Duration readTimeout) {
+
+    /**
+     * Review P11-R-06: a provider call made while an order lock is held must end well inside the transaction timeout, so
+     * {@code connectTimeout + readTimeout} has to be strictly below {@code txTimeout}; the application refuses to start
+     * otherwise.
+     */
+    public PaymentProperties {
+        if (connectTimeout != null && readTimeout != null && txTimeout != null
+                && connectTimeout.plus(readTimeout).compareTo(txTimeout) >= 0) {
+            throw new IllegalArgumentException("edumy.payment: connect-timeout + read-timeout must be below tx-timeout");
+        }
+    }
 
     /** Defaults for everything but the provider and the secret (unit tests). */
     public static PaymentProperties of(String provider, String webhookSecret) {
         return new PaymentProperties(provider, webhookSecret, Duration.ofMinutes(15), Duration.ofHours(24),
-                Duration.ofSeconds(10), Duration.ofSeconds(5), Duration.ofSeconds(5));
+                Duration.ofSeconds(10), Duration.ofSeconds(2), Duration.ofSeconds(3));
     }
 
     /** {@link #txTimeout} in whole seconds, at least 1 (Spring's transaction timeout unit). */

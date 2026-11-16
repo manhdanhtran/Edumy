@@ -27,7 +27,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * UC-S05 polling (own order only) and UC-A14 (admin list). Polling = order + pending attempt, falling back to the
@@ -44,10 +47,11 @@ public class PaymentQueryService {
     private final CourseQueryApi courses;
     private final EnrollmentApi enrollments;
     private final PaymentGateway gateway;
+    private final TransactionTemplate readOnly;
 
     public PaymentQueryService(OrderRepository orders, PaymentTransactionRepository payments, UserQueryApi users,
                                PaymentMapper mapper, CourseQueryApi courses, EnrollmentApi enrollments,
-                               PaymentGateway gateway) {
+                               PaymentGateway gateway, PlatformTransactionManager transactionManager) {
         this.orders = orders;
         this.payments = payments;
         this.users = users;
@@ -55,17 +59,22 @@ public class PaymentQueryService {
         this.courses = courses;
         this.enrollments = enrollments;
         this.gateway = gateway;
+        this.readOnly = new TransactionTemplate(transactionManager);
+        this.readOnly.setReadOnly(true);
     }
 
     /**
-     * The pending attempt of the caller's order, else its latest attempt. Unknown code, another student's code, and an
+     * The pending attempt of the caller's order (for a paid order: the attempt that paid it, P11-fix-d), else its latest
+     * attempt. Unknown code, another student's code, and an
      * order that has no attempt yet (nothing to poll: the QR is created by {@code POST …/payments}, UC-S05 step 1) all
      * give 404 {@code RESOURCE_NOT_FOUND}.
      */
     public PaymentStatusResponse current(Long studentId, String orderCode) {
         Order order = orders.findByOrderCodeAndStudentId(orderCode, studentId)
                 .orElseThrow(BusinessException::notFound);
-        PaymentTransaction payment = payments.findPendingByOrderId(order.getId())
+        PaymentTransaction payment = (order.isPaid()
+                ? payments.findFirstByOrderIdAndStatusOrderByCreatedAtDescIdDesc(order.getId(), PaymentStatus.SUCCESS)
+                : payments.findPendingByOrderId(order.getId()))
                 .or(() -> payments.findFirstByOrderIdOrderByCreatedAtDescIdDesc(order.getId()))
                 .orElseThrow(BusinessException::notFound);
         return mapper.toStatus(order, payment);
@@ -104,21 +113,26 @@ public class PaymentQueryService {
      * already owns, and the amount the provider reports as paid now ({@code null} if nothing paid or the provider is
      * unreachable — the page still opens). Unknown id → 404.
      */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public AdminPaymentDetailResponse getAdminDetail(Long paymentId) {
-        AdminPaymentResponse payment = getAdmin(paymentId);
-        Order order = orders.findById(payment.orderId()).orElseThrow(BusinessException::notFound);
-        List<Long> courseIds = order.courseIds();
-        Map<Long, CourseSummary> titles = courses.findSummaries(courseIds);
-        List<AdminPaymentDetailResponse.Item> items = order.getItems().stream()
-                .map(item -> new AdminPaymentDetailResponse.Item(item.getCourseId(),
-                        titles.containsKey(item.getCourseId()) ? titles.get(item.getCourseId()).title() : null,
-                        item.getUnitPrice()))
-                .toList();
-        List<Long> owned = courseIds.stream()
-                .filter(enrollments.findOwnedCourseIds(order.getStudentId(), courseIds)::contains).toList();
-        return new AdminPaymentDetailResponse(payment, items, owned, receivedAmount(payment.transactionRef()));
+        // review P11-R-06: the database part runs in its own read-only transaction, closed before the provider call
+        AdminPaymentDetailResponse withoutAmount = readOnly.execute(status -> {
+            AdminPaymentResponse payment = getAdmin(paymentId);
+            Order order = orders.findById(payment.orderId()).orElseThrow(BusinessException::notFound);
+            List<Long> courseIds = order.courseIds();
+            Map<Long, CourseSummary> titles = courses.findSummaries(courseIds);
+            List<AdminPaymentDetailResponse.Item> items = order.getItems().stream()
+                    .map(item -> new AdminPaymentDetailResponse.Item(item.getCourseId(),
+                            titles.containsKey(item.getCourseId()) ? titles.get(item.getCourseId()).title() : null,
+                            item.getUnitPrice()))
+                    .toList();
+            List<Long> owned = courseIds.stream()
+                    .filter(enrollments.findOwnedCourseIds(order.getStudentId(), courseIds)::contains).toList();
+            return new AdminPaymentDetailResponse(payment, items, owned, null);
+        });
+        return new AdminPaymentDetailResponse(withoutAmount.payment(), withoutAmount.items(),
+                withoutAmount.ownedCourseIds(), receivedAmount(withoutAmount.payment().transactionRef()));
     }
-
     private Long receivedAmount(String reference) {
         try {
             return gateway.query(reference) instanceof PaymentLookup.Paid paid ? paid.amount() : null;

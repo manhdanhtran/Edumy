@@ -528,4 +528,35 @@ class PaymentWebhookIT {
     interface ResultActionsSupplier {
         ResultActions get() throws Exception;
     }
+
+    // ---- review P11-R-05: no pending attempt survives on a paid order
+
+    @Test
+    void lateResultOfQr1PaysTheOrder_qr2IsClosed_aLaterResultOfQr2GoesToReview_noSecondGrant_R05() throws Exception {
+        String qr1 = CommerceFixtures.newReference();
+        String qr2 = CommerceFixtures.newReference();
+        commerce.cart(student.userId(), courseA);
+        FixtureOrder order = commerce.order(student.userId()).line(courseA, 300_000).insert();
+        java.time.Instant created = java.time.Instant.now().minus(30, java.time.temporal.ChronoUnit.MINUTES);
+        commerce.payment(order, qr1, "expired", created, created.plus(15, java.time.temporal.ChronoUnit.MINUTES));
+        commerce.pendingPayment(order, qr2);
+
+        deliver(body(qr1, order.code(), 300_000, "success")).andExpect(status().isOk());
+
+        assertThat(orderStatus(order)).isEqualTo("paid");
+        assertThat(paymentStatus(qr1)).isEqualTo("success");
+        assertThat(paymentStatus(qr2)).isEqualTo("expired"); // closed in the same transaction
+        mvc.perform(get("/api/v1/orders/" + order.code() + "/payments/current")
+                        .header(HttpHeaders.AUTHORIZATION, student.bearer()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.transactionRef").value(qr1)) // the paying attempt, not the closed one
+                .andExpect(jsonPath("$.status").value("success"))
+                .andExpect(jsonPath("$.qrData").doesNotExist());
+
+        deliver(body(qr2, order.code(), 300_000, "success")).andExpect(status().isOk()); // paid twice
+
+        assertThat(paymentStatus(qr2)).isEqualTo("needs_review");
+        assertThat(commerce.enrollments(student.userId())).containsOnlyKeys(courseA);
+        assertThat(hooks.published()).hasSize(1);
+    }
 }

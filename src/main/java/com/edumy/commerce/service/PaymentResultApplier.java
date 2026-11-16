@@ -12,6 +12,8 @@ import com.edumy.commerce.entity.PaymentTransaction;
 import com.edumy.commerce.integration.PaymentResult;
 import com.edumy.commerce.repository.CartItemRepository;
 import com.edumy.commerce.repository.CartRepository;
+import com.edumy.commerce.repository.PaymentTransactionRepository;
+
 import com.edumy.learning.api.EnrollmentApi;
 import com.edumy.learning.api.GrantEnrollmentCommand;
 import org.slf4j.Logger;
@@ -52,14 +54,16 @@ class PaymentResultApplier {
     private final EnrollmentApi enrollments;
     private final CartRepository carts;
     private final CartItemRepository cartItems;
+    private final PaymentTransactionRepository payments;
     private final ApplicationEventPublisher events;
     private final Clock clock;
 
     PaymentResultApplier(EnrollmentApi enrollments, CartRepository carts, CartItemRepository cartItems,
-                         ApplicationEventPublisher events, Clock clock) {
+                         PaymentTransactionRepository payments, ApplicationEventPublisher events, Clock clock) {
         this.enrollments = enrollments;
         this.carts = carts;
         this.cartItems = cartItems;
+        this.payments = payments;
         this.events = events;
         this.clock = clock;
     }
@@ -107,7 +111,7 @@ class PaymentResultApplier {
         }
         payment.markSuccess(now);
         order.markPaid(now);
-        Set<Long> granted = fulfil(order, now);
+        Set<Long> granted = fulfil(order, payment, now);
         events.publishEvent(new OrderPaid(order.getId(), code, order.getStudentId(), order.getTotalAmount(),
                 courseIds, now));
         log.info("Order paid: transactionRef={}, orderCode={}, late={}, grantedCourseIds={}", ref, code, !onTime,
@@ -116,17 +120,35 @@ class PaymentResultApplier {
     }
 
     /**
-     * UC-S05 step 7 / UC-A18 step 4 (a), the part after the status changes: purchase enrollments for the order's courses
+     * UC-S05 step 7 / UC-A18 step 4 (a), the part after the status changes: the order's other pending attempts are
+     * closed (R-05), purchase enrollments for the order's courses
      * not owned yet (same transaction, ADR-004) and those courses leave the student's cart (plain cart-id read, no
      * {@code carts} lock — ADR-011). Returns the newly enrolled course ids.
      */
     @Transactional(propagation = Propagation.MANDATORY)
-    Set<Long> fulfil(Order order, Instant now) {
+    Set<Long> fulfil(Order order, PaymentTransaction paidBy, Instant now) {
+        closeOtherPendingAttempts(order, paidBy, now);
         List<Long> courseIds = order.courseIds();
         Set<Long> granted = enrollments.grantForPaidOrder(
                 new GrantEnrollmentCommand(order.getStudentId(), order.getId(), courseIds, now));
         carts.findIdByStudentId(order.getStudentId())
                 .ifPresent(cartId -> cartItems.deleteByCartIdAndCourseIds(cartId, courseIds));
         return granted;
+    }
+
+    /**
+     * Review P11-R-05: an order that became paid keeps no other {@code pending} attempt (a second QR made after the first
+     * expired). They are closed as {@code expired} in the same transaction; a result arriving for one of them later is a
+     * late result on a paid order → {@code needs_review}, never a second grant. The order row is locked by the caller,
+     * and every flow touching an attempt locks its order first (ADR-011).
+     */
+    private void closeOtherPendingAttempts(Order order, PaymentTransaction paidBy, Instant now) {
+        for (PaymentTransaction other : payments.findByOrderIdOrderByCreatedAtDescIdDesc(order.getId())) {
+            if (other.isPending() && !other.getId().equals(paidBy.getId())) {
+                other.expire(now);
+                log.info("Other pending attempt of a paid order closed: transactionRef={}, orderCode={}",
+                        other.getTransactionRef(), order.getOrderCode());
+            }
+        }
     }
 }

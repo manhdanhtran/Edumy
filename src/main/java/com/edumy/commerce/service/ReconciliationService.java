@@ -107,7 +107,7 @@ public class ReconciliationService {
             if (!order.isPaid()) {
                 order.markPaid(now);
             }
-            Set<Long> enrolled = applier.fulfil(order, now);
+            Set<Long> enrolled = applier.fulfil(order, payment, now);
             granted = courseIds.stream().filter(enrolled::contains).toList();
         } else {
             payment.refundOutside(command.adminId(), command.note(), now);

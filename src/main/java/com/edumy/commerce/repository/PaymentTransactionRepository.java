@@ -24,6 +24,10 @@ public interface PaymentTransactionRepository extends JpaRepository<PaymentTrans
     /** UC-S05 {@code GET /orders/{orderCode}/payments/current} (polling): the latest attempt of an order. */
     Optional<PaymentTransaction> findFirstByOrderIdOrderByCreatedAtDescIdDesc(Long orderId);
 
+    /** UC-S05 polling of a paid order (P11-fix-d, R-05): the attempt that paid it (latest {@code status}). */
+    Optional<PaymentTransaction> findFirstByOrderIdAndStatusOrderByCreatedAtDescIdDesc(Long orderId,
+                                                                         PaymentStatus status);
+
     /**
      * UC-S05 precondition (reuse a still-valid QR), BR-16: the pending attempt of an order (at most one). When it is
      * closed to create a new QR, flush that change before saving the new attempt (IDENTITY inserts run at persist

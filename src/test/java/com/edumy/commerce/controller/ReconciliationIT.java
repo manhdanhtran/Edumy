@@ -68,6 +68,8 @@ class ReconciliationIT {
     @Autowired
     CapturingMailGateway mails;
     @Autowired
+    javax.sql.DataSource dataSource;
+    @Autowired
     com.edumy.support.PaymentTestHooks hooks;
     @Value("${edumy.payment.webhook-secret}")
     String secret;
@@ -314,5 +316,52 @@ class ReconciliationIT {
         Mac mac = Mac.getInstance("HmacSHA256");
         mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
         return HexFormat.of().formatHex(mac.doFinal(body.getBytes(StandardCharsets.UTF_8)));
+    }
+
+    /** Review P11-R-05: activating a needs_review attempt closes the order's other pending attempt. */
+    @Test
+    void activated_closesTheOrdersOtherPendingAttempt_R05() throws Exception {
+        String ref = CommerceFixtures.newReference();
+        long payment = needsReview(ref);
+        long orderId = jdbc.sql("SELECT order_id FROM payment_transactions WHERE id = ?").param(payment)
+                .query(Long.class).single();
+        String other = CommerceFixtures.newReference();
+        jdbc.sql("UPDATE orders SET status = 'pending', cancel_reason = NULL, cancelled_at = NULL WHERE id = ?")
+                .param(orderId).update();
+        Instant now = Instant.now();
+        jdbc.sql("""
+                        INSERT INTO payment_transactions (order_id, transaction_ref, amount, qr_data, qr_expires_at,
+                                                          status, created_at)
+                        VALUES (?, ?, 500000, 'qr', ?, 'pending', ?)""")
+                .params(orderId, other, Timestamp.from(now.plusSeconds(600)), Timestamp.from(now.minusSeconds(60)))
+                .update();
+
+        resolve(admin, payment, "activated", "Kích hoạt").andExpect(status().isOk());
+
+        assertThat(commerce.paymentColumn(other, "status", String.class)).isEqualTo("expired");
+    }
+
+    /** Review P11-R-06: the provider is asked after the read-only transaction ended (no connection held meanwhile). */
+    @Test
+    void detail_providerCalledOutsideTheTransaction_noConnectionHeldDuringTheLookup_R06() throws Exception {
+        long payment = needsReview(CommerceFixtures.newReference());
+        com.zaxxer.hikari.HikariPoolMXBean pool = dataSource.unwrap(com.zaxxer.hikari.HikariDataSource.class)
+                .getHikariPoolMXBean();
+        FakeQrPaymentGateway.Hold lookup = gateway.holdNextQuery();
+        java.util.concurrent.ExecutorService executor = java.util.concurrent.Executors.newSingleThreadExecutor();
+        try {
+            java.util.concurrent.Future<Integer> page = executor.submit(() -> mvc.perform(
+                    get(PAYMENTS + payment).header(HttpHeaders.AUTHORIZATION, admin.bearer()))
+                    .andReturn().getResponse().getStatus());
+            assertThat(lookup.awaitReached()).isTrue();
+
+            assertThat(pool.getActiveConnections()).isZero();
+
+            lookup.release();
+            assertThat(page.get(30, java.util.concurrent.TimeUnit.SECONDS)).isEqualTo(200);
+        } finally {
+            lookup.release();
+            executor.shutdownNow();
+        }
     }
 }
