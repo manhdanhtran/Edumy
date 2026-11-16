@@ -1,5 +1,8 @@
 # Datasource comes from Testcontainers @ServiceConnection (test/support/TestcontainersConfiguration).
 spring:
+  datasource:
+    hikari:
+      minimum-idle: 2   # P13 (DT-m5): ~10 cached contexts keep few idle connections; max stays 10 (race tests use 8)
   flyway:
     locations: classpath:db/migration   # no dev seed in tests
 

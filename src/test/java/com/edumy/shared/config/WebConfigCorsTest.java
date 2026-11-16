@@ -34,7 +34,7 @@ class WebConfigCorsTest {
         assertThat(api.getAllowedOrigins()).containsExactly("http://localhost:5173");
         assertThat(api.getAllowCredentials()).isTrue();
         assertThat(api.getExposedHeaders()).containsExactlyInAnyOrder(
-                "Retry-After", "Location", "Content-Disposition", "X-Trace-Id", "X-Edumy-Stub");
+                "Retry-After", "Location", "Content-Disposition", "X-Trace-Id");
     }
 
     @Test
