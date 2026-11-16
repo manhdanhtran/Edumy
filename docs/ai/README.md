@@ -31,3 +31,13 @@ host (profile test) thì thư bị bỏ qua kèm một dòng WARN. Hai route SPA
 `05-api-contract.md` "Front-end routes used in emails"):
 - `{base}/verify-email?token=…` → SPA gọi `POST /api/v1/auth/email-verification/confirm` `{token}`.
 - `{base}/reset-password?token=…` → SPA hiện form mật khẩu mới rồi gọi `POST /api/v1/auth/password/reset` `{token,newPassword}`.
+
+## Môi trường dev (P11-fix-e)
+- VS Code: tạo `.vscode/settings.json` với `"java.autobuild.enabled": false` (thư mục `.vscode/` bị `.gitignore` nên
+  không commit) rồi **Reload Window**. Nếu không, extension Java ghi class của nó vào `target/` trong lúc Maven build và
+  gây đỏ giả ("Unresolved compilation problems", `NoClassDefFoundError`, thiếu `*MapperImpl` của MapStruct). Khi gặp, chạy
+  lại với `./mvnw clean test`.
+- Full suite luôn chạy `./mvnw clean test`.
+- Dev seed giữ tài khoản admin `admin@edumy.vn` (file Flyway `db/seed/V1000__dev_seed.sql` đã chạy, không sửa): chỉ dùng ở
+  profile `dev`, không bao giờ dùng cho production. Mọi email trong code test dùng `@example.com` (trừ các test kiểm tra
+  đúng tài khoản admin của seed); config / docs dùng `@edumy.test` hoặc `@example.com`.

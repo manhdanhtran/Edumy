@@ -74,6 +74,7 @@
 | `CART_EMPTY` | 422 | UC-S04 E1 "Giỏ hàng trống" / BR-27: after D-26 re-validation no purchasable line is left, so no order is created (P07-commerce; the SRS names the text, no code) |
 | `ORDER_CART_CHANGED` | 409 | UC-S04 step 3 (P11, ADR-011 Q2/R3): the lines or the total sent in `CreateOrderRequest.expectedCourseIds` / `expectedTotalAmount` differ from the re-validated cart (`errors[]` = excluded lines), or a pending order holds a course the student owns now (create QR cancels it) — nothing else changed |
 | `ORDER_ALREADY_PAID` | 409 | UC-S04 step 2 / UC-S16 E1 / create QR (P11): the provider lookup found the order paid; the payment, the order and the enrollments were recorded (committed) and the request stops — reload the cart / orders |
+| `ORDER_EXPIRED` | 409 | BR-29 / P11 R3a (P11-fix-e, additive): create QR on a pending order older than 24 h — the order was looked up and cancelled as `expired` (committed); order again from the cart |
 | `PAYMENT_PROVIDER_UNAVAILABLE` | 503 | UC-S05 E1, UC-S16 E2 (P11): the payment provider did not answer; nothing was changed (order and cart kept), retry later |
 | `CART_COURSE_FREE` | 422 | BR-09 / UC-S01 E3: the course is free (price 0) — enroll with UC-S15 instead (P06-G5; the SRS names no error text, only "chuyển sang ghi danh") |
 | `COURSE_CO_INSTRUCTOR_IS_MAIN` | 422 | BR-02; trigger: the invited instructor is the course's main instructor |
@@ -612,7 +613,7 @@ Commerce payments (P11, ADR-011):
   attempt per order, also under concurrency). A pending attempt whose QR expired is looked up first: not paid / failed →
   closed and a new attempt is made (A1, AC-10: one order, several attempts — BR-23); paid → 409 `ORDER_ALREADY_PAID`
   (recorded). Before any QR (P11 R3): an order older than 24 h is looked up and cancelled as `expired` → 409
-  `DATA_CONFLICT`; an order holding a course the student owns now is looked up and cancelled as `replaced` → 409
+  `ORDER_EXPIRED` (P11-fix-e; was `DATA_CONFLICT`); an order holding a course the student owns now is looked up and cancelled as `replaced` → 409
   `ORDER_CART_CHANGED` (order again from the cart). 404 unknown / foreign (identical) · 409 `DATA_CONFLICT` not pending ·
   503 `PAYMENT_PROVIDER_UNAVAILABLE` (no QR, nothing changed, E1).
 - `GET /admin/payments/{id}` (UC-A18 step 1, decision Q4, additive) → **200** `AdminPaymentDetailResponse {payment:

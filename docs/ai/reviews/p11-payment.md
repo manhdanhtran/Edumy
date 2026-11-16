@@ -253,3 +253,17 @@ Không có chỗ nào cần `refresh(entity, PESSIMISTIC_WRITE)`.
 - `transactionRef`, `orderCode`, `studentId`, số tiền, id khóa học có trong log — đây là mã tham chiếu NFR-08
   yêu cầu, không phải dữ liệu bí mật.
 - Lưu ý còn lại: P11-R-07.
+
+---
+
+## Trạng thái sau P11-fix (2026-11-16)
+
+| Mã | Trạng thái | Commit (code / docs) | Bằng chứng |
+|---|---|---|---|
+| P11-R-01 | Đã sửa | `6372d3d` / `5714aab` | `ORDER BY p.qr_expires_at, p.id`; `ClaimQueryPlanIT` (EXPLAIN không filesort trên `ix_payment_pending_expiry`; instance B xử lý 3 đơn còn lại trong khi A giữ 1; webhook trên đơn chưa claim không bị chặn); đột biến về `o.id` → 3 test đỏ |
+| P11-R-02 | Đã sửa | `83aaa2c` / `150f38a` | Khóa theo học viên (dòng `carts`) trước mọi luồng áp kết quả / cấp quyền; bộ hẹn giờ áp "đã trả" trong transaction mới. `PaymentRaceIT` (muộn ‖ đúng hạn theo cả hai thứ tự, một phần); bỏ khóa → 3 test đỏ |
+| P11-R-03 | Đã sửa | `2d9c545` / `068cd25` | `support/Interleave` + hold trong cổng giả / listener; viết lại 6 test, thêm kịch bản (b) (c) (d) (e) (f) (g) (i) (j); bảng đột biến trong progress.md (mọi test đỏ khi gỡ khóa tương ứng) |
+| P11-R-04 | Đã sửa | `83aaa2c` / `150f38a` | T1 đọc sở hữu sau khi khóa giỏ; mọi luồng cấp quyền khác cũng khóa giỏ trước, nên không còn cấp quyền xen giữa |
+| P11-R-05 | Đã sửa | `0d3e9f2` / `7271e1b` | Đơn chuyển `paid` → các lần `pending` khác `expired` cùng transaction; polling đơn đã trả hiện lần `success`; `PaymentWebhookIT`, `ReconciliationIT` (đỏ khi gỡ) |
+| P11-R-06 | Đã sửa | `0d3e9f2` / `7271e1b` | Mặc định 2 s + 3 s, khởi động từ chối `connect + read >= tx-timeout`; trang chi tiết đối soát gọi cổng sau khi đóng transaction (0 kết nối được giữ trong lúc tra cứu, đỏ khi gỡ) |
+| P11-R-07 | Đã sửa | `83aaa2c` / `150f38a` | `PaymentGatewayException(code)` + `describe` (loại + mã đã làm sạch, không message); lỗi bộ hẹn giờ log kèm stack trace |

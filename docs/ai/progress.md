@@ -91,6 +91,7 @@ P10 review + P10-fix-a (security minors + Q-g identity) · P10-fix-b (authoring:
 | P11-fix-b R-01 expired-QR claim follows its index (EXPLAIN, lock scope) | done | 6372d3d | 2367 tests green (+4: ClaimQueryPlanIT), suite 7 min 55 s; see `### P11-fix-b` |
 | P11-fix-c R-03 concurrency tests force real interleavings; mutation checks | done | 2d9c545 | 2373 tests green (+6 net: rewrites + scenarios c, d, e, g, j), suite 20 min 13 s (machine slow; same tests ran 8-10 min before); see `### P11-fix-c` |
 | P11-fix-d R-05 paid orders keep no pending attempt; R-06 timeouts + lookup outside the transaction | done | 0d3e9f2 | 2379 tests green (+6: PaymentWebhookIT 1, ReconciliationIT 2, PaymentPropertiesTest 3), suite 14 min 33 s; see `### P11-fix-d` |
+| P11-fix-e daily code cleanup (ADR-012), ORDER_EXPIRED, example.com test addresses, VS Code note | done | fb96241 | 2379 tests green (no count change), wall time 7 h 31 min because the machine slept (not a measurement); see `### P11-fix-e` |
 
 ## P11 — commerce (plan approved 2026-11-15 with Q1–Q5 + R1–R3; ADR-011)
 Units P11-a … P11-f. Plan: lock order cart → order → attempt → enrollments / cart lines; scalar-first reads (R1);
@@ -244,6 +245,20 @@ Commerce is real: T1 (P11-b), create QR (P11-c), webhook + T2 (P11-a), cancel (P
 - VS Code: `.vscode/settings.json` with `java.autobuild.enabled: false` is not enough until the window is reloaded —
   three more `target/` artefacts (`NoClassDefFoundError`, missing MapStruct implementations) in this unit; narrow runs
   keep `clean`.
+
+### P11-fix-e — approved items from the P11 report
+- `TokenCleanupScheduler`: `cron = edumy.scheduler.token-cleanup-cron` (default `0 0 3 * * *`) in `edumy.scheduler.zone`
+  (default `Asia/Ho_Chi_Minh`), once a day; ADR-012 (schedules, multi-instance safety, `ix_user_tokens_expires_at` at the
+  next schema change if the table grows).
+- Rule 6: no applied Flyway file edited; seed admin `admin@edumy.vn` kept (README note: dev profile only). Test code:
+  every `@edumy.vn` / `@x.com` literal → `@example.com` (9 files: identity schema / repository / entity / request /
+  event / limiter tests, `SchemaFixtures`, `ConstraintViolationTranslatorIT`); kept on purpose: `MeControllerSeedIT`,
+  `MySqlSeedSpringBootTest(IT)`, `SeedUserTokens`, `AdminUserControllerIT` (`q=@edumy.vn` finds the seed admin).
+- New 409 `ORDER_EXPIRED` (additive) for create QR on an order older than 24 h (R3a; was `DATA_CONFLICT`).
+- `.vscode/settings.json` (`java.autobuild.enabled: false`) created locally; `.vscode/` is git-ignored, so the setting
+  and the reload step are documented in docs/ai/README.md ("Môi trường dev"). Narrow runs still use `clean` until the
+  window is reloaded (see P11-fix-d).
+- Footer of `f951350`: noted at the top of `## P11-fix`.
 
 ### Mutation checks (P11-fix-c; each lock removed temporarily, test run, lock restored, never committed)
 | Test | Lock / code removed | Result |
