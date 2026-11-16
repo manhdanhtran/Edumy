@@ -89,6 +89,7 @@ P10 review + P10-fix-a (security minors + Q-g identity) · P10-fix-b (authoring:
 | P11-f cleanup: STUB-P1 down to 4 lines (P12/P13), docs 01/06/07/10/triage, mail sender on edumy.test | done | 614f1e0 | 2359 tests green (no test change), suite 16 min 05 s (same tests as P11-e at 8 min 09 s: machine load, see report); see `### P11-f` |
 | P11-fix-a R-02 + R-04 per-student cart lock; timers apply 'paid' in a new transaction; R-07 log hygiene | done | 83aaa2c | 2363 tests green (+4: PaymentRaceIT), suite 10 min 01 s; see `### P11-fix-a` |
 | P11-fix-b R-01 expired-QR claim follows its index (EXPLAIN, lock scope) | done | 6372d3d | 2367 tests green (+4: ClaimQueryPlanIT), suite 7 min 55 s; see `### P11-fix-b` |
+| P11-fix-c R-03 concurrency tests force real interleavings; mutation checks | done | 2d9c545 | 2373 tests green (+6 net: rewrites + scenarios c, d, e, g, j), suite 20 min 13 s (machine slow; same tests ran 8-10 min before); see `### P11-fix-c` |
 
 ## P11 — commerce (plan approved 2026-11-15 with Q1–Q5 + R1–R3; ADR-011)
 Units P11-a … P11-f. Plan: lock order cart → order → attempt → enrollments / cart lines; scalar-first reads (R1);
@@ -215,10 +216,31 @@ Commerce is real: T1 (P11-b), create QR (P11-c), webhook + T2 (P11-a), cancel (P
   instance A holds one order inside its lookup → instance B processes the other 3 at once; a webhook on an unclaimed
   order is not blocked).
 
+### P11-fix-c — R-03: concurrency tests force real interleavings
+- Rewritten (each now stops a real flow inside its transaction with `Interleave` and proves the second flow waited for /
+  skipped a lock): `OrderWriteIT` UC-S04 E3 / AC-21 (T1 ‖ T1, stopped in the lookup; the second gets the first's order,
+  one lookup, old attempt `expired`), `PaymentQrIT` BR-16 (stopped in `createQr`), `PaymentWebhookIT` AC-11 (10
+  deliveries released by a `CyclicBarrier`; and 7 deliveries waiting while the first holds its locks — 7 because the test
+  pool has 10 connections), `ReconciliationIT` E1 (stopped at `PaymentReconciled`; the stored decision, order,
+  enrollments and the single mail are the first admin's), `CommerceExpiryIT` NFR-09 (run B finishes while run A holds
+  one order; both runs worked; exactly 10; one lookup per order).
+- New scenarios (review list): (c) webhook ‖ T1 replacing the order, (d) webhook ‖ cancel, (e) webhook ‖ create QR, (g)
+  timer ‖ webhook, (j) one broken order does not stop the run, "found paid" whose T2 fails is retried. In (c), (d), (e)
+  the verified webhook makes the fake provider report the payment, so the held lookup sees it: the request records it
+  and answers 409 `ORDER_ALREADY_PAID`, the webhook is ignored — one effect.
+- Hooks: `FakeQrPaymentGateway.failQueriesFor(ref)`, `PaymentTestHooks.holdNextReconciliation()`.
 ### Mutation checks (P11-fix-c; each lock removed temporarily, test run, lock restored, never committed)
 | Test | Lock / code removed | Result |
 |---|---|---|
 | `ClaimQueryPlanIT` (3 of 4: plan, instance B, unblocked webhook) | `ORDER BY p.qr_expires_at, p.id` → `…, o.id` | RED (filesort; B processed 0; webhook blocked) |
+| M1 — `PaymentWebhookIT#deliveryWaitingForTheOrderLock…R1`, `#tenParallelDeliveries…AC11`, `#sevenDeliveriesWait…AC11`; all 6 `PaymentRaceIT`; `OrderWriteIT#create_webhookForTheOldOrderWaitsForT1…` | T2 (`PaymentService.applyResult`): cart lock removed, order `findById`, attempt read without lock | RED — 10 tests |
+| M2 — `PaymentRaceIT` late‖on-time (Q3), on-time‖late (AC-24), partial (step 7) | `StudentPaymentLock.lock` made a no-op (order / attempt locks kept) | RED — the 3 two-order tests; same-order races stay green (order lock still serialises them, as designed) |
+| M3 — `OrderWriteIT#create_secondRequestWaitsForTheCart…UCS04E3_AC21` | T1 cart read without lock (`findWithItemsByStudentId`) | RED — 1 test (`PaymentRaceIT#timerFindsPaid…` stays green: T1 still waits for the order lock) |
+| M4 — `PaymentQrIT#secondRequestWaitsForTheFirst…BR16`, `#webhookForTheExpiredAttemptWaits…` | create QR: cart lock and order `FOR UPDATE` removed | RED — 2 tests |
+| M5 — `ReconciliationIT#secondAdminWaitsForTheFirstDecision…E1` | UC-A18: cart lock removed, order and attempt read without lock | RED — 1 test |
+| M6 — `CommerceExpiryIT#twoRunsOverlapping…NFR09`, `#anOrderLockedElsewhere…SKIP_LOCKED`, `ClaimQueryPlanIT#whileInstanceAHoldsOneOrder…` | `SKIP LOCKED` removed from both claims | RED — 3 tests |
+Every mutation was applied in the working tree only, the file restored byte for byte afterwards (`git diff` checked), never
+committed. Note: the M3 run took 5.8 h wall time because the machine slept; the result is unaffected.
 
 ## P09 summary
 - **P09-a** constraint coverage: `docs/ai/09-constraint-coverage.md` maps DDD §8 rows 1-31 (+ one valid-row test per table) to the existing `*SchemaIT` tests; only gap (row 5 NOT NULL) closed with 2 tests. No separate `ConstraintsIT`.
