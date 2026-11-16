@@ -19,6 +19,7 @@ public enum ErrorCode {
     DATA_CONFLICT(HttpStatus.CONFLICT),
     RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR),
+    SERVICE_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE),             // P13: the database could not be reached (e.g. JWT check)
 
     // identity
     AUTH_INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED),

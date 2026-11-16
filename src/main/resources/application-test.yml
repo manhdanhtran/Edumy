@@ -7,6 +7,10 @@ edumy:
   scheduler:
     enabled: false   # tests call the services directly (P11-e); SchedulerBeansTest covers the switch
   security:
+    auth-rate-limit:   # one IP runs the whole suite; the limiter is tested with explicit values (P13)
+      register-capacity: 100000
+      forgot-capacity: 100000
+      reset-capacity: 100000
     jwt:
       secret: bSLDLXBtujvgr0zpYoZNZGbn9pMzRaa4W358RrPR83M=   # TEST ONLY
   payment:

@@ -168,6 +168,9 @@ public class AuthService {
      */
     public void resetPassword(String rawCode, String newPassword) {
         Objects.requireNonNull(newPassword, "newPassword");
+        if (!accountTokens.isUsable(rawCode, TokenType.PASSWORD_RESET)) {
+            throw tokenInvalid(); // P13: a wrong / used / expired code costs no BCrypt hash
+        }
         String passwordHash = passwordEncoder.encode(newPassword);
         transactions.executeWithoutResult(status -> {
             Long userId = accountTokens.consume(rawCode, TokenType.PASSWORD_RESET)

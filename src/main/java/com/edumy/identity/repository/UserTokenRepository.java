@@ -27,6 +27,16 @@ public interface UserTokenRepository extends JpaRepository<UserToken, Long> {
             """)
     int consume(@Param("hash") String tokenHash, @Param("type") TokenType type, @Param("now") Instant now);
 
+    /**
+     * P13: plain read — an unused, unexpired code of {@code type} with this hash exists. Lets the reset reject a wrong code
+     * before spending a BCrypt hash; {@link #consume} still decides atomically inside the transaction.
+     */
+    @Query("""
+            select case when count(t) > 0 then true else false end from UserToken t
+            where t.tokenHash = :hash and t.tokenType = :type and t.usedAt is null and t.expiresAt > :now
+            """)
+    boolean isUsable(@Param("hash") String tokenHash, @Param("type") TokenType type, @Param("now") Instant now);
+
     /** Owner of a code, read after a successful {@link #consume}. */
     @Query("select t.user.id from UserToken t where t.tokenHash = :hash and t.tokenType = :type")
     Optional<Long> findUserIdByTokenHashAndType(@Param("hash") String tokenHash, @Param("type") TokenType type);

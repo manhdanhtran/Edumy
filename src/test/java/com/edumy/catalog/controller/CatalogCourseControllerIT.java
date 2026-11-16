@@ -285,13 +285,27 @@ class CatalogCourseControllerIT {
 
     // ------------------------------------------------------------------------------------- optional token
 
+    /**
+     * P13: on the public reads a bad token (malformed, expired, of a locked account, ended session) is ignored — the page
+     * is answered anonymously (200, no viewer) instead of 401; a valid token still gives the viewer context.
+     */
     @Test
-    void list_invalidOrLockedToken_401_anonymousStillWorks() throws Exception {
-        // decision (docs/ai/05 catalog notes): a bad token is rejected like everywhere else; no token = anonymous
-        expectProblem(mvc.perform(get(COURSES).header(HttpHeaders.AUTHORIZATION, "Bearer not-a-jwt")), 401,
-                "UNAUTHENTICATED");
-        expectProblem(mvc.perform(get(COURSES).header(HttpHeaders.AUTHORIZATION,
-                tokens.bearer(SeedUserTokens.LOCKED))), 401, "UNAUTHENTICATED");
+    void publicReads_invalidExpiredOrLockedToken_answeredAnonymously_validTokenKeepsTheViewer_P13() throws Exception {
+        String detail = "/api/v1/catalog/courses/lap-trinh-java-spring-boot-tu-co-ban-den-nang-cao";
+        for (String bad : new String[] {"Bearer not-a-jwt", tokens.bearer(SeedUserTokens.LOCKED),
+                "Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIyIiwiZXhwIjoxfQ.c2lnbmF0dXJl"}) {
+            mvc.perform(get(COURSES).header(HttpHeaders.AUTHORIZATION, bad)).andExpect(status().isOk());
+            mvc.perform(get(detail).header(HttpHeaders.AUTHORIZATION, bad))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.viewer").value(org.hamcrest.Matchers.nullValue()));
+            mvc.perform(get("/api/v1/catalog/certificates/EDU-7K2M-9QXA-4F8T").header(HttpHeaders.AUTHORIZATION, bad))
+                    .andExpect(status().isOk());
+        }
+        mvc.perform(get(detail).header(HttpHeaders.AUTHORIZATION, tokens.bearer(16)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.viewer").isNotEmpty());
         list("").andExpect(status().isOk());
-    }
-}
+        // a protected path still refuses the same bad token
+        expectProblem(mvc.perform(get("/api/v1/cart").header(HttpHeaders.AUTHORIZATION, "Bearer not-a-jwt")), 401,
+                "UNAUTHENTICATED");
+    }}

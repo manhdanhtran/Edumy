@@ -8,6 +8,7 @@ import java.util.List;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
+import com.edumy.identity.config.AuthRateLimitProperties;
 import com.edumy.shared.config.EdumyProperties;
 import com.edumy.shared.error.ErrorCode;
 import com.edumy.shared.error.ProblemResponder;
@@ -21,6 +22,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.web.filter.CorsFilter;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.GrantedAuthority;
@@ -67,8 +69,13 @@ public class SecurityConfig {
 
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http, ProblemResponder problems, EdumyProperties properties,
-                                            Clock clock) throws Exception {
+                                            Clock clock, JwtDecoder jwtDecoder,
+                                            AuthRateLimitProperties authRateLimits) throws Exception {
         AuthenticationEntryPoint unauthenticated = (request, response, ex) -> {
+            if (AuthenticationUnavailableFilter.isUnavailable(ex)) { // P13: the check failed, not the token
+                problems.respond(request, response, ErrorCode.SERVICE_UNAVAILABLE);
+                return;
+            }
             response.setHeader(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
             problems.respond(request, response, ErrorCode.UNAUTHENTICATED);
         };
@@ -95,14 +102,21 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
+                // P13: a foreign Origin is refused with a ProblemDetail 403 before Spring's CorsFilter answers in plain text
+                .addFilterBefore(new CorsRejectionFilter(properties.cors().allowedOrigins(), problems), CorsFilter.class)
                 // §4.5: Origin check of the cookie endpoints, before any token is read
                 .addFilterBefore(new AuthOriginFilter(properties.cors().allowedOrigins(), problems),
                         BearerTokenAuthenticationFilter.class)
+                // P13 / ADR-002: register, forgot and reset password per IP, before any body or token is read
+                .addFilterBefore(new AuthEndpointRateLimiter(clock, problems, authRateLimits),
+                        BearerTokenAuthenticationFilter.class)
+                // P13: a database failure while the token is checked → 503 ProblemDetail, not 401 / 500
+                .addFilterBefore(new AuthenticationUnavailableFilter(problems), BearerTokenAuthenticationFilter.class)
                 // §4.4 NFR-03: 30 req/min per IP on the public certificate check, before any token is read
                 .addFilterBefore(new CertificateVerifyRateLimiter(clock, problems),
                         BearerTokenAuthenticationFilter.class)
                 .oauth2ResourceServer(oauth2 -> oauth2
-                        .bearerTokenResolver(new AuthEndpointBearerTokenResolver())
+                        .bearerTokenResolver(new AuthEndpointBearerTokenResolver(jwtDecoder))
                         .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter()))
                         .authenticationEntryPoint(unauthenticated)
                         .accessDeniedHandler(denied))

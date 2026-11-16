@@ -73,6 +73,13 @@ public class AccountTokenService {
         return tokens.findUserIdByTokenHashAndType(hash, type);
     }
 
+    /** P13: the raw code is a usable code of {@code type} right now (no write; {@link #consume} decides). */
+    @Transactional(readOnly = true)
+    public boolean isUsable(String rawCode, TokenType type) {
+        return rawCode != null && !rawCode.isBlank()
+                && tokens.isUsable(SecureTokens.sha256Hex(rawCode), type, clock.instant());
+    }
+
     /** D-03: true when the user has no code of this type yet or the latest one is at least 60 s old. */
     @Transactional(readOnly = true)
     public boolean canResend(Long userId, TokenType type) {
