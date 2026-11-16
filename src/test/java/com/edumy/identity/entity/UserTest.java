@@ -19,14 +19,14 @@ class UserTest {
     static final String HASH = "$2a$12$abcdefghijklmnopqrstuvabcdefghijklmnopqrstuvwxyz01234";
 
     static User newUser() {
-        return User.register("student@edumy.vn", HASH, "Nguyễn Văn A", NOW);
+        return User.register("student@example.com", HASH, "Nguyễn Văn A", NOW);
     }
 
     @Test
     void register_validInput_activeUnverifiedWithCreatedAt() {
         User user = newUser();
 
-        assertThat(user.getEmail()).isEqualTo("student@edumy.vn");
+        assertThat(user.getEmail()).isEqualTo("student@example.com");
         assertThat(user.getPasswordHash()).isEqualTo(HASH);
         assertThat(user.getFullName()).isEqualTo("Nguyễn Văn A");
         assertThat(user.getStatus()).isEqualTo(UserStatus.ACTIVE);
@@ -39,21 +39,21 @@ class UserTest {
 
     @Test
     void register_unnormalizedEmail_storesTrimmedLowerCase() {
-        User user = User.register("  Student.ONE@Edumy.VN ", HASH, "A", NOW);
+        User user = User.register("  Student.ONE@Example.COM ", HASH, "A", NOW);
 
-        assertThat(user.getEmail()).isEqualTo("student.one@edumy.vn");
+        assertThat(user.getEmail()).isEqualTo("student.one@example.com");
     }
 
     @Test
     void register_fullNameWithSurroundingSpaces_storedTrimmed() {
-        assertThat(User.register("a@edumy.vn", HASH, "  Trần Thị B  ", NOW).getFullName()).isEqualTo("Trần Thị B");
+        assertThat(User.register("a@example.com", HASH, "  Trần Thị B  ", NOW).getFullName()).isEqualTo("Trần Thị B");
     }
 
     @ParameterizedTest
     @NullAndEmptySource
     @ValueSource(strings = {"   ", "\t"})
     void register_blankFullName_rejected(String fullName) {
-        assertValidationFailed(() -> User.register("a@edumy.vn", HASH, fullName, NOW), "fullName");
+        assertValidationFailed(() -> User.register("a@example.com", HASH, fullName, NOW), "fullName");
     }
 
     @ParameterizedTest
@@ -66,17 +66,17 @@ class UserTest {
     @NullAndEmptySource
     @ValueSource(strings = {"  "})
     void register_blankPasswordHash_rejected(String passwordHash) {
-        assertThatIllegalArgumentException().isThrownBy(() -> User.register("a@edumy.vn", passwordHash, "A", NOW));
+        assertThatIllegalArgumentException().isThrownBy(() -> User.register("a@example.com", passwordHash, "A", NOW));
     }
 
     @Test
     void register_nullNow_rejected() {
-        assertThatThrownBy(() -> User.register("a@edumy.vn", HASH, "A", null)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> User.register("a@example.com", HASH, "A", null)).isInstanceOf(NullPointerException.class);
     }
 
     @Test
     void normalizeEmail_mixedCaseAndSpaces_trimmedLowerCase() {
-        assertThat(User.normalizeEmail(" ABC@X.com\t")).isEqualTo("abc@x.com");
+        assertThat(User.normalizeEmail(" ABC@EXAMPLE.com\t")).isEqualTo("abc@example.com");
     }
 
     @Test

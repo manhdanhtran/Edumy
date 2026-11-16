@@ -57,8 +57,10 @@ edumy:
     allowed-origins: []
   scheduler:
     enabled: true    # P11-e (NFR-09): QR expiry, 24 h order expiry, code cleanup; false in application-test.yml
-    interval: PT5M
+    interval: PT5M                    # QR expiry, 24 h order expiry (ADR-012)
     initial-delay: PT1M
+    token-cleanup-cron: "0 0 3 * * *"   # account codes expired > 30 days, once a day (ADR-012)
+    zone: Asia/Ho_Chi_Minh
   payment:
     provider: fake
   frontend:

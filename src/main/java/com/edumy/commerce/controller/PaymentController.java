@@ -38,7 +38,7 @@ public class PaymentController {
     /**
      * UC-S05 steps 1–2 (P11-c): 201 + a new pending QR attempt (reference = transaction reference, amount = order total,
      * valid 15 min, BR-13 / BR-14), or 200 + the still-valid pending attempt (precondition). 404 unknown / foreign code ·
-     * 409 {@code DATA_CONFLICT} order not pending (also: just cancelled as expired, older than 24 h) · 409
+     * 409 {@code DATA_CONFLICT} order not pending · 409 {@code ORDER_EXPIRED} (older than 24 h: cancelled now) · 409
      * {@code ORDER_CART_CHANGED} (the order holds a course owned now: cancelled, order again from the cart) · 409
      * {@code ORDER_ALREADY_PAID} (the previous attempt was found paid: recorded) · 503
      * {@code PAYMENT_PROVIDER_UNAVAILABLE} (no QR, nothing changed, E1).

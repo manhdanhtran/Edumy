@@ -15,7 +15,8 @@ import org.springframework.scheduling.annotation.Scheduled;
 
 /**
  * NFR-09 / P11-e: the three timers exist only when {@code edumy.scheduler.enabled=true} (production / dev default; the
- * test profile turns them off), run every 5 minutes by default, and only delegate to their service.
+ * test profile turns them off), the commerce ones every 5 minutes, the code cleanup once a day (ADR-012), and only
+ * delegate to their service.
  */
 class SchedulerBeansTest {
 
@@ -45,9 +46,12 @@ class SchedulerBeansTest {
     }
 
     @Test
-    void everyFiveMinutesByDefault() throws Exception {
-        for (Class<?> type : new Class<?>[] {PaymentExpiryScheduler.class, PendingOrderExpiryScheduler.class,
-                TokenCleanupScheduler.class}) {
+    void commerceTimersEveryFiveMinutes_codeCleanupOnceADayAt3_ADR012() throws Exception {
+        Scheduled cleanup = TokenCleanupScheduler.class.getMethod("run").getAnnotation(Scheduled.class);
+        assertThat(cleanup.cron()).isEqualTo("${edumy.scheduler.token-cleanup-cron:0 0 3 * * *}");
+        assertThat(cleanup.zone()).isEqualTo("${edumy.scheduler.zone:Asia/Ho_Chi_Minh}");
+        assertThat(cleanup.fixedDelayString()).isEmpty();
+        for (Class<?> type : new Class<?>[] {PaymentExpiryScheduler.class, PendingOrderExpiryScheduler.class}) {
             Method run = type.getMethod("run");
             assertThat(run.getAnnotation(Scheduled.class).fixedDelayString()).as(type.getSimpleName())
                     .isEqualTo("${edumy.scheduler.interval:PT5M}");

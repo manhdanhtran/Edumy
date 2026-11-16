@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Test;
 /** NFR-03 semantics of {@link LoginAttemptLimiter} with a clock the test moves (it also drives Caffeine's ticker). */
 class LoginAttemptLimiterTest {
 
-    static final String EMAIL = "student@edumy.vn";
+    static final String EMAIL = "student@example.com";
     static final Instant START = Instant.parse("2026-11-13T08:00:00Z");
 
     final ManualClock clock = new ManualClock(START);
@@ -131,7 +131,7 @@ class LoginAttemptLimiterTest {
         fail(5, Duration.ZERO);
 
         assertBlocked(EMAIL, 900);
-        assertNotBlocked("other@edumy.vn");
+        assertNotBlocked("other@example.com");
     }
 
     @Test

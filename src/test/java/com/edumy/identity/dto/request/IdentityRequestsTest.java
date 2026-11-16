@@ -11,7 +11,7 @@ class IdentityRequestsTest {
 
     @Test
     void toString_masksPasswordsAndCodes_NFR08() {
-        assertThat(new RegisterRequest("a@edumy.vn", SECRET, "A").toString()).doesNotContain(SECRET);
+        assertThat(new RegisterRequest("a@example.com", SECRET, "A").toString()).doesNotContain(SECRET);
         assertThat(new VerifyEmailRequest(SECRET).toString()).doesNotContain(SECRET);
         assertThat(new ResetPasswordRequest(SECRET, SECRET + "2").toString()).doesNotContain(SECRET);
         assertThat(new ChangePasswordRequest(SECRET, SECRET + "2").toString()).doesNotContain(SECRET);
@@ -19,8 +19,8 @@ class IdentityRequestsTest {
 
     @Test
     void email_isStripped() {
-        assertThat(new RegisterRequest("  A@Edumy.vn ", SECRET, "A").email()).isEqualTo("A@Edumy.vn");
-        assertThat(new ForgotPasswordRequest(" a@edumy.vn\t").email()).isEqualTo("a@edumy.vn");
+        assertThat(new RegisterRequest("  A@Example.com ", SECRET, "A").email()).isEqualTo("A@Example.com");
+        assertThat(new ForgotPasswordRequest(" a@example.com\t").email()).isEqualTo("a@example.com");
         assertThat(new ForgotPasswordRequest(null).email()).isNull();
     }
 }

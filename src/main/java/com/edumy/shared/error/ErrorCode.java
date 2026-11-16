@@ -63,7 +63,8 @@ public enum ErrorCode {
     CART_ITEM_DUPLICATE(HttpStatus.CONFLICT),                         // uq_cart_items_cart_course (BR-11)
     CART_EMPTY(HttpStatus.UNPROCESSABLE_CONTENT),                     // UC-S04 E1, BR-27: no purchasable line left
     ORDER_CART_CHANGED(HttpStatus.CONFLICT),                          // UC-S04 step 3: lines / total changed since the cart was shown
-    ORDER_ALREADY_PAID(HttpStatus.CONFLICT),                          // UC-S04 step 2, UC-S16 E1: the lookup found it paid (recorded)
+    ORDER_ALREADY_PAID(HttpStatus.CONFLICT),
+    ORDER_EXPIRED(HttpStatus.CONFLICT),                               // BR-29 / P11 R3a: pending > 24 h, cancelled before a QR                          // UC-S04 step 2, UC-S16 E1: the lookup found it paid (recorded)
     PAYMENT_PROVIDER_UNAVAILABLE(HttpStatus.SERVICE_UNAVAILABLE),     // UC-S05 E1, UC-S16 E2: provider unreachable, nothing changed
 
     // learning

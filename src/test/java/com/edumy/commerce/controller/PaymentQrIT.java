@@ -222,10 +222,10 @@ class PaymentQrIT {
     }
 
     @Test
-    void orderOlderThan24Hours_lookedUp_cancelledAsExpired_409_R3a() throws Exception {
+    void orderOlderThan24Hours_lookedUp_cancelledAsExpired_409OrderExpired_R3a() throws Exception {
         FixtureOrder stale = staleOrder();
 
-        expectProblem(qr(student, stale.code()), 409, "DATA_CONFLICT");
+        expectProblem(qr(student, stale.code()), 409, "ORDER_EXPIRED");
 
         assertThat(commerce.orderColumn(stale.code(), "status", String.class)).isEqualTo("cancelled"); // committed
         assertThat(commerce.orderColumn(stale.code(), "cancel_reason", String.class)).isEqualTo("expired");

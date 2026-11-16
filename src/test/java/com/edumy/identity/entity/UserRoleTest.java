@@ -14,7 +14,7 @@ class UserRoleTest {
     static final Instant LATER = NOW.plusSeconds(3600);
 
     private final User user = UserTest.newUser();
-    private final User admin = User.register("admin@edumy.vn", UserTest.HASH, "Quản trị", NOW);
+    private final User admin = User.register("admin@example.com", UserTest.HASH, "Quản trị", NOW);
     private final Role instructor = new Role();
 
     @Test

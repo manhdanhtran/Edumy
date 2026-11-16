@@ -40,7 +40,7 @@ class IdentitySchemaIT {
 
     @Test
     void insertUser_valid_appliesDefaults() {
-        long id = insertUser("valid@edumy.vn");
+        long id = insertUser("valid@example.com");
 
         var row = jdbc.sql("SELECT status, is_email_verified, created_at, updated_at FROM users WHERE id = ?")
                 .param(id).query().singleRow();
@@ -52,20 +52,20 @@ class IdentitySchemaIT {
 
     @Test
     void insertUser_duplicateEmail_rejected_BR01() {
-        insertUser("dup@edumy.vn");
-        assertViolates("uq_users_email", () -> insertUser("dup@edumy.vn"));
+        insertUser("dup@example.com");
+        assertViolates("uq_users_email", () -> insertUser("dup@example.com"));
     }
 
     /** users.email is utf8mb4_bin: accents are significant (PostgreSQL behaviour), unlike the ai_ci default. */
     @Test
     void insertUser_emailsDifferingOnlyByAccent_areDistinct_BR01() {
-        long accented = insertUser("é@x.com");
-        long plain = insertUser("e@x.com");
+        long accented = insertUser("é@example.com");
+        long plain = insertUser("e@example.com");
 
         assertThat(accented).isNotEqualTo(plain);
-        assertThat(jdbc.sql("SELECT id FROM users WHERE email = ?").param("é@x.com").query(Long.class).list())
+        assertThat(jdbc.sql("SELECT id FROM users WHERE email = ?").param("é@example.com").query(Long.class).list())
                 .containsExactly(accented);
-        assertThat(jdbc.sql("SELECT id FROM users WHERE email = ?").param("e@x.com").query(Long.class).list())
+        assertThat(jdbc.sql("SELECT id FROM users WHERE email = ?").param("e@example.com").query(Long.class).list())
                 .containsExactly(plain);
     }
 
@@ -78,7 +78,7 @@ class IdentitySchemaIT {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"Upper@edumy.vn", " lead@edumy.vn", "trail@edumy.vn "})
+    @ValueSource(strings = {"Upper@example.com", " lead@example.com", "trail@example.com "})
     void insertUser_notNormalizedEmail_rejected_BR01(String email) {
         assertCheckViolated("ck_users_email_normalized", () -> insertUser(email));
     }
@@ -384,7 +384,7 @@ class IdentitySchemaIT {
     }
 
     private static String uniqueEmail() {
-        return "u" + SEQ.incrementAndGet() + "@edumy.vn";
+        return "u" + SEQ.incrementAndGet() + "@example.com";
     }
 
     private static String hash() {

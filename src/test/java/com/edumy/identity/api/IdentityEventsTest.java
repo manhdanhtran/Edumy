@@ -13,7 +13,7 @@ class IdentityEventsTest {
 
     @Test
     void userRegistered_toStringMasksCode_NFR08() {
-        UserRegistered event = new UserRegistered(7L, "a@edumy.vn", "Nguyễn Văn A", RAW);
+        UserRegistered event = new UserRegistered(7L, "a@example.com", "Nguyễn Văn A", RAW);
 
         assertThat(event.rawVerificationCode()).isEqualTo(RAW);
         assertThat(event.toString()).doesNotContain(RAW).contains("userId=7").contains("****");
@@ -21,7 +21,7 @@ class IdentityEventsTest {
 
     @Test
     void emailVerificationRequested_toStringMasksCode_NFR08() {
-        EmailVerificationRequested event = new EmailVerificationRequested(7L, "a@edumy.vn", "A", RAW);
+        EmailVerificationRequested event = new EmailVerificationRequested(7L, "a@example.com", "A", RAW);
 
         assertThat(event.rawCode()).isEqualTo(RAW);
         assertThat(event.toString()).doesNotContain(RAW).contains("****");
@@ -29,7 +29,7 @@ class IdentityEventsTest {
 
     @Test
     void passwordResetRequested_toStringMasksCode_NFR08() {
-        PasswordResetRequested event = new PasswordResetRequested(7L, "a@edumy.vn", "A", RAW);
+        PasswordResetRequested event = new PasswordResetRequested(7L, "a@example.com", "A", RAW);
 
         assertThat(event.rawCode()).isEqualTo(RAW);
         assertThat(event.toString()).doesNotContain(RAW).contains("****");
@@ -38,7 +38,7 @@ class IdentityEventsTest {
     @Test
     void passwordChanged_carriesNoSecret() {
         Instant at = Instant.parse("2026-11-13T03:00:00Z");
-        PasswordChanged event = new PasswordChanged(7L, "a@edumy.vn", "A", at);
+        PasswordChanged event = new PasswordChanged(7L, "a@example.com", "A", at);
 
         assertThat(event.occurredAt()).isEqualTo(at);
         assertThat(event.toString()).contains("userId=7");

@@ -172,7 +172,7 @@ class ConstraintViolationTranslatorIT {
     void unmappedCheck_3819_internalError(Path path) {
         // CHECKs compare CAST(status AS BINARY): 'Active' is not 'active'
         Throwable ex = provoke(path, "INSERT INTO users (email, password_hash, full_name, status) VALUES "
-                + "('translator" + SchemaFixtures.next() + "@edumy.vn', 'x', 'Nguyễn Văn A', 'Active')");
+                + "('translator" + SchemaFixtures.next() + "@example.com', 'x', 'Nguyễn Văn A', 'Active')");
         assertTranslated(ex, Kind.CHECK, 3819, ErrorCode.INTERNAL_ERROR, "ck_users_status");
     }
 

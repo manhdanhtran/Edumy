@@ -86,7 +86,7 @@ public class PaymentService {
      * (R1); unknown / foreign → 404 identical; not pending → 409 {@code DATA_CONFLICT}. Then, before any QR (P11 R3):
      * <ol>
      *   <li>the order is older than {@code edumy.payment.order-ttl} (24 h, BR-29) → its pending attempt is looked up
-     *   and the order cancelled as {@code expired}, committed, 409 {@code DATA_CONFLICT}; found paid → 409
+     *   and the order cancelled as {@code expired}, committed, 409 {@code ORDER_EXPIRED}; found paid → 409
      *   {@code ORDER_ALREADY_PAID};</li>
      *   <li>a course of the order is owned now → looked up and cancelled as {@code replaced}, committed, 409
      *   {@code ORDER_CART_CHANGED} (order again from the cart); found paid → 409 {@code ORDER_ALREADY_PAID};</li>
@@ -121,7 +121,7 @@ public class PaymentService {
             }
             order.cancel(CancelReason.EXPIRED, now);
             log.info("Order cancelled as expired before a new QR: orderCode={}", order.getOrderCode());
-            return new QrStep(null, ErrorCode.DATA_CONFLICT);
+            return new QrStep(null, ErrorCode.ORDER_EXPIRED);
         }
         Set<Long> owned = enrollments.findOwnedCourseIds(order.getStudentId(), order.courseIds());
         if (!owned.isEmpty()) { // R3 b

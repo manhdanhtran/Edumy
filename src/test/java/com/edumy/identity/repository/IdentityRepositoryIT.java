@@ -63,15 +63,15 @@ class IdentityRepositoryIT {
     @Test
     void findByEmail_normalizedEmail_found_mixedCaseNotFound() {
         String marker = uniqueMarker();
-        User user = users.saveAndFlush(User.register("  " + marker.toUpperCase() + "@Edumy.VN ", PASSWORD_HASH,
+        User user = users.saveAndFlush(User.register("  " + marker.toUpperCase() + "@Example.COM ", PASSWORD_HASH,
                 "Nguyễn Văn A", NOW));
         em.clear();
 
-        assertThat(users.findByEmail(User.normalizeEmail(marker + "@edumy.vn"))).get()
+        assertThat(users.findByEmail(User.normalizeEmail(marker + "@example.com"))).get()
                 .extracting(User::getId).isEqualTo(user.getId());
-        assertThat(users.existsByEmail(marker + "@edumy.vn")).isTrue();
+        assertThat(users.existsByEmail(marker + "@example.com")).isTrue();
         // utf8mb4_bin: lookups are exact, callers must normalize first
-        assertThat(users.findByEmail(marker.toUpperCase() + "@edumy.vn")).isEmpty();
+        assertThat(users.findByEmail(marker.toUpperCase() + "@example.com")).isEmpty();
     }
 
     @Test
@@ -113,9 +113,9 @@ class IdentityRepositoryIT {
     @Test
     void searchForAdmin_filters_qStatusRole_UCA01() {
         String marker = uniqueMarker();
-        User student = newUser(marker + "-s@edumy.vn", "Học Viên " + marker);
-        User instructor = newUser(marker + "-i@edumy.vn", "Giảng Viên " + marker);
-        User locked = newUser(marker + "-l@edumy.vn", "Bị Khóa " + marker);
+        User student = newUser(marker + "-s@example.com", "Học Viên " + marker);
+        User instructor = newUser(marker + "-i@example.com", "Giảng Viên " + marker);
+        User locked = newUser(marker + "-l@example.com", "Bị Khóa " + marker);
         grant(student, RoleCode.STUDENT);
         grant(instructor, RoleCode.STUDENT);
         grant(instructor, RoleCode.INSTRUCTOR);
@@ -129,7 +129,7 @@ class IdentityRepositoryIT {
         Page<AdminUserView> byQ = users.searchForAdmin(LikePattern.contains(marker), null, null, page);
         assertThat(byQ.getTotalElements()).isEqualTo(3);
         assertThat(byQ.getContent()).extracting(AdminUserView::getEmail)
-                .containsExactly(marker + "-i@edumy.vn", marker + "-l@edumy.vn", marker + "-s@edumy.vn");
+                .containsExactly(marker + "-i@example.com", marker + "-l@example.com", marker + "-s@example.com");
         AdminUserView first = byQ.getContent().getFirst();
         assertThat(first.getId()).isEqualTo(instructor.getId());
         assertThat(first.getFullName()).isEqualTo("Giảng Viên " + marker);
@@ -163,7 +163,7 @@ class IdentityRepositoryIT {
                 .isZero();
         assertThat(users.searchForAdmin(LikePattern.contains(marker + "!"), null, null, page).getTotalElements())
                 .isZero();
-        User odd = newUser(marker + "_x%y!z@edumy.vn", "Ký Tự " + marker);
+        User odd = newUser(marker + "_x%y!z@example.com", "Ký Tự " + marker);
         em.flush();
         assertThat(users.searchForAdmin(LikePattern.contains(marker + "_x%y!z"), null, null, page).getContent())
                 .extracting(AdminUserView::getId).containsExactly(odd.getId());
@@ -435,7 +435,7 @@ class IdentityRepositoryIT {
     }
 
     private static String uniqueEmail() {
-        return uniqueMarker() + "@edumy.vn";
+        return uniqueMarker() + "@example.com";
     }
 
     private static String randomHash() {

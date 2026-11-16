@@ -29,7 +29,7 @@ public final class SchemaFixtures {
     public long user() {
         return insert(jdbc.sql("""
                 INSERT INTO users (email, password_hash, full_name) VALUES (?, '$2a$12$notARealHash', 'Nguyễn Văn A')""")
-                .param("fixture" + next() + "@edumy.vn"));
+                .param("fixture" + next() + "@example.com"));
     }
 
     public long category() {
