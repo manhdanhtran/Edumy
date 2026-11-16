@@ -90,6 +90,7 @@ P10 review + P10-fix-a (security minors + Q-g identity) · P10-fix-b (authoring:
 | P11-fix-a R-02 + R-04 per-student cart lock; timers apply 'paid' in a new transaction; R-07 log hygiene | done | 83aaa2c | 2363 tests green (+4: PaymentRaceIT), suite 10 min 01 s; see `### P11-fix-a` |
 | P11-fix-b R-01 expired-QR claim follows its index (EXPLAIN, lock scope) | done | 6372d3d | 2367 tests green (+4: ClaimQueryPlanIT), suite 7 min 55 s; see `### P11-fix-b` |
 | P11-fix-c R-03 concurrency tests force real interleavings; mutation checks | done | 2d9c545 | 2373 tests green (+6 net: rewrites + scenarios c, d, e, g, j), suite 20 min 13 s (machine slow; same tests ran 8-10 min before); see `### P11-fix-c` |
+| P11-fix-d R-05 paid orders keep no pending attempt; R-06 timeouts + lookup outside the transaction | done | 0d3e9f2 | 2379 tests green (+6: PaymentWebhookIT 1, ReconciliationIT 2, PaymentPropertiesTest 3), suite 14 min 33 s; see `### P11-fix-d` |
 
 ## P11 — commerce (plan approved 2026-11-15 with Q1–Q5 + R1–R3; ADR-011)
 Units P11-a … P11-f. Plan: lock order cart → order → attempt → enrollments / cart lines; scalar-first reads (R1);
@@ -229,6 +230,21 @@ Commerce is real: T1 (P11-b), create QR (P11-c), webhook + T2 (P11-a), cancel (P
   the verified webhook makes the fake provider report the payment, so the held lookup sees it: the request records it
   and answers 409 `ORDER_ALREADY_PAID`, the webhook is ignored — one effect.
 - Hooks: `FakeQrPaymentGateway.failQueriesFor(ref)`, `PaymentTestHooks.holdNextReconciliation()`.
+### P11-fix-d — MINOR R-05, R-06, R-07
+- R-05: `PaymentResultApplier.fulfil(order, paidBy, now)` first closes every other `pending` attempt of the order as
+  `expired` (T2 and UC-A18 activated, same transaction); a later result for one of them is a late result on a paid order
+  → `needs_review`. `GET …/payments/current` of a paid order shows the attempt that paid it (`success`), not the latest
+  closed one (`findFirstByOrderIdAndStatusOrderByCreatedAtDescIdDesc`).
+- R-06: `connectTimeout` 2 s + `readTimeout` 3 s (configurable), `txTimeout` 10 s; `PaymentProperties` refuses to start
+  when `connect + read >= tx`. `PaymentQueryService.getAdminDetail` is `NOT_SUPPORTED`: the database part runs in a
+  read-only `TransactionTemplate`, closed before `gateway.query`.
+- R-07: done in P11-fix-a (`PaymentGatewayException.describe`, stack traces in the timers).
+- Tests: `PaymentWebhookIT` +1 (R-05, incl. the polling answer), `ReconciliationIT` +2 (R-05 activation, R-06 no
+  connection held during the lookup — Hikari active connections = 0 while the lookup is held), `PaymentPropertiesTest` (3).
+- VS Code: `.vscode/settings.json` with `java.autobuild.enabled: false` is not enough until the window is reloaded —
+  three more `target/` artefacts (`NoClassDefFoundError`, missing MapStruct implementations) in this unit; narrow runs
+  keep `clean`.
+
 ### Mutation checks (P11-fix-c; each lock removed temporarily, test run, lock restored, never committed)
 | Test | Lock / code removed | Result |
 |---|---|---|
@@ -239,7 +255,8 @@ Commerce is real: T1 (P11-b), create QR (P11-c), webhook + T2 (P11-a), cancel (P
 | M4 — `PaymentQrIT#secondRequestWaitsForTheFirst…BR16`, `#webhookForTheExpiredAttemptWaits…` | create QR: cart lock and order `FOR UPDATE` removed | RED — 2 tests |
 | M5 — `ReconciliationIT#secondAdminWaitsForTheFirstDecision…E1` | UC-A18: cart lock removed, order and attempt read without lock | RED — 1 test |
 | M6 — `CommerceExpiryIT#twoRunsOverlapping…NFR09`, `#anOrderLockedElsewhere…SKIP_LOCKED`, `ClaimQueryPlanIT#whileInstanceAHoldsOneOrder…` | `SKIP LOCKED` removed from both claims | RED — 3 tests |
-Every mutation was applied in the working tree only, the file restored byte for byte afterwards (`git diff` checked), never
+| P11-fix-d — `PaymentWebhookIT#lateResultOfQr1PaysTheOrder_qr2IsClosed…R05`, `ReconciliationIT#activated_closesTheOrdersOtherPendingAttempt_R05` | `closeOtherPendingAttempts` call removed | RED — 2 tests |
+| P11-fix-d — `ReconciliationIT#detail_providerCalledOutsideTheTransaction…R06` | `getAdminDetail` back inside `@Transactional(readOnly = true)` | RED — 1 test (1 active connection during the lookup) |Every mutation was applied in the working tree only, the file restored byte for byte afterwards (`git diff` checked), never
 committed. Note: the M3 run took 5.8 h wall time because the machine slept; the result is unaffected.
 
 ## P09 summary

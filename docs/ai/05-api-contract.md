@@ -533,7 +533,8 @@ Commerce reads (P05):
   confirmedAt,createdAt}]}`: `unitPrice` = frozen order_items price (BR-12); attempts newest first, no QR payload;
   3 statements. Unknown code or another student's → 404 `RESOURCE_NOT_FOUND` (identical, NFR-01; admins get 404 too).
 - `GET /orders/{orderCode}/payments/current` → **200** `PaymentStatusResponse {orderCode,orderStatus,transactionRef,
-  status,amount,qrData,qrExpiresAt,confirmedAt,createdAt}`: the pending attempt, else the latest one; `qrData` only while
+  status,amount,qrData,qrExpiresAt,confirmedAt,createdAt}`: the pending attempt (for a `paid` order: the attempt that paid
+  it, P11-fix-d), else the latest one; `qrData` only while
   `status=pending` (otherwise `null`). Order without any attempt (e.g. cancelled before a QR was made) → 404
   `RESOURCE_NOT_FOUND`, same as unknown / not own.
 - `GET /admin/orders?orderCode=&email=&status=&createdFrom=&createdTo=&page=&size=` → **200**

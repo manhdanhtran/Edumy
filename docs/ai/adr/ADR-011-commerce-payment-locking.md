@@ -67,6 +67,15 @@ EXPLAIN on MySQL 8.4 (`ClaimQueryPlanIT`, 4 expired orders):
 the lookup of one order, instance B processes the 3 other orders at once and a webhook on an unclaimed order goes
 through. With the old `ORDER BY` 3 of its 4 tests fail (mutation check, see progress).
 
+### Paid orders keep no pending attempt; timeouts (P11-fix-d, review P11-R-05 / R-06)
+- When an order becomes `paid` (T2 or UC-A18 `activated`), every other `pending` attempt of that order is closed as
+  `expired` in the same transaction; a result arriving later for one of them is a late result on a paid order →
+  `needs_review`, never a second grant. Polling of a paid order shows the attempt that paid it.
+- Provider HTTP timeouts default to connect 2 s + read 3 s and must stay below `tx-timeout` (10 s) — checked when the
+  application starts. The UC-A18 detail page reads the database in a read-only transaction that is closed before the
+  provider lookup (no connection held during the call).
+- Logs never carry a provider exception's message: `PaymentGatewayException.describe` = type + sanitised code (R-07).
+
 ### R1 — no stale entity under a lock
 A flow that must read before it locks reads a **scalar** (`findOrderIdByTransactionRef`, `findOrderIdById`), never an
 entity: `SELECT … FOR UPDATE` (or `find` with `PESSIMISTIC_WRITE`) on an entity that is already in the persistence
