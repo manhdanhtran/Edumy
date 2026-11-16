@@ -95,6 +95,7 @@ P10 review + P10-fix-a (security minors + Q-g identity) · P10-fix-b (authoring:
 | P12 certificate PDF (OpenPDF 2.2.5, Noto Sans, ADR-013) | done | eb14bc1 | 2378 tests green (+9 new, −10 stub tests), suite 15 min 46 s; see `## P12` |
 | P13-a security hardening (anonymous public reads, 503, CORS ProblemDetail, account rate limits, reset before BCrypt) | done | bc2339e | 2388 tests green (+10), suite 8 min 52 s; see `### P13-a` |
 | P13-b UC-I02 student count (port), duplicate question guard, ADR-014 | done | bc85aae | 2391 tests green (+3), suite 9 min 10 s; see `### P13-b` |
+| P13-c no stub left (StubSupport removed, STUB-P1 grep empty), test pool idle connections, suite time | done | 2cd92dd | 2391 tests green, suite 8 min 37 s; see `### P13-c` |
 
 ## P11 — commerce (plan approved 2026-11-15 with Q1–Q5 + R1–R3; ADR-011)
 Units P11-a … P11-f. Plan: lock order cart → order → attempt → enrollments / cart lines; scalar-first reads (R1);
@@ -292,6 +293,29 @@ committed. Note: the M3 run took 5.8 h wall time because the machine slept; the 
   shared with `CertificateVerifyRateLimiter`.
 - Reset: `AccountTokenService.isUsable` before `passwordEncoder.encode` (no BCrypt for a wrong code).
 - Tests: `AuthHardeningFiltersTest` (8), `AuthServiceResetTest` (2), `CatalogCourseControllerIT` rewritten test.
+
+### P13-c — no stub left, suite time
+- `shared.web.StubSupport` deleted; `X-Edumy-Stub` no longer in the CORS exposed headers (`WebConfigCorsTest`
+  updated); ADR-005 closed. `grep -rn "STUB-P1" src/main` → empty.
+- Test pool: `spring.datasource.hikari.minimum-idle: 2` in the test profile (DT-m5: about 10 cached contexts kept 10
+  idle connections each); maximum stays 10 because the AC-11 race test uses 8 connections.
+- Suite time on a quiet machine: 8 min 52 s (P13-a), 9 min 10 s (P13-b), 8 min 37 s (P13-c, final) — under the 10-minute goal. The 15-20 min /
+  hours readings of P11-fix were machine load or sleep, not the suite. Slowest classes (surefire XML, P13-b run):
+
+| Class | s | Note |
+|---|---:|---|
+| `authoring.AuthoringModuleIT` | 87.9 | first class of the run: includes the MySQL container start and the first context |
+| `learning.controller.AnswerWriteIT` | 21.7 | 30 HTTP write tests |
+| `learning.controller.QuestionWriteIT` | 20.9 | 39 tests incl. the new race |
+| `learning.controller.ReviewWriteIT` | 16.2 | 50 tests |
+| `authoring.controller.AdminCategoryControllerIT` | 15.2 | seed context start |
+| `security.IdorIT` | 15.0 | 209 parameterised rows |
+| `authoring.controller.CoInstructorWriteIT` | 12.8 | 44 tests |
+| `commerce.controller.CartWriteIT` | 12.1 | 22 tests incl. races |
+| `commerce.controller.PaymentWebhookIT` | 11.5 | 20 tests incl. 10 parallel deliveries |
+| `commerce.controller.OrderWriteIT` | 10.8 | 21 tests incl. forced interleavings |
+  No `@DirtiesContext` in the suite; the per-class costs are real work (HTTP + MySQL), not context restarts, so nothing
+  cheap was left to cut.
 
 ### P13-b — P10 backlog
 - UC-I02 "số học viên": `authoring.api.EnrollmentCountPort` (declared by authoring) implemented by
