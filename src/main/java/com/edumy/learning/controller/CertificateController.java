@@ -4,11 +4,9 @@ import com.edumy.learning.dto.response.CertificateResponse;
 import com.edumy.learning.service.CertificateCatchUpService;
 import com.edumy.learning.service.CertificateQueryService;
 import com.edumy.shared.security.CurrentUserId;
-import com.edumy.shared.web.StubSupport;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springdoc.core.annotations.ParameterObject;
-import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PagedModel;
 import org.springframework.http.CacheControl;
@@ -47,18 +45,14 @@ public class CertificateController {
     }
 
     /**
-     * Phase-1 stub, header {@code X-Edumy-Stub: true}: 200 + a static sample PDF (attachment named after the code) for
-     * the caller's own certificate; nothing is written. Unknown, malformed or another student's code gives 404
-     * {@code RESOURCE_NOT_FOUND} (identical).
+     * UC-S20 step 3 (P12): 200 + the PDF of the caller's certificate, rendered now from the stored snapshot (BR-40, never
+     * stored, D-48), as an attachment {@code <code>.pdf}. Unknown, malformed or another student's code gives 404
+     * {@code RESOURCE_NOT_FOUND} (identical, NFR-01); the PDF could not be produced → 500 {@code CERTIFICATE_PDF_FAILED},
+     * nothing changed (E2).
      */
     @GetMapping("/{code}/pdf")
-    @Operation(summary = "UC-S20 Tải PDF chứng chỉ (STUB-P1: PDF mẫu tĩnh, kiểm tra quyền sở hữu thật)",
-            description = "Phase-1 stub: returns a static sample PDF (X-Edumy-Stub: true); the certificate must be the caller's.")
-    public ResponseEntity<byte[]> pdf(@PathVariable String code, @CurrentUserId Long userId,
-                                      HttpServletResponse response) {
-        StubSupport.mark(response);
-        // STUB-P1: replace with CertificatePdfRenderer rendering the stored snapshot (template Q-11) — UC-S20, BR-39, BR-40
-        CertificateQueryService.CertificatePdf pdf = queries.renderMine(userId, code);
+    @Operation(summary = "UC-S20 Tải PDF chứng chỉ (tạo từ dữ liệu chụp lúc cấp, không lưu tệp)")
+    public ResponseEntity<byte[]> pdf(@PathVariable String code, @CurrentUserId Long userId) {        CertificateQueryService.CertificatePdf pdf = queries.renderMine(userId, code);
         return ResponseEntity.ok()
                 .contentType(MediaType.APPLICATION_PDF)
                 .header(HttpHeaders.CONTENT_DISPOSITION,

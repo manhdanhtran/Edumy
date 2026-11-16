@@ -21,6 +21,7 @@
 		<mapstruct.version>1.6.3</mapstruct.version> <!-- released 2024-11-09 -->
 		<lombok-mapstruct-binding.version>0.2.0</lombok-mapstruct-binding.version> <!-- released 2020-12-04 -->
 		<bucket4j.version>8.21.0</bucket4j.version> <!-- released 2026-10-02 -->
+		<openpdf.version>2.2.5</openpdf.version> <!-- released 2026-03-09; 3.x needs brotli4j (native), see ADR-013 -->
 	</properties>
 	<dependencies>
 		<dependency>
@@ -81,6 +82,12 @@
 			<groupId>org.springdoc</groupId>
 			<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
 			<version>${springdoc.version}</version>
+		</dependency>
+		<dependency>
+			<!-- UC-S20 certificate PDF (P12, ADR-013): LGPL-2.1 / MPL-2.0 -->
+			<groupId>com.github.librepdf</groupId>
+			<artifactId>openpdf</artifactId>
+			<version>${openpdf.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>com.bucket4j</groupId>
